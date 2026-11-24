@@ -237,10 +237,8 @@ bool Loader::loadFilesAtStart()
     if(!loadFiles({res::resource, res::io}))
         return false;
 
-    if(!loadSounds())
-        return false;
-
-    return loadResources({"io_new"});
+    // Weiler: the additional RTTR interface icons (io_new) are not shipped
+    return loadSounds();
 }
 
 bool Loader::loadSounds()
@@ -446,7 +444,8 @@ bool Loader::loadFilesAtGame(const std::string& mapGfxPath, bool isWinterGFX, co
 
     const libsiedler2::ArchivItem_Palette* pal5 = getPaletteN("pal5");
 
-    if(!loadFiles(files) || !load(ResourceId("map_new"), pal5))
+    // Weiler: the RTTR map additions (map_new: harbor frontier flags) are not shipped
+    if(!loadFiles(files))
         return false;
 
     // Load nation building and icon graphics
@@ -460,14 +459,15 @@ bool Loader::loadFilesAtGame(const std::string& mapGfxPath, bool isWinterGFX, co
         nationIcons_[nation] = &files_[ResourceId::make(resourceSource.iconsFilePath)].archive;
     }
 
-    // TODO: Move to addon folder and make it overwrite existing file
-    if(!loadResources({"charburner", "charburner_bobs"}))
+    // Weiler: graphics of the addon buildings only when the addon is enabled (Weiler does not ship them; the
+    // addons stay disabled)
+    if(helpers::contains(enabledAddons, AddonId::CHARBURNER) && !loadResources({"charburner", "charburner_bobs"}))
         return false;
 
-    if(!loadResources({"wine_bobs"}))
+    if(helpers::contains(enabledAddons, AddonId::WINE) && !loadResources({"wine_bobs"}))
         return false;
 
-    if(!loadResources({"leather_bobs"}))
+    if(helpers::contains(enabledAddons, AddonId::LEATHER) && !loadResources({"leather_bobs"}))
         return false;
 
     const bfs::path mapGFXFile = config_.expandPath(mapGfxPath);

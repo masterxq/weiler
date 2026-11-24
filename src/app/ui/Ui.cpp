@@ -366,7 +366,8 @@ bool Ui::button(Id i, const Rect2& rIn, const std::string& label, Icon ic, Style
         const float y0 = r.y + (r.h - total) / 2;
         icon(ic, r.x + r.w / 2, y0 + is / 2, is, iconColor);
         text(r.x + r.w / 2, y0 + is + gap - fs * 0.1f, label, fs, fg, gfx::Align::Center, true);
-        tag(label, rIn);
+        if(enabled)
+            tag(label, rIn);
         return enabled && area(i, rIn);
     }
     const float fs = std::min(dp(theme.type.label), r.h * 0.36f);
@@ -381,7 +382,8 @@ bool Ui::button(Id i, const Rect2& rIn, const std::string& label, Icon ic, Style
         }
         text(x, r.y + (r.h - fs * 1.3f) / 2, label, fs, fg, gfx::Align::Left, true);
         icon(Icon::Next, r.right() - dp(22), r.y + r.h / 2, dp(16), theme.textFaint);
-        tag(label, rIn);
+        if(enabled)
+            tag(label, rIn);
         return enabled && area(i, rIn);
     }
     if(ic != Icon::None && label.empty())
@@ -395,7 +397,9 @@ bool Ui::button(Id i, const Rect2& rIn, const std::string& label, Icon ic, Style
         text(x0 + is + dp(10), r.y + (r.h - fs * 1.3f) / 2, label, fs, fg, gfx::Align::Left, true);
     } else
         text(r.x + r.w / 2, r.y + (r.h - fs * 1.3f) / 2, label, fs, fg, gfx::Align::Center, true);
-    tag(label.empty() ? std::string("icon:") + iconName(ic) : label, rIn);
+    // Disabled buttons are no touch targets for test scripts
+    if(enabled)
+        tag(label.empty() ? std::string("icon:") + iconName(ic) : label, rIn);
     return enabled && area(i, rIn);
 }
 

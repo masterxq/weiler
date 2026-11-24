@@ -244,7 +244,8 @@ void Hud::Impl::onTap(float x, float y)
         return;
     }
 
-    if(tapShip(pt))
+    // A ship next to a building (docked at a harbor) only wins when the building itself was not tapped
+    if(!isBuildingObj(world().getNO(pt)) && tapShip(pt))
         return;
     // Buildings are tall: if the tapped node has no building, look at the nodes below for one
     if(!isBuildingObj(world().getNO(pt)))

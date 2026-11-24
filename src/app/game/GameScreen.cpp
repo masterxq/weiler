@@ -10,6 +10,9 @@
 #include "GamePlayer.h"
 #include "Hud.h"
 #include "nodeObjs/noShip.h"
+#include "buildings/nobHarborBuilding.h"
+#include "factories/BuildingFactory.h"
+#include "helpers/EnumRange.h"
 #include "postSystem/PostManager.h"
 #include "addons/const_addons.h"
 #include "gameData/MapConsts.h"
@@ -554,6 +557,57 @@ bool GameScreen::testCommand(const std::string& cmd, const std::vector<std::stri
         jumpTo(best);
         std::cout << "[script] enemy " << best.x << "," << best.y << " soldiers "
                   << gwv_->getNumSoldiersForAttack(best) << std::endl;
+        return true;
+    }
+    if(cmd == "seafaring")
+    {
+        // Test: finished harbor at the harbor spot nearest to the HQ with wares for an expedition, a ship at its
+        // coast. Used to test the ship sheet without playing an hour.
+        HarborId best;
+        unsigned bestDist = 100000;
+        for(unsigned i = 1; i <= world.getNumHarborPoints(); ++i)
+        {
+            const HarborId h(i);
+            const MapPoint hp = world.getHarborPoint(h);
+            const unsigned d = world.calcDistance(me.getHQPos(), hp);
+            if(d < bestDist && world.getNO(hp)->getType() != NodalObjectType::Building)
+            {
+                bestDist = d;
+                best = h;
+            }
+        }
+        if(!best)
+            return false;
+        const MapPoint hp = world.getHarborPoint(best);
+        world.destroyNO(hp, false);
+        auto* harbor = static_cast<nobHarborBuilding*>(
+          BuildingFactory::createBuilding(world, BuildingType::HarborBuilding, hp, static_cast<unsigned char>(meId),
+                                          me.nation));
+        if(!harbor)
+            return false;
+        GoodCounts goods;
+        goods[GoodType::Boards] = 40;
+        goods[GoodType::Stones] = 40;
+        harbor->addToInventory(goods, true);
+        PeopleCounts people;
+        people[Job::Builder] = 4;
+        people[Job::Scout] = 4;
+        people[Job::Helper] = 10;
+        harbor->addToInventory(people, true);
+        for(const auto dir : helpers::EnumRange<Direction>{})
+        {
+            const SeaId sea = world.getSeaId(best, dir);
+            if(!sea)
+                continue;
+            const MapPoint coast = world.getCoastalPoint(best, sea);
+            if(!coast.isValid())
+                continue;
+            auto& ship = world.addFigure(coast, std::make_unique<noShip>(coast, static_cast<unsigned char>(meId)));
+            world.getPlayer(meId).registerShip(ship);
+            break;
+        }
+        testFound_ = hp;
+        std::cout << "[script] harbor at " << hp.x << "," << hp.y << ", ships " << me.getNumShips() << std::endl;
         return true;
     }
     if(cmd == "node")

@@ -28,6 +28,10 @@ Changes against upstream:
 - Sound conversion only corrects the sample rate in the header (no libsamplerate).
 - The override graphics of RTTR (`assets/overrides`) are not included; the loader skips the missing folder and
   geologist water signs fall back to the single sign of the original data.
+- Of the RTTR graphics only `assets/base/colors.act` (player color palette) is included. Not included: the addon
+  graphics (charburner, wine, leather, catapult), the Babylonian nation, `io_new`, `map_new` and `fireworks`.
+  The loader loads addon graphics only for enabled addons (Weiler keeps these addons disabled), no longer loads
+  `io_new`/`map_new`, and military buildings near harbors show the original middle distance flag.
 - `RttrConfig` no longer changes the working directory.
 - `lua/LuaInterfaceBase.cpp`: translated texts of the Lua scripts pass `gettext` once more, so that
   `data/lang/weiler-de.po` (merged before `rttr-de.po` at build time) can adapt the German mission texts to the

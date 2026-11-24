@@ -1089,7 +1089,11 @@ void Hud::Impl::sheetShip(const Rect2& r)
         {
             const Rect2 br{c.x + static_cast<float>(d.col) * (bw + gap), y + static_cast<float>(d.row) * (bh + gap), bw,
                            bh};
-            if(ui.button(id("ship.dir", static_cast<uint64_t>(d.dir)), br, d.label))
+            // Only directions with a free harbor spot on the way can be chosen
+            const bool reachable = static_cast<bool>(
+              world().getNextFreeHarborPoint(ship->getPos(), ship->getCurrentHarbor(), d.dir, ship->getPlayerId()));
+            if(ui.button(id("ship.dir", static_cast<uint64_t>(d.dir)), br, d.label, Icon::None, Style::Normal,
+                         reachable))
             {
                 s.travelToNextSpot(d.dir, shipId);
                 closeSheet();

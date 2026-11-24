@@ -241,8 +241,8 @@ void nobMilitary::draw(DrawPoint drawPt)
         // don't draw a flag for new buildings - fixes bug #215
     } else if(frontier_distance_tmp == FrontierDistance::Harbor)
     {
-        // todo Hafenflagge
-        bitmap = LOADER.getTextureN("map_new", 3150 + animationFrame);
+        // Weiler: no own harbor flag graphics; the flag of the middle distance of the original data is used
+        bitmap = LOADER.getMapTexture(3150 + rttr::enumCast(FrontierDistance::Mid) * 4 + animationFrame);
     } else
     {
         if(frontier_distance_tmp == FrontierDistance::Near)
