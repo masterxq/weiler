@@ -21,6 +21,7 @@
 #include <cmath>
 #include <ctime>
 #include <iostream>
+#include <map>
 
 namespace bfs = boost::filesystem;
 
@@ -43,8 +44,10 @@ void drawBackground(App& app)
         b.quad(0, 0, H * t, W, H * (t + 1.f / bands) + 1, 0, 0, 1, 1, c);
     }
     const float tm = static_cast<float>(app.time());
-    b.circle(W * 0.78f, H * 0.22f, std::min(W, H) * 0.09f, Color::rgb(0xF2C27A, 0.9f), 0, app.dp(3));
-    b.circle(W * 0.78f, H * 0.22f, std::min(W, H) * 0.25f, Color::rgb(0xE8A33D, 0.10f), 0, app.dp(120));
+    // Low evening sun, away from the title
+    const float sunX = W * (app.portrait() ? 0.82f : 0.86f), sunY = H * (app.portrait() ? 0.27f : 0.2f);
+    b.circle(sunX, sunY, std::min(W, H) * 0.07f, Color::rgb(0xF2C27A, 0.9f), 0, app.dp(3));
+    b.circle(sunX, sunY, std::min(W, H) * 0.22f, Color::rgb(0xE8A33D, 0.10f), 0, app.dp(120));
     const struct
     {
         float x, y, r;
@@ -335,12 +338,11 @@ public:
                 name = "Schnellspeicher";
             else if(name.rfind("slot", 0) == 0)
                 name = "Platz " + name.substr(4);
-            const std::time_t t = bfs::last_write_time(files[i]);
-            char buf[64];
-            std::strftime(buf, sizeof(buf), "%d.%m.%Y %H:%M", std::localtime(&t));
             ui_.icon(Icon::Folder, row.x + app_.dp(24), row.y + row.h / 2, app_.dp(22), ui_.theme.accent);
             ui_.text(row.x + app_.dp(48), row.y + app_.dp(8), name, app_.dp(16), ui_.theme.text, gfx::Align::Left, true);
-            ui_.text(row.x + app_.dp(48), row.y + app_.dp(30), buf, app_.dp(13), ui_.theme.textDim);
+            ui_.text(row.x + app_.dp(48), row.y + app_.dp(30), saveDescription(files[i]), app_.dp(13),
+                     ui_.theme.textDim);
+            ui_.tag(name, row);
             if(ui_.area(id("lf", i), row))
                 startLoaded(app_, files[i].string());
             y += app_.dp(64);
@@ -531,6 +533,24 @@ std::unique_ptr<Screen> createMissingDataScreen(App& app)
         + app.paths().gameData.string()
         + "\noder starte Weiler mit --data <Ordner> bzw. setze WEILER_DATA.\n\nGrund: "
         + app.paths().missingGameDataReason());
+}
+
+std::string saveDescription(const bfs::path& path)
+{
+    static std::map<std::string, std::pair<std::time_t, std::string>> cache;
+    boost::system::error_code ec;
+    const std::time_t t = bfs::last_write_time(path, ec);
+    if(ec)
+        return {};
+    auto& entry = cache[path.string()];
+    if(entry.first != t || entry.second.empty())
+    {
+        char buf[64];
+        std::strftime(buf, sizeof(buf), "%d.%m. %H:%M", std::localtime(&t));
+        const std::string info = Session::describeSave(path);
+        entry = {t, info.empty() ? std::string(buf) : std::string(buf) + " · " + info};
+    }
+    return entry.second;
 }
 
 std::unique_ptr<Screen> createMainMenu(App& app)

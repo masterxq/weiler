@@ -54,17 +54,6 @@ std::string savePath(const std::string& name)
     return (RTTRCONFIG.expandPath(s25::folders::save) / (name + ".sav")).string();
 }
 
-std::string fileTime(const std::string& path)
-{
-    boost::system::error_code ec;
-    const std::time_t t = bfs::last_write_time(path, ec);
-    if(ec)
-        return {};
-    char buf[64];
-    std::strftime(buf, sizeof(buf), "%d.%m. %H:%M", std::localtime(&t));
-    return buf;
-}
-
 // Edited copy of the economy settings (commands take effect one game frame later)
 VisualSettings gEdit;
 bool gEditValid = false;
@@ -878,7 +867,7 @@ void Hud::Impl::sheetSaveLoad(const Rect2& r, bool save)
                               ui.pressed(id("slot", i), row) ? ui.theme.raised : Color::rgb(0xFFFFFF, 0.05f));
         ui.icon(save ? Icon::Save : Icon::Folder, row.x + app.dp(26), row.y + row.h / 2, app.dp(22), ui.theme.accent);
         ui.text(row.x + app.dp(50), row.y + app.dp(8), slots[i].second, app.dp(16), ui.theme.text, gfx::Align::Left, true);
-        ui.text(row.x + app.dp(50), row.y + app.dp(29), exists ? fileTime(path) : "leer", app.dp(13), ui.theme.textDim);
+        ui.text(row.x + app.dp(50), row.y + app.dp(29), exists ? saveDescription(path) : "leer", app.dp(13), ui.theme.textDim);
         ui.tag(slots[i].second, row);
         if(ui.area(id("slot", i), row))
         {

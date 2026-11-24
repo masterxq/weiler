@@ -214,6 +214,16 @@ AsyncChecksum Session::checksum() const
     return AsyncChecksum::create(*game_);
 }
 
+std::string Session::describeSave(const bfs::path& path)
+{
+    Savegame save;
+    if(!save.load(path, SaveGameDataToLoad::HeaderAndSettings))
+        return {};
+    const auto gfLen = std::chrono::duration_cast<std::chrono::milliseconds>(SPEED_GF_LENGTHS[save.ggs.speed]);
+    const unsigned sec = static_cast<unsigned>(static_cast<uint64_t>(save.start_gf) * gfLen.count() / 1000);
+    return (boost::format("%s · %u:%02u h") % save.getMapName() % (sec / 3600) % (sec / 60 % 60)).str();
+}
+
 std::string Session::formatGFTime(unsigned numGFs) const
 {
     return VIEWSTATE.formatGFTime(numGFs);

@@ -146,7 +146,7 @@ void GameScreen::update(double dt)
     hud_->update(dt);
     minimap_.update(4);
     // Autosave every 5 minutes of real time
-    if(!app_.testMode() && app_.time() - lastAutosave_ > 300)
+    if(app_.time() - lastAutosave_ > 300)
     {
         lastAutosave_ = app_.time();
         saveTo((RTTRCONFIG.expandPath(s25::folders::save) / "autosave.sav").string());
@@ -181,8 +181,7 @@ bool GameScreen::onBack()
 
 void GameScreen::onSuspend()
 {
-    if(!app_.testMode())
-        saveTo((RTTRCONFIG.expandPath(s25::folders::save) / "autosave.sav").string());
+    saveTo((RTTRCONFIG.expandPath(s25::folders::save) / "autosave.sav").string());
 }
 
 bool GameScreen::saveTo(const std::string& path)

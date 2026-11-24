@@ -44,6 +44,8 @@ public:
     static std::unique_ptr<Session> newGame(const NewGameSetup& setup);
     /// Load a savegame. Throws std::runtime_error on failure.
     static std::unique_ptr<Session> loadGame(const boost::filesystem::path& path, unsigned seed);
+    /// Short description of a savegame ("map · played time"), empty if unreadable
+    static std::string describeSave(const boost::filesystem::path& path);
     ~Session() override;
 
     /// Number of game frames between two AI command rounds
