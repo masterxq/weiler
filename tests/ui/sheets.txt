@@ -49,4 +49,24 @@ tap ui:Speichern
 wait 20
 shot shots/s_save.png
 labels
+key Escape
+wait 5
+key Escape
+wait 5
+game center hq
+wait 3
+tap bld:Hauptquartier
+wait 20
+shot shots/s_store.png
+tap ui:Leute
+wait 10
+shot shots/s_store_people.png
+tap ui:Reserve
+wait 10
+tap ui:icon:Plus
+wait 5
+shot shots/s_store_reserve.png
+tap ui:icon:Close
+wait 2
+shot shots/s_sheet_closing.png
 quit

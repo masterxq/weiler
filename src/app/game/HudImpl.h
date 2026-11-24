@@ -165,6 +165,8 @@ struct Hud::Impl
     SheetKind sheet = SheetKind::None;
     /// Content height requested by the current sheet (portrait: the sheet shrinks to fit), -1 = not known yet
     float fitReq = 0, fitH = -1;
+    /// The current sheet holds a long list (stores): taller in portrait
+    bool tallSheet = false;
     std::vector<SheetKind> sheetStack;
     MapPoint sheetPt;
     double sheetTime = 0;

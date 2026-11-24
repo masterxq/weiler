@@ -127,6 +127,8 @@ Rect2 Hud::Impl::sheetRect() const
         return {W - w - m, m, w, H - 2 * m};
     }
     float h = std::min(H * 0.58f, std::max(app.dp(420), H * 0.5f));
+    if(tallSheet)
+        h = std::max(h, std::min(H * 0.74f, H - app.dp(140)));
     if(fitH > 0)
         h = std::min(h, std::max(app.dp(150), fitH));
     return {m, H - h - m, W - 2 * m, h};
@@ -145,7 +147,10 @@ void Hud::Impl::openSheet(SheetKind k, MapPoint pt, bool push)
             app.audio().playUi(UiSound::Open);
     }
     if(sheet != k)
+    {
         fitH = -1;
+        tallSheet = false;
+    }
     sheet = k;
     sheetPt = pt;
     sheetTab = 0;
@@ -161,6 +166,7 @@ void Hud::Impl::closeSheet()
         sheet = sheetStack.back();
         sheetStack.pop_back();
         fitH = -1;
+        tallSheet = false;
         return;
     }
     if(sheet == SheetKind::Mission && missionPaused)

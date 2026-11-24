@@ -447,39 +447,68 @@ void Hud::Impl::sheetBuilding(const Rect2& r)
                 s.StartStopExplorationExpedition(sheetPt, !expl);
             by += bh + app.dp(8);
         }
-        // Ware list with store settings
-        static const std::vector<std::string> modes = {"Normal", "Einlagern", "Auslagern", "Stopp"};
-        const Rect2 view{c.x, by, c.w, c.bottom() - by - bh - app.dp(10)};
-        float ly = ui.beginScroll(id("wh.scroll"), view);
-        const float rowH = app.dp(48);
+        // Store settings of wares and figures, reserve of soldiers (pages as in the original)
+        ui.segmented(id("wh.tab"), {c.x, by, c.w, app.dp(40)}, {"Waren", "Leute", "Reserve"}, sheetTab);
+        by += app.dp(50);
+        tallSheet = true;
+        // The headquarters cannot be torn down: the list reaches the bottom
+        const float listEnd = bt == BuildingType::Headquarters ? c.bottom() : c.bottom() - bh - app.dp(10);
+        const Rect2 view{c.x, by, c.w, listEnd - by};
+        float ly = ui.beginScroll(id("wh.scroll", static_cast<uint64_t>(sheetTab)), view);
+        // Two lines per entry: picture, name and count, below the setting over the full width (narrow phones)
+        const float rowH = app.dp(sheetTab == 2 ? 64 : 92);
         unsigned row = 0;
-        for(const auto gt : helpers::enumRange<GoodType>())
-        {
-            if(hiddenWare(world(), gt))
-                continue;
-            const Rect2 rr{view.x, ly + static_cast<float>(row) * rowH, view.w, rowH};
-            ui.sprite(src(LOADER.getWareTex(gt)), {rr.x, rr.y + app.dp(8), app.dp(32), app.dp(32)});
-            ui.text(rr.x + app.dp(42), rr.y + app.dp(13), wareName(gt), app.dp(14), ui.theme.text);
-            ui.text(rr.x + app.dp(170), rr.y + app.dp(13), std::to_string(inv[gt]), app.dp(14), ui.theme.textDim);
-            const InventorySetting st = wh->getInventorySetting(gt);
-            int sel = st.isSet(EInventorySetting::Stop) ? 3 :
-                      st.isSet(EInventorySetting::Send) ? 2 :
-                      st.isSet(EInventorySetting::Collect) ? 1 : 0;
-            const float sw = std::min(app.dp(220), rr.w - app.dp(220));
-            if(sw > app.dp(120)
-               && ui.segmented(id("wh.set", static_cast<uint64_t>(gt)), {rr.right() - sw, rr.y + app.dp(6), sw, app.dp(36)},
-                               {"–", "Ein", "Aus", "Stop"}, sel))
+        auto head = [&](const Rect2& rr, ITexture* icon, const std::string& name, const std::string& detail) {
+            ui.sprite(src(icon), {rr.x, rr.y + app.dp(4), app.dp(32), app.dp(32)});
+            ui.text(rr.x + app.dp(42), rr.y + app.dp(2), name, app.dp(14), ui.theme.text);
+            ui.text(rr.x + app.dp(42), rr.y + app.dp(20), detail, app.dp(12), ui.theme.textDim);
+        };
+        auto storeRow = [&](uint64_t key, ITexture* icon, const std::string& name, unsigned count, InventorySetting st,
+                            const boost_variant2<GoodType, Job>& what) {
+            const Rect2 rr{view.x, ly + static_cast<float>(row++) * rowH, view.w - app.dp(8), rowH};
+            head(rr, icon, name, std::to_string(count) + " im Lager");
+            int sel = st.isSet(EInventorySetting::Stop)    ? 3 :
+                      st.isSet(EInventorySetting::Send)    ? 2 :
+                      st.isSet(EInventorySetting::Collect) ? 1 :
+                                                             0;
+            if(ui.segmented(id("wh.set", key), {rr.x, rr.y + app.dp(42), rr.w, app.dp(38)},
+                            {"Normal", "Einlagern", "Auslagern", "Stopp"}, sel))
             {
-                InventorySetting ns;
-                if(sel == 1)
-                    ns = InventorySetting(EInventorySetting::Collect);
-                else if(sel == 2)
-                    ns = InventorySetting(EInventorySetting::Send);
-                else if(sel == 3)
-                    ns = InventorySetting(EInventorySetting::Stop);
-                s.SetInventorySetting(sheetPt, gt, ns);
+                static const EInventorySetting modes[] = {EInventorySetting::Collect, EInventorySetting::Send,
+                                                         EInventorySetting::Stop};
+                s.SetInventorySetting(sheetPt, what, sel == 0 ? InventorySetting() : InventorySetting(modes[sel - 1]));
             }
-            ++row;
+        };
+        if(sheetTab == 0)
+        {
+            for(const auto gt : helpers::enumRange<GoodType>())
+            {
+                if(!hiddenWare(world(), gt))
+                    storeRow(rttr::enumCast(gt), LOADER.getWareTex(gt), wareName(gt), inv[gt],
+                             wh->getInventorySetting(gt), gt);
+            }
+        } else if(sheetTab == 1)
+        {
+            for(const auto j : helpers::enumRange<Job>())
+            {
+                if(!hiddenJob(world(), j))
+                    storeRow(1000 + rttr::enumCast(j), LOADER.getJobTex(j), jobName(j), inv[j],
+                             wh->getInventorySetting(j), j);
+            }
+        } else
+        {
+            // Soldiers of each rank kept back for defending this store
+            for(unsigned rank = 0; rank < NUM_SOLDIER_RANKS; ++rank)
+            {
+                const Rect2 rr{view.x, ly + static_cast<float>(row++) * rowH, view.w - app.dp(8), rowH};
+                const Job job = SOLDIER_JOBS[rank];
+                head(rr, LOADER.getJobTex(job), jobName(job),
+                     std::to_string(*wh->getReserveAvailablePointer(rank)) + " in Reserve");
+                int claimed = static_cast<int>(wh->getReserveClaimed(rank));
+                const float sw = app.dp(150);
+                if(ui.stepper(id("wh.reserve", rank), {rr.right() - sw, rr.y, sw, app.dp(48)}, claimed, 0, 99, ""))
+                    s.ChangeReserve(sheetPt, static_cast<unsigned char>(rank), static_cast<unsigned>(claimed));
+            }
         }
         ui.endScroll(static_cast<float>(row) * rowH);
         by = c.bottom() - bh;
