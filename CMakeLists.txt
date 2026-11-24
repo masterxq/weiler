@@ -19,6 +19,29 @@ if(WEILER_USE_CCACHE AND CCACHE_PROGRAM)
     set(CMAKE_CXX_COMPILER_LAUNCHER ${_launcher})
 endif()
 
+# Target CPU on arm64: the phone has Cortex-A76 + Cortex-A55 (ARMv8.2-A). The flags are only used when the compiler
+# accepts them; WEILER_ARM_TUNING=OFF keeps the generic ARMv8-A code (any arm64 device).
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
+    option(WEILER_ARM_TUNING "Optimize for ARMv8.2-A (Cortex-A76/A55)" ON)
+    if(WEILER_ARM_TUNING)
+        include(CheckCXXCompilerFlag)
+        set(_arm_candidates "-march=armv8.2-a+fp16+dotprod -mtune=cortex-a76.cortex-a55" "-march=armv8.2-a -mtune=cortex-a76"
+                            "-march=armv8.2-a")
+        foreach(_flags IN LISTS _arm_candidates)
+            string(MAKE_C_IDENTIFIER "WEILER_ARM_${_flags}" _var)
+            set(CMAKE_REQUIRED_FLAGS "${_flags}")
+            check_cxx_compiler_flag("" ${_var})
+            unset(CMAKE_REQUIRED_FLAGS)
+            if(${_var})
+                separate_arguments(_list UNIX_COMMAND "${_flags}")
+                add_compile_options(${_list})
+                message(STATUS "arm64 tuning: ${_flags}")
+                break()
+            endif()
+        endforeach()
+    endif()
+endif()
+
 include(CTest)
 
 add_subdirectory(third_party/rttr)
