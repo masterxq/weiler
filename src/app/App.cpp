@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "App.h"
+#include "Session.h"
 #include "menu/MenuBackdrop.h"
 #include "Music.h"
 #include "CdImport.h"
@@ -211,7 +212,7 @@ int App::run()
             running_ = false;
         while(SDL_PollEvent(&ev))
             handleEvent(ev);
-        frame(dt);
+        frame(dt, frameStart);
         fpsTime += dt;
         ++fpsFrames;
         if(fpsTime >= 0.5)
@@ -231,6 +232,9 @@ int App::run()
     if(screen_)
         screen_->onSuspend();
     settings_->save();
+    Session::waitForSaves();
+    if(thumbnail_.valid())
+        thumbnail_.wait();
     return script_ ? script_->exitCode() : 0;
 }
 
@@ -269,11 +273,10 @@ void App::setHidden(bool hidden)
     }
 }
 
-void App::frame(double dt)
+void App::frame(double dt, std::chrono::steady_clock::time_point workStart)
 {
     using Clock = std::chrono::steady_clock;
     auto msSince = [](Clock::time_point t) { return std::chrono::duration<double, std::milli>(Clock::now() - t).count(); };
-    const auto workStart = Clock::now();
     time_ += dt;
     if(nextScreen_)
     {
@@ -446,17 +449,26 @@ void App::setScreen(std::unique_ptr<Screen> screen)
 
 bool App::saveThumbnail(const std::string& pngPath)
 {
-    std::vector<uint8_t> px;
+    auto px = std::make_shared<std::vector<uint8_t>>();
     int w = 0, h = 0;
-    if(!batch_.readBackdrop(px, w, h))
+    if(!batch_.readBackdrop(*px, w, h))
         return false;
-    SDL_Surface* surf = SDL_CreateSurfaceFrom(w, h, SDL_PIXELFORMAT_ABGR8888, px.data(), w * 4);
-    if(!surf)
-        return false;
-    const bool ok = SDL_SavePNG(surf, pngPath.c_str());
-    SDL_DestroySurface(surf);
-    images_.erase(pngPath);
-    return ok;
+    // PNG encoding takes tens of milliseconds: on a worker thread, written next to the file and renamed
+    if(thumbnail_.valid())
+        thumbnail_.wait();
+    thumbnail_ = std::async(std::launch::async, [px, w, h, pngPath] {
+        SDL_Surface* surf = SDL_CreateSurfaceFrom(w, h, SDL_PIXELFORMAT_ABGR8888, px->data(), w * 4);
+        if(!surf)
+            return false;
+        const std::string tmp = pngPath + ".tmp";
+        bool ok = SDL_SavePNG(surf, tmp.c_str());
+        SDL_DestroySurface(surf);
+        boost::system::error_code ec;
+        if(ok)
+            bfs::rename(tmp, pngPath, ec);
+        return ok && !ec;
+    });
+    return true;
 }
 
 const gfx::Texture* App::imageTexture(const std::string& pngPath)

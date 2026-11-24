@@ -76,6 +76,7 @@ private:
     std::vector<Sample> samples_;
     std::string label_;
     int left_ = 0;
+    bool skipFirst_ = false;
 };
 
 /// Resident memory of the process in MiB (current and peak)

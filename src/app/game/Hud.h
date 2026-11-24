@@ -32,6 +32,8 @@ public:
     void notifyDefeated(unsigned playerId);
     void notifyWinner(unsigned playerId, bool team);
     void flagDestroyed(MapPoint pt);
+    /// Short message at the bottom
+    void toast(const std::string& text);
     void startRoad(MapPoint start, bool water);
     void cancelRoad();
     void startTutorial(bool firstStart = false);

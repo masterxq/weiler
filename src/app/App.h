@@ -12,8 +12,10 @@
 #include "gfx/Text.h"
 #include "ui/Icons.h"
 #include <SDL3/SDL.h>
+#include <chrono>
 #include <deque>
 #include <functional>
+#include <future>
 #include <map>
 #include <memory>
 #include <string>
@@ -119,7 +121,8 @@ private:
     bool initVideo();
     void handleEvent(const SDL_Event& ev);
     void pointer(PointerEvent ev);
-    void frame(double dt);
+    /// One frame; workStart = begin of the frame incl. event handling (measurements)
+    void frame(double dt, std::chrono::steady_clock::time_point workStart);
     void updateSize();
 
     AppOptions opts_;
@@ -143,6 +146,7 @@ private:
         long long stamp = 0;
     };
     std::map<std::string, CachedImage> images_;
+    std::future<bool> thumbnail_;
     std::unique_ptr<TestScript> script_;
     std::deque<std::function<void()>> posted_;
     int fbW_ = 1, fbH_ = 1;

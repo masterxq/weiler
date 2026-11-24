@@ -93,12 +93,22 @@ void Recorder::start(int frames, std::string label)
     gDraws = 0;
     gTerrainRebuilds = 0;
     gActive = true;
+    // The frame that starts the measurement contains the wait for the GPU (glFinish): not counted
+    skipFirst_ = true;
 }
 
 void Recorder::frameDone(double totalMs, double updateMs, double drawMs, double gpuWaitMs, int fbW, int fbH)
 {
     if(left_ <= 0)
         return;
+    if(skipFirst_)
+    {
+        skipFirst_ = false;
+        gPhase.fill(0);
+        gDraws = 0;
+        gGameFrames.clear();
+        return;
+    }
     samples_.push_back({totalMs, updateMs, drawMs, gpuWaitMs, gPhase[static_cast<size_t>(Phase::Sim)],
                         gPhase[static_cast<size_t>(Phase::World)], gPhase[static_cast<size_t>(Phase::Atlas)],
                         gPhase[static_cast<size_t>(Phase::Terrain)], gDraws});

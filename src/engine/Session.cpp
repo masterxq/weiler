@@ -11,6 +11,7 @@
 #include "GamePlayer.h"
 #include "GameSetup.h"
 #include "Savegame.h"
+#include <mutex>
 #include "ViewState.h"
 #include "ai/AIPlayer.h"
 #include "ai/random.h"
@@ -78,6 +79,7 @@ std::unique_ptr<Session> Session::newGame(const NewGameSetup& setup)
 
 std::unique_ptr<Session> Session::loadGame(const bfs::path& path, unsigned seed)
 {
+    waitForSaves();
     auto save = std::make_unique<Savegame>();
     if(!save->load(path, SaveGameDataToLoad::All))
         throw std::runtime_error("Could not load savegame " + path.string());
@@ -187,18 +189,16 @@ void Session::runGF()
     VIEWSTATE.currentGF = getGF();
 }
 
-bool Session::save(const bfs::path& path) const
+namespace {
+std::mutex gSavesMutex;
+std::vector<std::shared_future<bool>> gSaves;
+
+bool writeSave(Savegame& save, const bfs::path& path, const std::string& title)
 {
-    Savegame save;
-    for(const auto& player : game_->world_.getPlayers())
-        save.addPlayer(player);
-    save.ggs = game_->ggs_;
-    save.start_gf = getGF();
     try
     {
-        save.sgd.makeSnapshot(*game_);
         const bfs::path tmp = path.string() + ".tmp";
-        if(!save.save(tmp, title_))
+        if(!save.save(tmp, title))
             return false;
         bfs::rename(tmp, path);
         return true;
@@ -207,6 +207,64 @@ bool Session::save(const bfs::path& path) const
         LOG.write("Error during saving: %1%\n") % e.what();
         return false;
     }
+}
+} // namespace
+
+std::unique_ptr<Savegame> Session::snapshot() const
+{
+    auto save = std::make_unique<Savegame>();
+    for(const auto& player : game_->world_.getPlayers())
+        save->addPlayer(player);
+    save->ggs = game_->ggs_;
+    save->start_gf = getGF();
+    save->sgd.makeSnapshot(*game_);
+    return save;
+}
+
+bool Session::save(const bfs::path& path) const
+{
+    try
+    {
+        auto save = snapshot();
+        return writeSave(*save, path, title_);
+    } catch(const std::exception& e)
+    {
+        LOG.write("Error during saving: %1%\n") % e.what();
+        return false;
+    }
+}
+
+void Session::waitForSaves()
+{
+    std::vector<std::shared_future<bool>> saves;
+    {
+        std::lock_guard<std::mutex> lock(gSavesMutex);
+        saves.swap(gSaves);
+    }
+    for(auto& f : saves)
+        f.wait();
+}
+
+std::shared_future<bool> Session::saveInBackground(const bfs::path& path) const
+{
+    std::shared_ptr<Savegame> save;
+    try
+    {
+        save = snapshot();
+    } catch(const std::exception& e)
+    {
+        LOG.write("Error during saving: %1%\n") % e.what();
+        std::promise<bool> failed;
+        failed.set_value(false);
+        return failed.get_future().share();
+    }
+    // The same file is never written twice at the same time
+    waitForSaves();
+    std::shared_future<bool> f =
+      std::async(std::launch::async, [save, path, title = title_] { return writeSave(*save, path, title); }).share();
+    std::lock_guard<std::mutex> lock(gSavesMutex);
+    gSaves.push_back(f);
+    return f;
 }
 
 AsyncChecksum Session::checksum() const

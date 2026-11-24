@@ -13,11 +13,13 @@
 #include <boost/filesystem/path.hpp>
 #include <deque>
 #include <functional>
+#include <future>
 #include <memory>
 #include <string>
 #include <vector>
 
 class Game;
+class Savegame;
 class GameWorld;
 class AIPlayer;
 class GameInterface;
@@ -58,6 +60,11 @@ public:
     bool isFinished() const;
 
     bool save(const boost::filesystem::path& path) const;
+    /// Save with the slow part (compression, writing) on a worker thread: the game state is copied now, the
+    /// game can continue right away. The future tells whether writing worked.
+    std::shared_future<bool> saveInBackground(const boost::filesystem::path& path) const;
+    /// Wait until all savegames written in the background are complete (before loading or quitting)
+    static void waitForSaves();
     AsyncChecksum checksum() const;
 
     Game& game() { return *game_; }
@@ -92,6 +99,8 @@ private:
     mutable std::vector<LuaMessage> pendingLuaMessages_;
     Session(std::shared_ptr<Game> game, unsigned localPlayer, std::string title);
     void createAIs();
+    /// Copy of the complete game state for a savegame
+    std::unique_ptr<Savegame> snapshot() const;
 
     std::shared_ptr<Game> game_;
     unsigned localPlayer_;

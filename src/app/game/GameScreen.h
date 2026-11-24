@@ -9,6 +9,7 @@
 #include "Session.h"
 #include "gfx/Minimap.h"
 #include "gfx/WorldView.h"
+#include <future>
 #include <memory>
 
 class GameWorldViewer;
@@ -78,6 +79,8 @@ private:
     double accum_ = 0;
     unsigned speedFactor_ = 1;
     bool paused_ = false;
+    /// Savegame being written in the background
+    std::shared_future<bool> saving_;
     double lastAutosave_ = 0;
     MapPoint testFound_ = MapPoint::invalid();
     friend class Hud;

@@ -155,6 +155,13 @@ void GameScreen::runGame(double dt)
 
 void GameScreen::update(double dt)
 {
+    // Result of a savegame written in the background
+    if(saving_.valid() && saving_.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+    {
+        if(!saving_.get())
+            hud_->toast("Speichern fehlgeschlagen");
+        saving_ = {};
+    }
     view_.cam.screenW = app_.width();
     view_.cam.screenH = app_.height();
     runGame(dt);
@@ -204,11 +211,17 @@ void GameScreen::onSuspend()
 
 bool GameScreen::saveTo(const std::string& path)
 {
+    // The game state is copied now; compressing and writing run on a worker thread (no hitch at autosave)
+    const auto t0 = std::chrono::steady_clock::now();
     bfs::create_directories(bfs::path(path).parent_path());
-    if(!session_->save(path))
-        return false;
-    // Picture for the savegame lists
+    saving_ = session_->saveInBackground(path);
+    const auto t1 = std::chrono::steady_clock::now();
+    // Picture for the savegame lists (encoded on a worker thread as well)
     app_.saveThumbnail(bfs::path(path).replace_extension(".png").string());
+    const auto t2 = std::chrono::steady_clock::now();
+    auto ms = [](auto a, auto b) { return static_cast<long>(std::chrono::duration<double, std::milli>(b - a).count()); };
+    std::cout << "[time] save: snapshot " << ms(t0, t1) << " ms, picture " << ms(t1, t2) << " ms on the main thread"
+              << std::endl;
     return true;
 }
 

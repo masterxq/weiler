@@ -1454,6 +1454,11 @@ void Hud::notifyWinner(unsigned playerId, bool team)
     d->openSheet(SheetKind::GameOver);
 }
 
+void Hud::toast(const std::string& text)
+{
+    d->toast(text);
+}
+
 void Hud::flagDestroyed(MapPoint pt)
 {
     if(d->road.active && (d->road.start == pt || d->road.point == pt))
