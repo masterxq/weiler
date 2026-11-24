@@ -99,7 +99,7 @@ public:
 
     /// Replace the current screen at the end of the frame
     void setScreen(std::unique_ptr<Screen> screen);
-    /// Destroy the current screen right away (only from functions run by post)
+    /// Destroy the current screen right away and drop the other posted functions (only from a posted function)
     void closeScreen();
     /// Short message over every screen (errors outside of a game)
     void notify(std::string text);

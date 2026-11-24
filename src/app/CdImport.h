@@ -42,6 +42,7 @@ private:
     std::atomic<bool> running_{false};
     std::atomic<float> progress_{0};
     std::atomic<int> written_{0};
+    std::atomic<bool> cancel_{false};
     std::string error_;
 };
 

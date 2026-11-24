@@ -28,7 +28,7 @@ std::string lower(std::string s)
 
 /// Encode 16 bit stereo PCM (little endian) from a file range into an Ogg Vorbis file
 bool encode(const bfs::path& src, uint64_t begin, uint64_t end, const bfs::path& dst, int number,
-            const std::function<void(float)>& onProgress)
+            const std::function<bool(float)>& onProgress)
 {
     std::ifstream in(src.string(), std::ios::binary);
     if(!in)
@@ -92,7 +92,8 @@ bool encode(const bfs::path& src, uint64_t begin, uint64_t end, const bfs::path&
                 pcm[1][i] = r / 32768.f * 0.63f;
             }
             vorbis_analysis_wrote(&vd, static_cast<int>(frames));
-            onProgress(static_cast<float>(pos - begin) / static_cast<float>(std::max<uint64_t>(1, end - begin)));
+            if(!onProgress(static_cast<float>(pos - begin) / static_cast<float>(std::max<uint64_t>(1, end - begin))))
+                pos = end; // cancelled: finish the stream, the caller discards the file
         }
         while(vorbis_analysis_blockout(&vd, &vb) == 1)
         {
@@ -124,6 +125,8 @@ bool encode(const bfs::path& src, uint64_t begin, uint64_t end, const bfs::path&
 
 CdImport::~CdImport()
 {
+    // Quitting during an import: stop after the current block
+    cancel_ = true;
     if(thread_.joinable())
         thread_.join();
 }
@@ -271,10 +274,13 @@ void CdImport::run(std::vector<Track> tracks, bfs::path outDir)
         const bfs::path dst = outDir / name;
         const bfs::path tmp = outDir / (std::string(name) + ".part");
         const uint64_t len = t.end - t.begin;
+        if(cancel_)
+            break;
         const bool ok = encode(t.file, t.begin, t.end, tmp, n, [&](float f) {
             progress_ = static_cast<float>(done + static_cast<uint64_t>(f * static_cast<float>(len)))
                         / static_cast<float>(std::max<uint64_t>(1, total));
-        });
+            return !cancel_;
+        }) && !cancel_;
         if(ok)
         {
             bfs::rename(tmp, dst, ec);

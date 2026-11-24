@@ -295,7 +295,16 @@ void SpriteAtlas::preload(const std::vector<const ISpriteSource*>& sources)
     std::atomic<size_t> next{0};
     auto work = [&] {
         for(size_t i = next++; i < todo.size(); i = next++)
-            decode(todo[i]);
+        {
+            // An exception must not leave the thread (std::terminate); the sprite stays empty
+            try
+            {
+                decode(todo[i]);
+            } catch(const std::exception&)
+            {
+                todo[i].rgba.clear();
+            }
+        }
     };
     std::vector<std::thread> threads;
     for(unsigned t = 1; t < numThreads; ++t)

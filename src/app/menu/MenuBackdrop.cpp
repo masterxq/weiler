@@ -33,6 +33,8 @@ MenuBackdrop::MenuBackdrop(App& app) : app_(app) {}
 
 MenuBackdrop::~MenuBackdrop()
 {
+    if(creating_.valid())
+        creating_.wait();
     if(gwv_)
         gwv_->setTerrainObserver(nullptr);
     view_.reset();
@@ -40,43 +42,74 @@ MenuBackdrop::~MenuBackdrop()
     session_.reset();
 }
 
-void MenuBackdrop::load()
+bool MenuBackdrop::loadStep()
 {
-    tried_ = true;
-    if(!app_.paths().hasGameData() || !ensureStartFilesLoaded())
-        return;
-    // A few green original maps with villages, water and mountains; the first one found is used, varied by day
-    static const char* const candidates[] = {"DATA/MAPS4/KARTE01.WLD", "DATA/MAPS/MISS205.WLD", "DATA/MAPS4/KARTE05.WLD",
-                                             "DATA/MAPS3/AKARTE01.WLD"};
-    std::vector<bfs::path> maps;
-    for(const char* c : candidates)
-    {
-        const bfs::path p = app_.paths().gameData / c;
-        if(bfs::exists(p))
-            maps.push_back(p);
-    }
-    if(maps.empty())
-        return;
-    const auto day = static_cast<unsigned>(std::time(nullptr) / 86400);
-    const bfs::path map = maps[app_.testMode() ? 0 : day % maps.size()];
+    // One step per frame, so that the menu stays responsive while the world is built. The game world is created on a
+    // worker thread: the menu does not use the core meanwhile (only one session exists).
+    using Clock = std::chrono::steady_clock;
+    if(creating_.valid() && creating_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+        return true;
+    const auto t0 = Clock::now();
+    const int step = loadStep_++;
     try
     {
-        // All players are AI; everything is visible
-        NewGameSetup setup = makeSkirmishSetup(map, 3, 7, AI::Level::Medium, Nation::Romans);
-        setup.ggs.exploration = Exploration::Disabled;
-        auto session = Session::newGame(setup);
-        GameLoader loader(LOADER, session->gamePtr());
-        if(!loader.load())
-            return;
-        app_.atlas().preloadGameSprites();
-        session->toggleLocalAI();
-        session_ = std::move(session);
+        if(creating_.valid())
+            loading_ = creating_.get();
+        switch(step)
+        {
+            case 0:
+            {
+                if(!app_.paths().hasGameData() || !ensureStartFilesLoaded())
+                    return false;
+                // A few green original maps with villages, water and mountains; the first one found is used,
+                // varied by day
+                static const char* const candidates[] = {"DATA/MAPS4/KARTE01.WLD", "DATA/MAPS/MISS205.WLD",
+                                                         "DATA/MAPS4/KARTE05.WLD", "DATA/MAPS3/AKARTE01.WLD"};
+                std::vector<bfs::path> maps;
+                for(const char* c : candidates)
+                {
+                    const bfs::path p = app_.paths().gameData / c;
+                    if(bfs::exists(p))
+                        maps.push_back(p);
+                }
+                if(maps.empty())
+                    return false;
+                const auto day = static_cast<unsigned>(std::time(nullptr) / 86400);
+                const bfs::path map = maps[app_.testMode() ? 0 : day % maps.size()];
+                // All players are AI; everything is visible
+                NewGameSetup setup = makeSkirmishSetup(map, 3, 7, AI::Level::Medium, Nation::Romans);
+                setup.ggs.exploration = Exploration::Disabled;
+                creating_ = std::async(std::launch::async, [setup] { return Session::newGame(setup); });
+                break;
+            }
+            case 1:
+            {
+                GameLoader loader(LOADER, loading_->gamePtr());
+                if(!loader.load())
+                    return false;
+                break;
+            }
+            case 2: app_.atlas().preloadGameSprites(); break;
+            default:
+                loading_->toggleLocalAI();
+                session_ = std::move(loading_);
+                show();
+                return false;
+        }
     } catch(const std::exception& e)
     {
         std::cerr << "Menu background: " << e.what() << std::endl;
-        session_.reset();
-        return;
+        loading_.reset();
+        return false;
     }
+    std::cout << "[time] menu background step " << step << ": "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t0).count() << " ms"
+              << std::endl;
+    return true;
+}
+
+void MenuBackdrop::show()
+{
     GameWorld& world = session_->world();
     gwv_ = std::make_unique<GameWorldViewer>(session_->getPlayerId(), world);
     view_ = std::make_unique<gfx::WorldView>(app_.batch(), app_.atlas());
@@ -94,8 +127,11 @@ void MenuBackdrop::update(double dt)
 {
     ++frames_;
     // Load after the first frames so that the menu appears at once
-    if(!tried_ && frames_ > 2)
-        load();
+    if(loadStep_ > 0 ? (loading_ || creating_.valid()) : frames_ > 2)
+    {
+        if(!loadStep())
+            loading_.reset();
+    }
     if(!session_)
         return;
     t_ += dt;

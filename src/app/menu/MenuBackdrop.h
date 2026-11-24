@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <future>
 #include <memory>
 
 class GameWorldViewer;
@@ -28,13 +29,16 @@ public:
     void draw();
 
 private:
-    void load();
+    /// Next part of building the background world; false when done or failed
+    bool loadStep();
+    void show();
     void drawGradient(float alpha);
     App& app_;
-    std::unique_ptr<Session> session_;
+    std::unique_ptr<Session> session_, loading_;
+    std::future<std::unique_ptr<Session>> creating_;
     std::unique_ptr<GameWorldViewer> gwv_;
     std::unique_ptr<gfx::WorldView> view_;
-    bool tried_ = false;
+    int loadStep_ = 0;
     int frames_ = 0;
     double loadedAt_ = -1, accum_ = 0, t_ = 0;
 };
