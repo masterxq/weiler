@@ -324,6 +324,9 @@ void SerializedGameData::readSnapshot(Game& game, ILocalGameState& localGameStat
     // Sanity check for flag workers. See bug #1449
     for(const auto& entry : readObjects)
     {
+        // Weiler: military buildings sort their soldiers once all objects are complete
+        if(auto* mil = dynamic_cast<nobMilitary*>(entry.second))
+            mil->finishLoading();
         const auto* worker = dynamic_cast<const nofFlagWorker*>(entry.second);
         if(worker && worker->getFlag() && worker->getPlayer() != worker->getFlag()->getPlayer())
         {

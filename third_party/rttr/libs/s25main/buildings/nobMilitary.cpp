@@ -147,6 +147,17 @@ void nobMilitary::DestroyBuilding()
     world->getNotifications().publish(BuildingNote(BuildingNote::Lost, player, pos, bldType_));
 }
 
+void nobMilitary::finishLoading()
+{
+    ordered_troops.insert(loadedOrderedTroops.begin(), loadedOrderedTroops.end());
+    for(auto& soldier : loadedTroops)
+        troops.insert(std::move(soldier));
+    loadedOrderedTroops.clear();
+    loadedOrderedTroops.shrink_to_fit();
+    loadedTroops.clear();
+    loadedTroops.shrink_to_fit();
+}
+
 void nobMilitary::serialize(SerializedGameData& sgd) const
 {
     nobBaseMilitary::serialize(sgd);
@@ -179,9 +190,10 @@ nobMilitary::nobMilitary(SerializedGameData& sgd, const unsigned obj_id)
       size(sgd.popUnsignedChar()), capturing(sgd.popBool()), capturing_soldiers(sgd.popUnsignedInt()),
       gold_order_event(sgd.popEvent()), upgrade_event(sgd.popEvent()), is_regulating_troops(false)
 {
-    sgd.popObjectContainer(ordered_troops, GO_Type::NofPassivesoldier);
+    // Weiler: sorted in finishLoading, the soldiers may be half constructed here
+    sgd.popObjectContainer(loadedOrderedTroops, GO_Type::NofPassivesoldier);
     sgd.popObjectContainer(ordered_coins, GO_Type::Ware);
-    sgd.popObjectContainer(troops, GO_Type::NofPassivesoldier);
+    sgd.popObjectContainer(loadedTroops, GO_Type::NofPassivesoldier);
     sgd.popObjectContainer(far_away_capturers, GO_Type::NofAttacker);
 
     if(sgd.getGameDataVersion() < 10)

@@ -29,6 +29,11 @@ run_headless(h2 --map "${MAP}" --ais 3 --seed 42 --minutes ${MINUTES} --save "${
 if(NOT h1 STREQUAL h2)
     message(FATAL_ERROR "New game not deterministic: ${h1} vs ${h2}")
 endif()
+# Loading restores exactly the saved state
+run_headless(r1 --load "${WORK}/a.sav" --seed 7 --gfs 0)
+if(NOT r1 STREQUAL h1)
+    message(FATAL_ERROR "Savegame round trip changed the game state: ${h1} vs ${r1}")
+endif()
 run_headless(l1 --load "${WORK}/a.sav" --seed 7 --minutes ${MINUTES})
 run_headless(l2 --load "${WORK}/b.sav" --seed 7 --minutes ${MINUTES})
 if(NOT l1 STREQUAL l2)

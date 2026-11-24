@@ -40,6 +40,10 @@ class nobMilitary : public nobBaseMilitary
     using OwnedSortedTroops = boost::container::flat_set<std::unique_ptr<nofPassiveSoldier>, ComparatorSoldiersByRank>;
     using SortedTroops = boost::container::flat_set<nofPassiveSoldier*, ComparatorSoldiersByRank>;
 
+public:
+    /// Weiler: sort the soldiers read from a savegame into the troop sets (all objects are complete now)
+    void finishLoading();
+
 private:
     /// wurde das Gebäude gerade neu gebaut (muss also die Landgrenze beim Eintreffen von einem Soldaten neu berechnet
     /// werden?)
@@ -77,6 +81,10 @@ private:
     /// Soldatenbesatzung
     OwnedSortedTroops troops;
     std::array<uint8_t, NUM_SOLDIER_RANKS> troop_limits;
+    /// Weiler: soldiers read from a savegame. They can still be under construction while this building is read
+    /// (reference cycles), so they are sorted into the troop sets only in finishLoading.
+    std::vector<nofPassiveSoldier*> loadedOrderedTroops;
+    std::vector<std::unique_ptr<nofPassiveSoldier>> loadedTroops;
 
     /// Bestellungen (sowohl Truppen als auch Goldmünzen) zurücknehmen
     void cancelOrders();
