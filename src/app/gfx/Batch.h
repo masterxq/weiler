@@ -73,12 +73,9 @@ public:
     /// Copy of the last captured backdrop (world without interface) at a quarter of the screen size, RGBA top-down.
     /// False if nothing was captured yet.
     bool readBackdrop(std::vector<uint8_t>& rgba, int& w, int& h);
-    /// Forget the captured backdrop (the next glass call captures again)
-    void invalidateBackdrop() { captureFrame_ = 0; }
     /// Quality of the glass: 2 = blur captured every frame, 1 = blur reused for a few frames (moved along with the
     /// camera), 0 = no blur (tinted glass over a dark ground)
     void setGlassQuality(int q) { glassQuality_ = q; }
-    int glassQuality() const { return glassQuality_; }
     /// Camera of the world drawn this frame (lets a reused blur follow pans); call after begin()
     void setWorldCamera(float x, float y, float zoom)
     {
@@ -98,7 +95,6 @@ public:
 
     int width() const { return fbW_; }
     int height() const { return fbH_; }
-    unsigned drawCalls() const { return drawCalls_; }
 
 private:
     struct Vertex
@@ -142,7 +138,6 @@ private:
     size_t vboOffset_ = 0;
     int fbW_ = 1, fbH_ = 1;
     float scale_ = 1.f, tx_ = 0.f, ty_ = 0.f;
-    unsigned drawCalls_ = 0;
 };
 
 } // namespace weiler::gfx

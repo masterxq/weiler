@@ -45,10 +45,6 @@ public:
     /// Optional text drawer for drawText
     std::function<void(float, float, const std::string&, Color)> textDrawer;
 
-    unsigned numPages() const { return layers_; }
-    unsigned numSprites() const { return numSprites_; }
-    /// Sprites created on first use since the last preload (should stay near 0 during a game)
-    unsigned lateSprites() const { return lateSprites_; }
     /// Short description for measurements (pages, sprites, fill)
     std::string describe() const;
 

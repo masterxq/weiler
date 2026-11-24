@@ -13,6 +13,9 @@
 #include "gameTypes/BuildingType.h"
 #include "gameTypes/Direction.h"
 #include "gameTypes/MapCoordinates.h"
+#include "gameTypes/GoodTypes.h"
+#include "gameTypes/JobTypes.h"
+#include "gameTypes/VisualSettings.h"
 #include <deque>
 #include <functional>
 #include <map>
@@ -22,6 +25,8 @@
 
 class GamePlayer;
 class GameWorldBase;
+class ITexture;
+class ISpriteSource;
 class noBase;
 class PostBox;
 
@@ -73,6 +78,29 @@ struct RingItem
     BuildingType bt = BuildingType::Headquarters;
     std::string label;
 };
+
+/// Grid of big menu buttons
+struct Grid
+{
+    ui::Rect2 area;
+    int cols;
+    float h, gap;
+    int n = 0;
+    ui::Rect2 next()
+    {
+        const float w = (area.w - gap * static_cast<float>(cols - 1)) / static_cast<float>(cols);
+        const int c = n % cols, r = n / cols;
+        ++n;
+        return {area.x + static_cast<float>(c) * (w + gap), area.y + static_cast<float>(r) * (h + gap), w, h};
+    }
+};
+
+/// Wares, jobs and buildings of disabled addons (and internal goods) are not shown
+bool hiddenWare(const GameWorldBase& w, GoodType gt);
+bool hiddenJob(const GameWorldBase& w, Job j);
+bool hiddenBuilding(const GameWorldBase& w, BuildingType bt);
+/// Sprite source of a texture of the core (nullptr if it is none)
+const ISpriteSource* src(ITexture* t);
 
 struct Hud::Impl
 {
@@ -229,6 +257,11 @@ struct Hud::Impl
     void sheetFlag(const ui::Rect2& r);
     void sheetMessages(const ui::Rect2& r);
     void sheetStats(const ui::Rect2& r);
+    /// Edited copy of the economy settings (commands take effect one game frame later); refreshed when the
+    /// economy menu is shown
+    VisualSettings edit;
+    bool editValid = false;
+    void ensureEdit();
     void sheetEconomy(const ui::Rect2& r);
     void sheetDistribution(const ui::Rect2& r);
     void sheetTransport(const ui::Rect2& r);

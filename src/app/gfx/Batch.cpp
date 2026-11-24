@@ -205,7 +205,6 @@ void Batch::begin(int fbWidth, int fbHeight)
 {
     fbW_ = fbWidth;
     fbH_ = fbHeight;
-    drawCalls_ = 0;
     backdropValid_ = false;
     backdropPrepared_ = false;
     hasCam_ = false;
@@ -282,7 +281,6 @@ void Batch::flush()
         setAttribs(vboOffset_);
         glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(count / 4 * 6), GL_UNSIGNED_SHORT, nullptr);
         vboOffset_ += (bytes + 255) & ~size_t(255);
-        ++drawCalls_;
         perf::drawCall();
     }
     glBindVertexArray(0);

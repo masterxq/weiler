@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 cmake_minimum_required(VERSION 3.25)
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
 project(weiler VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
