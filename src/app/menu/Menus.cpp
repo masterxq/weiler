@@ -483,6 +483,7 @@ public:
         float y = ui_.beginScroll(id("set.menu"), c);
         const float y0 = y;
         y += drawAudioSettings(app_, c.x, y, c.w - app_.dp(6));
+        y += drawGraphicsSettings(app_, c.x, y, c.w - app_.dp(6));
         y += ui_.textWrapped(c.x, y, c.w - app_.dp(6), "Spieldaten: " + app_.paths().gameData.string(), app_.dp(12),
                              ui_.theme.textFaint);
         contentH_ = y - y0;
@@ -847,6 +848,36 @@ float drawAudioSettings(App& app, float x, float y, float w)
                                         "Liest die Audiospuren deines CD-Abbilds ein; sie bleiben auf diesem Gerät.";
         y += ui.textWrapped(x, y, w, note, app.dp(th.type.caption), th.textFaint) + app.dp(8);
     }
+    return y - y0;
+}
+
+float drawGraphicsSettings(App& app, float x, float y, float w)
+{
+    auto& ui = app.ui();
+    const auto& th = ui.theme;
+    auto& st = app.settings();
+    const float y0 = y;
+    ui.text(x, y, "Glas hinter Menüs", app.dp(th.type.small), th.textDim);
+    int glass = st.getInt("gfx.glass", 1);
+    if(ui.segmented(id("gfx.glass"), {x, y + app.dp(20), w, app.dp(42)}, {"Schlicht", "Sparsam", "Voll"}, glass))
+    {
+        st.setInt("gfx.glass", glass);
+        app.applyGraphicsSettings();
+    }
+    y += app.dp(72);
+    ui.text(x, y, "Bildrate", app.dp(th.type.small), th.textDim);
+    int fps = st.getInt("gfx.fps", 2);
+    if(ui.segmented(id("gfx.fps"), {x, y + app.dp(20), w, app.dp(42)}, {"30", "Voll", "Auto"}, fps))
+    {
+        st.setInt("gfx.fps", fps);
+        app.applyGraphicsSettings();
+    }
+    y += app.dp(68);
+    y += ui.textWrapped(x, y, w,
+                        "Sparsam und Auto schonen den Akku: das Glas wird seltener neu berechnet, Auto zeichnet in "
+                        "ruhigen Momenten 30 Bilder je Sekunde.",
+                        app.dp(th.type.caption), th.textFaint)
+         + app.dp(8);
     return y - y0;
 }
 

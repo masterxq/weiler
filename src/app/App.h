@@ -92,6 +92,9 @@ public:
         overdrawPng_ = std::move(heatmapPng);
     }
 
+    /// Apply the graphics settings (glass quality, frame rate)
+    void applyGraphicsSettings();
+
     /// Replace the current screen at the end of the frame
     void setScreen(std::unique_ptr<Screen> screen);
     void quit() { running_ = false; }
@@ -149,6 +152,15 @@ private:
     bool testMode_ = false;
     float fps_ = 0, frameMs_ = 0;
     perf::Recorder perf_;
+    /// Frame pacing: 0 = 30 fps, 1 = display rate, 2 = display rate after input, 30 fps when idle
+    int fpsMode_ = 2;
+    float refreshRate_ = 60.f;
+    double lastInput_ = 0;
+    /// Window not visible (background, minimized, occluded): no drawing
+    bool hidden_ = false;
+    void setHidden(bool hidden);
+    /// Seconds to wait after a frame (frame pacing); 0 = as fast as the swap interval allows
+    double frameInterval() const;
     int overdrawFrames_ = 0;
     std::string overdrawPng_;
     bool screenTimed_ = false;

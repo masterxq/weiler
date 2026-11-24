@@ -195,10 +195,13 @@ void Ui::elevate(const Rect2& r, float radius, const Theme::Elevation& e, float 
 {
     auto& b = batch();
     const float amb = dp(e.blur) * 1.6f;
+    // The glass drawn on top is opaque when fully shown: the shadow below its inner part is invisible
+    const Rect2 inner = r.inset(radius + dp(1));
+    const Rect2* covered = opacity >= 0.999f && inner.w > 0 && inner.h > 0 ? &inner : nullptr;
     b.shadow({r.x - dp(2), r.y + dp(e.y) * 0.4f, r.w + dp(4), r.h + dp(2)}, radius + dp(4), amb,
-             theme.shadow.withAlpha(e.alpha * 0.45f * opacity));
+             theme.shadow.withAlpha(e.alpha * 0.45f * opacity), covered);
     b.shadow({r.x + dp(1), r.y + dp(e.y), r.w - dp(2), r.h}, radius, dp(e.blur) * 0.6f,
-             theme.shadow.withAlpha(e.alpha * opacity));
+             theme.shadow.withAlpha(e.alpha * opacity), covered);
 }
 
 void Ui::panel(const Rect2& r, float radius, Color tint, float opacity)

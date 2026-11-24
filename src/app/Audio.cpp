@@ -97,6 +97,16 @@ bool Audio::initFile(const std::string& path)
     return true;
 }
 
+void Audio::setSuspended(bool suspended)
+{
+    if(!stream_)
+        return;
+    if(suspended)
+        SDL_PauseAudioStreamDevice(stream_);
+    else
+        SDL_ResumeAudioStreamDevice(stream_);
+}
+
 void Audio::pump(double seconds)
 {
     if(!wav_)

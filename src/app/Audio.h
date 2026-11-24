@@ -54,6 +54,8 @@ public:
     /// File mode: mix the given amount of time
     void pump(double seconds);
     bool active() const { return stream_ != nullptr || wav_ != nullptr; }
+    /// Stop the device while the app is in the background (no mixing, no wake ups)
+    void setSuspended(bool suspended);
 
     std::shared_ptr<void> loadSound(const std::vector<char>& data, const std::string& extension,
                                     SoundType type) override;

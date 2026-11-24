@@ -111,6 +111,11 @@ bool App::initVideo()
 void App::updateSize()
 {
     SDL_GetWindowSizeInPixels(window_, &fbW_, &fbH_);
+    if(const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window_)))
+    {
+        if(mode->refresh_rate > 0)
+            refreshRate_ = mode->refresh_rate;
+    }
     if(opts_.uiScale > 0)
         uiScale_ = opts_.uiScale;
     else
@@ -166,6 +171,7 @@ int App::run()
     audio_->setVolume(Bus::Effects, settings_->getFloat("volume.effects", 0.8f));
     audio_->setVolume(Bus::Music, settings_->getFloat("volume.music", 0.6f));
     audio_->setVolume(Bus::Ui, settings_->getFloat("volume.ui", 0.6f));
+    applyGraphicsSettings();
     music_ = std::make_unique<Music>(*audio_);
     scanMusic();
     ui_->onActivate = [this](int kind) { audio_->playUi(kind == 1 ? UiSound::Toggle : UiSound::Tap); };
@@ -185,18 +191,24 @@ int App::run()
     unsigned fpsFrames = 0;
     while(running_)
     {
+        SDL_Event ev;
+        // In the background: no drawing, no simulation; sleep until something happens
+        while(hidden_ && running_ && !testMode_ && SDL_WaitEvent(&ev))
+        {
+            handleEvent(ev);
+            last = Clock::now();
+        }
+        const auto frameStart = Clock::now();
         double dt;
         if(testMode_)
             dt = 1.0 / 60.0;
         else
         {
-            const auto now = Clock::now();
-            dt = std::min(0.25, std::chrono::duration<double>(now - last).count());
-            last = now;
+            dt = std::min(0.25, std::chrono::duration<double>(frameStart - last).count());
+            last = frameStart;
         }
         if(script_ && !script_->step())
             running_ = false;
-        SDL_Event ev;
         while(SDL_PollEvent(&ev))
             handleEvent(ev);
         frame(dt);
@@ -208,11 +220,53 @@ int App::run()
             fpsTime = 0;
             fpsFrames = 0;
         }
+        // Frame pacing: sleep (never spin) for the rest of the frame interval
+        if(!testMode_)
+        {
+            const double rest = frameInterval() - std::chrono::duration<double>(Clock::now() - frameStart).count();
+            if(rest > 0.0005)
+                SDL_DelayNS(static_cast<Uint64>(rest * 1e9));
+        }
     }
     if(screen_)
         screen_->onSuspend();
     settings_->save();
     return script_ ? script_->exitCode() : 0;
+}
+
+void App::applyGraphicsSettings()
+{
+    batch_.setGlassQuality(std::clamp(settings_->getInt("gfx.glass", 1), 0, 2));
+    fpsMode_ = std::clamp(settings_->getInt("gfx.fps", 2), 0, 2);
+}
+
+double App::frameInterval() const
+{
+    const double display = 1.0 / std::max(20.f, refreshRate_);
+    const bool recentInput = time_ - lastInput_ < 2.0;
+    double interval = 0;
+    if(fpsMode_ == 0 || (fpsMode_ == 2 && !recentInput))
+        interval = 1.0 / 30.0;
+    // Paused game without input: nothing moves, a few frames per second are enough (toasts, clock)
+    if(screen_ && screen_->still() && !recentInput)
+        interval = 1.0 / 10.0;
+    // Without a working swap interval (vsync) never draw faster than the display
+    return std::max(interval, display * 0.9);
+}
+
+void App::setHidden(bool hidden)
+{
+    if(hidden == hidden_)
+        return;
+    hidden_ = hidden;
+    if(audio_)
+        audio_->setSuspended(hidden);
+    if(hidden)
+    {
+        if(screen_)
+            screen_->onSuspend();
+        settings_->save();
+    }
 }
 
 void App::frame(double dt)
@@ -502,18 +556,24 @@ void App::pointer(PointerEvent ev)
 
 void App::handleEvent(const SDL_Event& ev)
 {
+    if((ev.type >= SDL_EVENT_KEY_DOWN && ev.type < SDL_EVENT_JOYSTICK_AXIS_MOTION)
+       || (ev.type >= SDL_EVENT_FINGER_DOWN && ev.type <= SDL_EVENT_FINGER_CANCELED))
+        lastInput_ = time_;
     switch(ev.type)
     {
         case SDL_EVENT_QUIT: running_ = false; break;
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
         case SDL_EVENT_WINDOW_RESIZED:
-        case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED: updateSize(); break;
+        case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
+        case SDL_EVENT_WINDOW_DISPLAY_CHANGED: updateSize(); break;
         case SDL_EVENT_DID_ENTER_BACKGROUND:
         case SDL_EVENT_WINDOW_HIDDEN:
-            if(screen_)
-                screen_->onSuspend();
-            settings_->save();
-            break;
+        case SDL_EVENT_WINDOW_MINIMIZED:
+        case SDL_EVENT_WINDOW_OCCLUDED: setHidden(true); break;
+        case SDL_EVENT_DID_ENTER_FOREGROUND:
+        case SDL_EVENT_WINDOW_SHOWN:
+        case SDL_EVENT_WINDOW_RESTORED:
+        case SDL_EVENT_WINDOW_EXPOSED: setHidden(false); break;
         case SDL_EVENT_FINGER_DOWN:
         case SDL_EVENT_FINGER_MOTION:
         case SDL_EVENT_FINGER_UP:

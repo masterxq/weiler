@@ -963,6 +963,7 @@ void Hud::Impl::sheetSettings(const Rect2& r)
     const float y0 = y;
     auto& st = app.settings();
     y += drawAudioSettings(app, c.x, y, c.w - app.dp(8));
+    y += drawGraphicsSettings(app, c.x, y, c.w - app.dp(8));
     bool birds = AUDIODRIVER.birdsEnabled;
     if(ui.toggle(id("set.birds"), {c.x, y, c.w, app.dp(48)}, birds, "Vogelgezwitscher"))
     {

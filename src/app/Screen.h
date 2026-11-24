@@ -41,6 +41,8 @@ public:
     /// Advance time (seconds of real time)
     virtual void update(double dt) = 0;
     virtual void draw() = 0;
+    /// Nothing moves on its own (paused game): the app may draw at a low rate until the next input
+    virtual bool still() const { return false; }
     /// Name for logs (load times)
     virtual const char* name() const { return "screen"; }
     virtual void onPointer(const PointerEvent& ev) = 0;

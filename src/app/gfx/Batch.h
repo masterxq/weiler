@@ -69,12 +69,27 @@ public:
     /// False if nothing was captured yet.
     bool readBackdrop(std::vector<uint8_t>& rgba, int& w, int& h);
     /// Forget the captured backdrop (the next glass call captures again)
-    void invalidateBackdrop() { backdropValid_ = false; }
+    void invalidateBackdrop() { captureFrame_ = 0; }
+    /// Quality of the glass: 2 = blur captured every frame, 1 = blur reused for a few frames (moved along with the
+    /// camera), 0 = no blur (tinted glass over a dark ground)
+    void setGlassQuality(int q) { glassQuality_ = q; }
+    int glassQuality() const { return glassQuality_; }
+    /// Camera of the world drawn this frame (lets a reused blur follow pans); call after begin()
+    void setWorldCamera(float x, float y, float zoom)
+    {
+        cam_[0] = x, cam_[1] = y, cam_[2] = zoom;
+        hasCam_ = true;
+    }
     void circle(float cx, float cy, float radius, Color c, float stroke = 0.f, float softness = 1.f);
     /// Line with round caps
     void line(float x0, float y0, float x1, float y1, float width, Color c);
-    /// Shadow below a rounded rectangle
-    void shadow(const Rect2& r, float radius, float blur, Color c);
+    /// Shadow below a rounded rectangle; covered = part hidden by an opaque rectangle drawn later (not drawn)
+    void shadow(const Rect2& r, float radius, float blur, Color c, const Rect2* covered = nullptr);
+    /// Rectangle left out of a shape quad (local pixel coordinates relative to the shape center, before scaling)
+    struct Hole
+    {
+        float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    };
 
     int width() const { return fbW_; }
     int height() const { return fbH_; }
@@ -91,12 +106,13 @@ private:
     void push(GLuint tex, const Vertex (&v)[4]);
     void setAttribs(size_t offset);
     void shapeQuad(float cx, float cy, float hx, float hy, float ux, float uy, float extent, float radius, Color c,
-                   float softness, float stroke, Color c2 = {0, 0, 0, -1}, float kind = 2.f);
+                   float softness, float stroke, Color c2 = {0, 0, 0, -1}, float kind = 2.f, const Hole* hole = nullptr);
     void captureBackdrop();
+    void prepareBackdrop();
     void initBlur();
 
-    GLuint program_ = 0, vao_ = 0, vbo_ = 0, ibo_ = 0, whiteTex_ = 0;
-    GLint uScreen_ = -1, uBackdrop_ = -1, uOverdraw_ = -1;
+    GLuint program_ = 0, vao_ = 0, vbo_ = 0, ibo_ = 0, whiteTex_ = 0, glassGround_ = 0;
+    GLint uScreen_ = -1, uBackdrop_ = -1, uOverdraw_ = -1, uBackdropShift_ = -1;
     // Backdrop blur: chain of half size render targets, the last one is blurred in two passes
     struct Target
     {
@@ -106,7 +122,14 @@ private:
     Target down_[3], blurTmp_;
     GLuint blurProgram_ = 0, blurVao_ = 0;
     GLint uBlurDir_ = -1, uBlurTex_ = -1;
-    bool backdropValid_ = false;
+    bool backdropValid_ = false, backdropPrepared_ = false;
+    /// Reuse of the blurred backdrop: frame counter, frame/camera/size of the last capture
+    unsigned frameNo_ = 0, captureFrame_ = 0;
+    int glassQuality_ = 1;
+    float cam_[3] = {0, 0, 1}, capCam_[3] = {0, 0, 1};
+    bool hasCam_ = false, capHasCam_ = false;
+    int capW_ = 0, capH_ = 0;
+    float shiftX_ = 0, shiftY_ = 0;
     Rect2 clip_;
     std::vector<Vertex> vertices_;
     GLuint curTex_ = 0;

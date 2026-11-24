@@ -43,6 +43,7 @@ uniform sampler2D uBackdrop;
 uniform mediump sampler2DArray uAtlas;
 uniform vec2 uScreen;
 uniform float uOverdraw;
+uniform vec2 uBackdropShift;
 in vec2 vUv;
 in vec4 vColor;
 in vec4 vShape;
@@ -67,7 +68,7 @@ void main()
         // Frosted glass: blurred backdrop, slightly desaturated and darkened, tinted, with a little grain
         float d = sdRoundBox(vUv, vShape.xy, vShape.z);
         float a = clamp(0.5 - d / max(vShape.w, 0.001), 0.0, 1.0);
-        vec3 b = texture(uBackdrop, gl_FragCoord.xy / uScreen).rgb;
+        vec3 b = texture(uBackdrop, (gl_FragCoord.xy + uBackdropShift) / uScreen).rgb;
         float l = dot(b, vec3(0.299, 0.587, 0.114));
         b = mix(vec3(l), b, 0.6) * 0.85;
         float n = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
@@ -127,6 +128,7 @@ Batch::~Batch()
         glDeleteBuffers(1, &ibo_);
         glDeleteVertexArrays(1, &vao_);
         glDeleteTextures(1, &whiteTex_);
+        glDeleteTextures(1, &glassGround_);
     }
     for(Target* t : {&down_[0], &down_[1], &down_[2], &blurTmp_})
     {
@@ -149,6 +151,7 @@ void Batch::init()
     uScreen_ = glGetUniformLocation(program_, "uScreen");
     uBackdrop_ = glGetUniformLocation(program_, "uBackdrop");
     uOverdraw_ = glGetUniformLocation(program_, "uOverdraw");
+    uBackdropShift_ = glGetUniformLocation(program_, "uBackdropShift");
     glUseProgram(program_);
     glUniform1i(glGetUniformLocation(program_, "uTex"), 0);
     glUniform1i(uBackdrop_, 1);
@@ -180,6 +183,13 @@ void Batch::init()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     vertices_.reserve(MAX_QUADS * 4);
+    // Ground of the glass without blur: a dark warm tone close to the average blurred world
+    const uint32_t ground = 0xFF2A3238u; // ABGR: r 0x38, g 0x32, b 0x2A
+    glGenTextures(1, &glassGround_);
+    glBindTexture(GL_TEXTURE_2D, glassGround_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, &ground);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 }
 
 void Batch::begin(int fbWidth, int fbHeight)
@@ -188,6 +198,9 @@ void Batch::begin(int fbWidth, int fbHeight)
     fbH_ = fbHeight;
     drawCalls_ = 0;
     backdropValid_ = false;
+    backdropPrepared_ = false;
+    hasCam_ = false;
+    ++frameNo_;
     clip_ = {};
     resetTransform();
     glViewport(0, 0, fbW_, fbH_);
@@ -228,11 +241,12 @@ void Batch::flush()
     glUseProgram(program_);
     glUniform2f(uScreen_, static_cast<float>(fbW_), static_cast<float>(fbH_));
     glUniform1f(uOverdraw_, gOverdraw);
+    glUniform2f(uBackdropShift_, shiftX_, shiftY_);
     glBindVertexArray(vao_);
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D_ARRAY, atlasTex_);
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, backdropValid_ ? down_[2].tex : whiteTex_);
+    glBindTexture(GL_TEXTURE_2D, backdropValid_ ? down_[2].tex : glassGround_);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, curTex_ ? curTex_ : whiteTex_);
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
@@ -313,58 +327,139 @@ void Batch::atlasQuad(float layer, float x0, float y0, float x1, float y1, float
 }
 
 void Batch::shapeQuad(float cx, float cy, float hx, float hy, float ux, float uy, float extent, float radius, Color c,
-                      float softness, float stroke, Color c2, float kind)
+                      float softness, float stroke, Color c2, float kind, const Hole* hole)
 {
     // Quad around the shape, enlarged by extent (anti aliasing / shadow blur), axis (ux,uy) = local x direction
     cx = cx * scale_ + tx_;
     cy = cy * scale_ + ty_;
     const float ex = hx + extent, ey = hy + extent;
     const float vx = -uy, vy = ux;
-    const uint32_t col = c.packed();
     // Vertical gradient: extrapolate the colors to the enlarged quad so that top/bottom of the shape match
-    uint32_t colTop = col, colBottom = col;
+    Color colTop = c, colBottom = c;
+    auto lerp = [](Color a, Color b, float t) {
+        return Color{a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t};
+    };
     if(c2.a >= 0)
     {
         const float k = hy > 0 ? extent / (2 * hy) : 0;
-        auto lerp = [](Color a, Color b, float t) {
-            return Color{a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t};
-        };
         auto sat = [](Color x) {
             auto c01 = [](float v) { return std::min(1.f, std::max(0.f, v)); };
             return Color{c01(x.r), c01(x.g), c01(x.b), c01(x.a)};
         };
-        colTop = sat(lerp(c, c2, -k)).packed();
-        colBottom = sat(lerp(c, c2, 1 + k)).packed();
+        colTop = sat(lerp(c, c2, -k));
+        colBottom = sat(lerp(c, c2, 1 + k));
     }
+    const uint32_t top = colTop.packed(), bottom = colBottom.packed();
     auto mk = [&](float lx, float ly) {
-        return Vertex{cx + ux * lx + vx * ly, cy + uy * lx + vy * ly, lx, ly, ly < 0 ? colTop : colBottom, hx, hy,
-                      radius, softness, stroke, kind};
+        // Inner vertices (holes): the color the full quad would interpolate there (premultiplied interpolation)
+        uint32_t col = top;
+        if(ly >= ey)
+            col = bottom;
+        else if(ly > -ey && top != bottom)
+        {
+            const float t = (ly + ey) / (2 * ey);
+            const Color pt{colTop.r * colTop.a, colTop.g * colTop.a, colTop.b * colTop.a, colTop.a};
+            const Color pb{colBottom.r * colBottom.a, colBottom.g * colBottom.a, colBottom.b * colBottom.a, colBottom.a};
+            const Color p = lerp(pt, pb, t);
+            col = (p.a > 0 ? Color{p.r / p.a, p.g / p.a, p.b / p.a, p.a} : Color{0, 0, 0, 0}).packed();
+        }
+        return Vertex{cx + ux * lx + vx * ly, cy + uy * lx + vy * ly, lx, ly, col, hx, hy, radius, softness, stroke, kind};
     };
-    const Vertex v[4] = {mk(-ex, -ey), mk(ex, -ey), mk(-ex, ey), mk(ex, ey)};
-    push(0, v);
+    auto rect = [&](float x0, float y0, float x1, float y1) {
+        if(x1 <= x0 || y1 <= y0)
+            return;
+        const Vertex v[4] = {mk(x0, y0), mk(x1, y0), mk(x0, y1), mk(x1, y1)};
+        push(0, v);
+    };
+    // A hole that is invisible anyway (inside a stroke, below an opaque panel) is left out: saves fill rate
+    if(hole)
+    {
+        const float hx0 = std::max(hole->x0 * scale_, -ex), hx1 = std::min(hole->x1 * scale_, ex);
+        const float hy0 = std::max(hole->y0 * scale_, -ey), hy1 = std::min(hole->y1 * scale_, ey);
+        if(hx1 - hx0 > 8 && hy1 - hy0 > 8)
+        {
+            rect(-ex, -ey, ex, hy0);
+            rect(-ex, hy1, ex, ey);
+            rect(-ex, hy0, hx0, hy1);
+            rect(hx1, hy0, ex, hy1);
+            return;
+        }
+    }
+    rect(-ex, -ey, ex, ey);
 }
+
+namespace {
+/// Inside of a stroked rounded rectangle that the stroke does not touch (local coordinates, unscaled)
+bool strokeHole(const Rect2& r, float radius, float softness, float stroke, Batch::Hole& h)
+{
+    if(stroke <= 0)
+        return false;
+    const float in = std::max(radius, stroke) + softness + 2;
+    h = {-r.w / 2 + in, -r.h / 2 + in, r.w / 2 - in, r.h / 2 - in};
+    return h.x1 > h.x0 && h.y1 > h.y0;
+}
+} // namespace
 
 void Batch::roundRect(const Rect2& r, float radius, Color c, float softness, float stroke)
 {
     const float s = scale_;
+    Hole h;
+    const bool hole = strokeHole(r, radius, softness / s, stroke, h);
     shapeQuad(r.x + r.w / 2, r.y + r.h / 2, r.w / 2 * s, r.h / 2 * s, 1, 0, softness + 1, radius * s, c, softness,
-              stroke * s);
+              stroke * s, {0, 0, 0, -1}, 2.f, hole ? &h : nullptr);
 }
 
 void Batch::roundRectV(const Rect2& r, float radius, Color top, Color bottom, float softness, float stroke)
 {
     const float s = scale_;
+    Hole h;
+    const bool hole = strokeHole(r, radius, softness / s, stroke, h);
     shapeQuad(r.x + r.w / 2, r.y + r.h / 2, r.w / 2 * s, r.h / 2 * s, 1, 0, softness + 1, radius * s, top, softness,
-              stroke * s, bottom);
+              stroke * s, bottom, 2.f, hole ? &h : nullptr);
 }
 
 void Batch::glass(const Rect2& r, float radius, Color tint, float opacity)
 {
-    if(!backdropValid_)
-        captureBackdrop();
+    if(!backdropPrepared_)
+        prepareBackdrop();
     const float s = scale_;
     shapeQuad(r.x + r.w / 2, r.y + r.h / 2, r.w / 2 * s, r.h / 2 * s, 1, 0, 2, radius * s, tint, 1.f, opacity,
               {0, 0, 0, -1}, static_cast<float>(KindGlass));
+}
+
+void Batch::prepareBackdrop()
+{
+    flush();
+    backdropPrepared_ = true;
+    backdropValid_ = true;
+    shiftX_ = shiftY_ = 0;
+    if(glassQuality_ <= 0)
+    {
+        // No blur: the glass shows a dark ground (1x1 texture)
+        backdropValid_ = false;
+        return;
+    }
+    // Reuse the blur of a recent frame when the view did not change much: saves the copy of the frame (splits the
+    // render pass on tiling GPUs) and the blur passes. Pans move the old picture along.
+    constexpr unsigned REUSE_FRAMES = 4;
+    bool reuse = glassQuality_ == 1 && captureFrame_ && frameNo_ - captureFrame_ < REUSE_FRAMES && capW_ == fbW_
+                 && capH_ == fbH_ && hasCam_ == capHasCam_;
+    if(reuse && hasCam_)
+    {
+        const float zoom = cam_[2];
+        shiftX_ = (cam_[0] - capCam_[0]) * zoom;
+        shiftY_ = -(cam_[1] - capCam_[1]) * zoom;
+        reuse = cam_[2] == capCam_[2] && std::abs(shiftX_) < fbW_ / 8.f && std::abs(shiftY_) < fbH_ / 8.f;
+    }
+    if(reuse)
+        return;
+    shiftX_ = shiftY_ = 0;
+    captureBackdrop();
+    captureFrame_ = frameNo_;
+    capW_ = fbW_;
+    capH_ = fbH_;
+    capHasCam_ = hasCam_;
+    std::copy(std::begin(cam_), std::end(cam_), std::begin(capCam_));
 }
 
 void Batch::initBlur()
@@ -449,7 +544,6 @@ void Batch::captureBackdrop()
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     if(clip_.w > 0 && clip_.h > 0)
         glEnable(GL_SCISSOR_TEST);
-    backdropValid_ = true;
 }
 
 bool Batch::readBackdrop(std::vector<uint8_t>& rgba, int& w, int& h)
@@ -474,9 +568,18 @@ bool Batch::readBackdrop(std::vector<uint8_t>& rgba, int& w, int& h)
     return true;
 }
 
-void Batch::shadow(const Rect2& r, float radius, float blur, Color c)
+void Batch::shadow(const Rect2& r, float radius, float blur, Color c, const Rect2* covered)
 {
-    roundRect(r, radius, c, blur);
+    if(!covered)
+    {
+        roundRect(r, radius, c, blur);
+        return;
+    }
+    // The part below an opaque rectangle is not drawn
+    const float cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+    const Hole h{covered->x - cx, covered->y - cy, covered->right() - cx, covered->bottom() - cy};
+    const float s = scale_;
+    shapeQuad(cx, cy, r.w / 2 * s, r.h / 2 * s, 1, 0, blur + 1, radius * s, c, blur, 0.f, {0, 0, 0, -1}, 2.f, &h);
 }
 
 void Batch::circle(float cx, float cy, float radius, Color c, float stroke, float softness)

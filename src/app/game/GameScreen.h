@@ -27,6 +27,7 @@ public:
     void update(double dt) override;
     void draw() override;
     const char* name() const override { return "game"; }
+    bool still() const override { return paused_; }
     void onPointer(const PointerEvent& ev) override;
     void onWheel(float x, float y, float delta) override;
     void onKey(SDL_Keycode key, bool down) override;

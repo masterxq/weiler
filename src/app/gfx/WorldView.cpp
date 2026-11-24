@@ -130,6 +130,7 @@ void WorldView::draw(unsigned timeMs)
     if(!gwv_)
         return;
     batch_.flush();
+    batch_.setWorldCamera(cam.x, cam.y, cam.zoom);
     terrain_.draw(cam, timeMs);
 
     const GameWorldBase& world = gwv_->getWorld();

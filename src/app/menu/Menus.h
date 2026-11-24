@@ -22,6 +22,8 @@ void startTutorialGame(App& app, bool firstStart = false);
 std::string reflowText(const std::string& text);
 /// Volume sliders and music choice (menu settings and in-game settings sheet); returns the height used
 float drawAudioSettings(App& app, float x, float y, float w);
+/// Graphics settings (glass effect, frame rate); returns the height used
+float drawGraphicsSettings(App& app, float x, float y, float w);
 /// Second line of a savegame entry: date, map and played time (cached per file version)
 std::string saveDescription(const boost::filesystem::path& path);
 NewGameSetup makeSkirmishSetup(const boost::filesystem::path& map, unsigned numAIs, unsigned seed, AI::Level level,
