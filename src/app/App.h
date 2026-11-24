@@ -162,6 +162,7 @@ private:
     double lastInput_ = 0;
     /// Window not visible (background, minimized, occluded): no drawing
     bool hidden_ = false;
+    bool pacedTest_ = false;
     void setHidden(bool hidden);
     /// Seconds to wait after a frame (frame pacing); 0 = as fast as the swap interval allows
     double frameInterval() const;

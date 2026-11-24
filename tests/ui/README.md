@@ -23,4 +23,10 @@ sheets without a long game, e.g. on `DATA/MAPS/MISS203.WLD`), `game gameover win
 With `WEILER_AUDIO_WAV=<file.wav>` the test mode writes the audio mix (music, effects, interface sounds) into a WAV
 file instead of playing it.
 
+Measurements: `perf <frames> [label]` measures the next frames and prints `[perf]` (frame time mean and percentiles,
+simulation/world/interface time, GPU wait, draw calls, game frame times, memory, atlas); `perfasync` measures while
+the following commands run (gestures); `overdraw [heatmap.png]` prints the shaded fragments per pixel of the next
+frame; `game speed <1..8>` sets the game speed. Load times are printed as `[time]` lines. Frame pacing (sleeping
+between frames) is off in the test mode unless `WEILER_TEST_PACING=1` is set.
+
 Failures are printed as `[script] FAIL`, the exit code is 4 then. Commands are listed in `src/app/TestScript.h`.

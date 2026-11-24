@@ -37,6 +37,7 @@ namespace weiler {
 App::App(AppOptions opts) : opts_(std::move(opts)), paths_(DataPaths::detect(opts_.dataDir))
 {
     testMode_ = !opts_.script.empty();
+    pacedTest_ = std::getenv("WEILER_TEST_PACING") != nullptr;
 }
 
 App::~App()
@@ -221,8 +222,9 @@ int App::run()
             fpsTime = 0;
             fpsFrames = 0;
         }
-        // Frame pacing: sleep (never spin) for the rest of the frame interval
-        if(!testMode_)
+        // Frame pacing: sleep (never spin) for the rest of the frame interval (test mode: only on request, for
+        // measuring the power saving)
+        if(!testMode_ || pacedTest_)
         {
             const double rest = frameInterval() - std::chrono::duration<double>(Clock::now() - frameStart).count();
             if(rest > 0.0005)
