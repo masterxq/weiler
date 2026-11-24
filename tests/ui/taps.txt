@@ -1,0 +1,33 @@
+wait 10
+log [taps] build and connect: 2
+game findbq small hq min=4
+tap found:
+wait 15
+tap ui:ring:Holzfäller
+wait 10
+game expect connected found
+shot shots/k_build.png
+log [taps] stop production: 2
+game ff 5000
+game center bld:Holzfäller
+wait 3
+tap bld:Holzfäller
+wait 15
+tap ui:Produktion
+wait 5
+shot shots/k_prod.png
+key Escape
+wait 5
+log [taps] tear down a site without material: 2
+game findbq small hq min=3
+tap found:
+wait 15
+tap ui:ring:Förster
+wait 10
+tap found:
+wait 15
+tap ui:Abreißen
+wait 5
+game ff 20
+game expect nothing found
+quit

@@ -23,7 +23,8 @@ class App;
 ///   perfasync [frames] [label] (measure while the next commands run) | overdraw [heatmap.png] |
 ///   failshots <dir> | game <screen command> [args]
 /// Game screen commands: ff <gf> | speed <1..8> | center hq|found|ship|mil|bld:<name>|x,y | zoom <z> | findbq <flag|small|medium|large|mine>
-///   [from=hq|found|enemy] [min=<n>] [mil] [near=tree|granite|water|mountain] | findenemy | dump [mine] | node x,y
+///   [from=hq|found|enemy] [min=<n>] [mil] [near=tree|granite|water|mountain] | findenemy | dump [mine] | node x,y |
+///   expect connected|nothing found | gameover win|lose|team <mask>
 /// Instead of "x y" a symbolic point can be given: ui:<label>[#n] (button label, spaces as '_', trailing '*' for a
 /// prefix, icon buttons as ui:icon:Name) or a point the current screen knows (game: node:x,y, hq:dx,dy,
 /// bld:<name>[#n], mil: = own military building with the most soldiers, ...).

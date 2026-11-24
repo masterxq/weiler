@@ -586,10 +586,16 @@ void Hud::Impl::sheetBuilding(const Rect2& r)
         if(ui.button(id("bld.destroy"), dr, "Abreißen", Icon::Trash, Style::Danger))
         {
             const MapPoint pt = sheetPt;
-            confirm(std::string(buildingName(bt)) + " abreißen?", [this, pt] {
+            auto destroy = [this, pt] {
                 game.session().DestroyBuilding(pt);
                 closeSheet();
-            });
+            };
+            // A building site without any delivered material costs nothing: no question
+            const auto* site = isSite ? static_cast<const noBuildingSite*>(obj) : nullptr;
+            if(site && site->getBoards() + site->getUsedBoards() + site->getStones() + site->getUsedStones() == 0)
+                destroy();
+            else
+                confirm(std::string(buildingName(bt)) + " abreißen?", destroy);
         }
         if(!isStore)
         {
@@ -1016,6 +1022,8 @@ void Hud::Impl::sheetHelp(const Rect2& r)
       {"Angriff", "Feindliches Militärgebäude antippen, Anzahl der Soldaten wählen, Angreifen."},
       {"Schiffe", "Eigenes Schiff antippen: Expeditionen steuern, Kolonie gründen."},
       {"Gebäude", "Antippen öffnet Details: Produktion, Soldaten, Lager, Abriss."},
+      {"Meldungen", "Eine Meldung antippen springt zum Ort. Der Haus-Knopf springt zuerst zur neuesten Meldung, "
+                    "dann reihum zu Hauptquartier und Lagerhäusern. Im Postbuch filtern und löschen."},
       {"Infos", "Lange drücken zeigt, was an einer Stelle ist."},
       {"Tastatur", "Leertaste Pause, +/- Tempo, F5/F9 Schnellspeichern/-laden, B Bauplätze, M Karte, "
                    "H Hauptquartier, N Nachrichten, P Gebäudenamen."},

@@ -786,6 +786,29 @@ bool GameScreen::testCommand(const std::string& cmd, const std::vector<std::stri
         std::cout << std::endl;
         return true;
     }
+    if(cmd == "expect")
+    {
+        // expect connected found: the flag of the building at "found" has a road; expect nothing found: no building
+        // or site at "found" any more
+        const MapPoint at = testFound_;
+        if(!at.isValid())
+            return false;
+        const noBase* obj = world.getNO(at);
+        bool ok = false;
+        if(arg(0) == "nothing")
+            ok = !obj || (obj->getType() != NodalObjectType::Building && obj->getType() != NodalObjectType::Buildingsite);
+        else if(arg(0) == "connected")
+        {
+            const MapPoint flag = world.getNeighbour(at, Direction::SouthEast);
+            for(const auto dir : helpers::EnumRange<Direction>{})
+            {
+                if(dir != Direction::NorthWest && world.getPointRoad(flag, dir) != PointRoad::None)
+                    ok = true;
+            }
+        }
+        std::cout << "[script] expect " << arg(0) << " " << arg(1) << ": " << (ok ? "ok" : "no") << std::endl;
+        return ok;
+    }
     if(cmd == "dump")
     {
         std::cout << "[script] GF " << session_->getGF() << " time " << session_->formatGFTime(session_->getGF())

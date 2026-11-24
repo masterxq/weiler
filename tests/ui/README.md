@@ -12,6 +12,7 @@ working folder that contains a `shots/` directory, with a separate user data fol
 |--------|-------|--------|
 | `tut.txt` | first start (empty user data) | introduction steps |
 | `sheets.txt`, `misc.txt`, `build.txt` | `--map DATA/MAPS4/KARTE01.WLD --ais 1` | ring, road, sheets, pause, speed, back gesture |
+| `taps.txt` | as above | taps of frequent actions (build and connect, stop production, tear down a site) |
 | `save.txt` | as above | save slots, quick save/load |
 | `camp.txt` | main menu | campaign missions |
 | `land.txt` | main menu, `--size 2400x1080` or `1920x1080` | landscape layout |
@@ -21,7 +22,8 @@ working folder that contains a `shots/` directory, with a separate user data fol
 | `genlong.py` | writes a long game script: `python3 genlong.py long.txt` | economy, military, attack |
 
 Test hooks of the game screen: `game seafaring` places a harbor with wares and a ship next to it (ship and expedition
-sheets without a long game, e.g. on `DATA/MAPS/MISS203.WLD`), `game gameover win|lose|team <mask>` shows the end of game sheet (team: bit mask of the winning players).
+sheets without a long game, e.g. on `DATA/MAPS/MISS203.WLD`), `game gameover win|lose|team <mask>` shows the end of game sheet (team: bit mask of the winning players),
+`game expect connected|nothing found` checks the building placed at `found:` (its flag has a road / it is gone).
 With `WEILER_AUDIO_WAV=<file.wav>` the test mode writes the audio mix (music, effects, interface sounds) into a WAV
 file instead of playing it.
 

@@ -204,6 +204,7 @@ struct Hud::Impl
     PostBox* observedBox = nullptr;
     MapPoint lastMessagePos;
     bool hasLastMessagePos = false;
+    bool lastMessageFresh = false; // not yet visited with the home button
     unsigned jumpIndex = 0;
     int msgBadge = 0;
     bool roadFromDrag = false;

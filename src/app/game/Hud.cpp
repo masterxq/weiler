@@ -405,6 +405,12 @@ void Hud::Impl::openRingAt(MapPoint pt)
         } else
         {
             ring.items.push_back({RingItem::Kind::Flag, BuildingType::Headquarters, "Flagge"});
+            // On an own road: also the road actions (as on road nodes without room for a flag)
+            if(gwv.isOnRoad(pt) && world().getNode(pt).owner == me + 1)
+            {
+                ring.items.push_back({RingItem::Kind::DestroyRoad, BuildingType::Headquarters, "Abreißen"});
+                ring.items.push_back({RingItem::Kind::UpgradeRoad, BuildingType::Headquarters, "Eselstraße"});
+            }
             if(bq != BuildingQuality::Flag)
             {
                 const std::vector<BuildingType> fitting = fittingBuildings(*this, pt);
@@ -958,7 +964,8 @@ void Hud::Impl::drawTools()
     y += s + gap;
     if(ui.iconButton(id("tool.home"), {x, y, s, s}, Icon::Home))
     {
-        // Cycle: headquarters / warehouses / last message
+        // A new message with a place comes first (one tap to the event), then the cycle headquarters /
+        // warehouses / last message
         std::vector<MapPoint> targets;
         for(const auto* wh : player().getBuildingRegister().getStorehouses())
             targets.push_back(wh->getPos());
@@ -966,7 +973,12 @@ void Hud::Impl::drawTools()
             targets.push_back(lastMessagePos);
         if(targets.empty())
             targets.push_back(player().getHQPos());
-        jumpIndex = (jumpIndex + 1) % targets.size();
+        if(lastMessageFresh)
+        {
+            lastMessageFresh = false;
+            jumpIndex = static_cast<unsigned>(targets.size()) - 1;
+        } else
+            jumpIndex = (jumpIndex + 1) % targets.size();
         game.jumpTo(targets[jumpIndex]);
     }
 }
@@ -1093,6 +1105,7 @@ void Hud::Impl::checkMessages()
         {
             lastMessagePos = msg.getPos();
             hasLastMessagePos = true;
+            lastMessageFresh = true;
         }
         ++msgBadge;
     });

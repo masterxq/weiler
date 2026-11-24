@@ -12,6 +12,10 @@ shot shots/a2.png
 game ff 3000
 game dump
 shot shots/a3.png
+log [taps] jump to the newest event: 1
+tap ui:icon:Home
+wait 10
+shot shots/a_event.png
 key Escape
 wait 5
 tap ui:icon:Mail
