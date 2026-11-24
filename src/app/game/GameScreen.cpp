@@ -127,25 +127,27 @@ void GameScreen::runGame(double dt)
     if(!paused_ && !session_->isFinished())
     {
         accum_ += dt;
-        // Never more than 50 ms of simulation work per frame; drop time if we cannot keep up
-        const auto start = std::chrono::steady_clock::now();
+        // Simulation budget per frame: a slow game frame (AI planning) delays the following ones to the next
+        // frames instead of stalling this one; the game catches up when there is time. More than a quarter
+        // second behind: drop time (the device is too slow for this speed).
+        const auto budget = std::chrono::milliseconds(6);
         perf::Scope timeSim(perf::Phase::Sim);
+        const auto start = std::chrono::steady_clock::now();
         while(accum_ >= gfLen)
         {
             const auto gfStart = std::chrono::steady_clock::now();
             session_->runGF();
-            perf::gameFrame(
-              std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - gfStart).count());
+            const auto gfEnd = std::chrono::steady_clock::now();
+            perf::gameFrame(std::chrono::duration<double, std::milli>(gfEnd - gfStart).count());
             accum_ -= gfLen;
-            if(std::chrono::steady_clock::now() - start > std::chrono::milliseconds(50))
-            {
-                accum_ = std::min(accum_, gfLen);
+            if(gfEnd - start > budget)
                 break;
-            }
         }
+        accum_ = std::min(accum_, std::max(gfLen, 0.25));
     }
     VIEWSTATE.gfLength = std::chrono::milliseconds(std::max<long>(1, std::lround(gfLen * 1000)));
-    VIEWSTATE.frameTime = std::chrono::milliseconds(std::lround(accum_ * 1000));
+    // Interpolation within the current game frame (a backlog would extrapolate figures beyond their target)
+    VIEWSTATE.frameTime = std::chrono::milliseconds(std::lround(std::min(accum_, gfLen) * 1000));
     // Global animations (trees, flags) follow the clock; the test mode uses its own clock (reproducible pictures)
     const auto now = app_.testMode() ? ViewState::Clock::time_point(std::chrono::milliseconds(app_.timeMs())) :
                                        ViewState::Clock::now();
