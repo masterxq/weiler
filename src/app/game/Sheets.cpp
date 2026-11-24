@@ -63,22 +63,29 @@ bool gEditValid = false;
 
 Rect2 Hud::Impl::sheetHeader(const Rect2& r, const std::string& title, Icon ic)
 {
-    const float pad = app.dp(16);
-    const float h = app.dp(56);
+    const auto& th = ui.theme;
+    const float pad = app.dp(th.space.xl) - app.dp(4);
+    const float top = landscape() ? app.dp(6) : app.dp(14);
+    const float h = app.dp(58);
     float tx = r.x + pad;
     if(ic != Icon::None)
     {
-        ui.icon(ic, tx + app.dp(12), r.y + h / 2, app.dp(24), ui.theme.accent);
-        tx += app.dp(34);
+        const float d = app.dp(38);
+        const float cx = tx + d / 2, cy = r.y + top + h / 2;
+        app.batch().circle(cx, cy, d / 2, th.accentSoft);
+        ui.icon(ic, cx, cy, app.dp(20), th.accent);
+        tx += d + app.dp(12);
     }
-    ui.text(tx, r.y + (h - app.dp(21) * 1.3f) / 2, title, app.dp(21), ui.theme.text, gfx::Align::Left, true);
+    const float fs = app.dp(th.type.title);
+    ui.heading(tx, r.y + top + (h - fs * 1.3f) / 2, title, fs, th.text);
     const float bs = app.dp(44);
     const Icon closeIcon = sheetStack.empty() ? Icon::Close : Icon::Back;
-    if(ui.iconButton(id("sheet.close"), {r.right() - bs - app.dp(8), r.y + (h - bs) / 2, bs, bs}, closeIcon, false, 0,
-                     Style::Flat))
+    if(ui.iconButton(id("sheet.close"), {r.right() - bs - app.dp(10), r.y + top + (h - bs) / 2, bs, bs}, closeIcon,
+                     false, 0, Style::Flat))
         closeSheet();
-    app.batch().quad(0, r.x + pad, r.y + h, r.right() - pad, r.y + h + 1, 0, 0, 1, 1, ui.theme.line);
-    return {r.x + pad, r.y + h + app.dp(8), r.w - 2 * pad, r.h - h - app.dp(16)};
+    const float ly = r.y + top + h + app.dp(2);
+    app.batch().roundRectV({r.x + pad, ly, r.w - 2 * pad, 1}, 0, th.line, th.line);
+    return {r.x + pad, ly + app.dp(12), r.w - 2 * pad, r.bottom() - ly - app.dp(12) - app.dp(th.space.lg)};
 }
 
 void Hud::Impl::drawSheet()
@@ -86,15 +93,15 @@ void Hud::Impl::drawSheet()
     if(sheet != SheetKind::None)
     {
         Rect2 r = sheetRect();
-        const float t = Ui::ease(std::min(1.f, static_cast<float>((app.time() - sheetTime) / 0.22)));
+        const float t = Ui::ease(std::min(1.f, static_cast<float>((app.time() - sheetTime) / ui.theme.motion.normal)));
         if(landscape())
-            r.x += (1 - t) * (r.w + app.dp(20));
+            r.x += (1 - t) * (r.w + app.dp(24));
         else
-            r.y += (1 - t) * (r.h + app.dp(20));
-        ui.panel(r, app.dp(22), ui.theme.panel.withAlpha(0.93f));
+            r.y += (1 - t) * (r.h + app.dp(24));
+        ui.panel(r, app.dp(ui.theme.radius.xl), ui.theme.glassStrong);
         if(!landscape())
-            app.batch().roundRect({r.x + r.w / 2 - app.dp(20), r.y + app.dp(6), app.dp(40), app.dp(4)}, app.dp(2),
-                                  Color::rgb(0xFFFFFF, 0.25f));
+            app.batch().roundRect({r.x + r.w / 2 - app.dp(18), r.y + app.dp(7), app.dp(36), app.dp(4)}, app.dp(2),
+                                  ui.theme.text.withAlpha(0.22f));
         const SheetKind drawn = sheet;
         fitReq = 0;
         switch(sheet)
@@ -127,19 +134,21 @@ void Hud::Impl::drawSheet()
     if(confirmAction)
     {
         const float W = static_cast<float>(app.width()), H = static_cast<float>(app.height());
-        app.batch().quad(0, 0, 0, W, H, 0, 0, 1, 1, Color::rgb(0x000000, 0.45f));
+        const float t = std::min(1.f, static_cast<float>((app.time() - confirmTime) / ui.theme.motion.normal));
+        app.batch().quad(0, 0, 0, W, H, 0, 0, 1, 1, ui.theme.scrim);
         ui.block({0, 0, W, H});
-        const float w = std::min(W - app.dp(40), app.dp(400));
-        const float fs = app.dp(17);
-        const auto lines = app.font().wrap(confirmText, fs, w - app.dp(40));
-        const float h = app.dp(110) + static_cast<float>(lines.size()) * fs * 1.3f;
-        const Rect2 r{(W - w) / 2, (H - h) / 2, w, h};
-        ui.panel(r, app.dp(22), ui.theme.panelSolid);
-        ui.textWrapped(r.x + app.dp(20), r.y + app.dp(22), w - app.dp(40), confirmText, fs, ui.theme.text);
-        const float bh = app.dp(48), bw = (w - app.dp(52)) / 2;
-        if(ui.button(id("confirm.no"), {r.x + app.dp(20), r.bottom() - bh - app.dp(18), bw, bh}, "Abbrechen"))
+        const float w = std::min(W - app.dp(40), app.dp(420));
+        const float fs = app.dp(ui.theme.type.label);
+        const auto lines = app.font().wrap(confirmText, fs, w - app.dp(48));
+        const float h = app.dp(120) + static_cast<float>(lines.size()) * fs * 1.3f;
+        const float sc = 0.94f + 0.06f * Ui::easeBack(t);
+        const Rect2 r{(W - w * sc) / 2, (H - h * sc) / 2, w * sc, h * sc};
+        ui.panel(r, app.dp(ui.theme.radius.xl), ui.theme.glassStrong);
+        ui.textWrapped(r.x + app.dp(24), r.y + app.dp(26), r.w - app.dp(48), confirmText, fs, ui.theme.text);
+        const float bh = app.dp(50), bw = (r.w - app.dp(60)) / 2;
+        if(ui.button(id("confirm.no"), {r.x + app.dp(24), r.bottom() - bh - app.dp(22), bw, bh}, "Abbrechen"))
             confirmAction = nullptr;
-        if(ui.button(id("confirm.yes"), {r.right() - bw - app.dp(20), r.bottom() - bh - app.dp(18), bw, bh}, "OK",
+        if(ui.button(id("confirm.yes"), {r.right() - bw - app.dp(24), r.bottom() - bh - app.dp(22), bw, bh}, "OK",
                      Icon::None, Style::Primary))
         {
             auto fn = std::move(confirmAction);
@@ -170,26 +179,26 @@ struct Grid
 void Hud::Impl::sheetGameMenu(const Rect2& r)
 {
     const Rect2 c = sheetHeader(r, "Menü", Icon::Menu);
-    Grid g{c, 2, app.dp(64), app.dp(10)};
-    if(ui.button(id("gm.resume"), g.next(), "Weiter", Icon::Play, Style::Primary))
+    Grid g{c, 3, app.dp(landscape() ? 80 : 88), app.dp(10)};
+    if(ui.button(id("gm.resume"), g.next(), "Weiter", Icon::Play, Style::TilePrimary))
         closeSheet();
-    if(ui.button(id("gm.save"), g.next(), "Speichern", Icon::Save))
+    if(ui.button(id("gm.save"), g.next(), "Speichern", Icon::Save, Style::Tile))
         openSheet(SheetKind::Save, MapPoint::invalid(), true);
-    if(ui.button(id("gm.load"), g.next(), "Laden", Icon::Folder))
+    if(ui.button(id("gm.load"), g.next(), "Laden", Icon::Folder, Style::Tile))
         openSheet(SheetKind::Load, MapPoint::invalid(), true);
-    if(ui.button(id("gm.eco"), g.next(), "Wirtschaft", Icon::Sliders))
+    if(ui.button(id("gm.eco"), g.next(), "Wirtschaft", Icon::Sliders, Style::Tile))
         openSheet(SheetKind::Economy, MapPoint::invalid(), true);
-    if(ui.button(id("gm.stats"), g.next(), "Statistik", Icon::Chart))
+    if(ui.button(id("gm.stats"), g.next(), "Statistik", Icon::Chart, Style::Tile))
         openSheet(SheetKind::Stats, MapPoint::invalid(), true);
-    if(ui.button(id("gm.msg"), g.next(), "Nachrichten", Icon::Mail))
+    if(ui.button(id("gm.msg"), g.next(), "Nachrichten", Icon::Mail, Style::Tile))
         openSheet(SheetKind::Messages, MapPoint::invalid(), true);
-    if(ui.button(id("gm.settings"), g.next(), "Einstellungen", Icon::Gear))
+    if(ui.button(id("gm.settings"), g.next(), "Einstellungen", Icon::Gear, Style::Tile))
         openSheet(SheetKind::Settings, MapPoint::invalid(), true);
-    if(ui.button(id("gm.help"), g.next(), "Hilfe", Icon::Help))
+    if(ui.button(id("gm.help"), g.next(), "Hilfe", Icon::Help, Style::Tile))
         openSheet(SheetKind::Help, MapPoint::invalid(), true);
-    if(!missionText.empty() && ui.button(id("gm.mission"), g.next(), "Auftrag", Icon::Info))
+    if(!missionText.empty() && ui.button(id("gm.mission"), g.next(), "Auftrag", Icon::Info, Style::Tile))
         openSheet(SheetKind::Mission, MapPoint::invalid(), true);
-    if(ui.button(id("gm.quit"), g.next(), "Hauptmenü", Icon::Exit))
+    if(ui.button(id("gm.quit"), g.next(), "Hauptmenü", Icon::Exit, Style::Tile))
     {
         confirm("Partie verlassen? Der Stand wird als Autosave gesichert.", [this] {
             game.saveTo(savePath("autosave"));
@@ -197,7 +206,7 @@ void Hud::Impl::sheetGameMenu(const Rect2& r)
             a.post([&a] { a.setScreen(createMainMenu(a)); });
         });
     }
-    fit(r, g.area.y + static_cast<float>((g.n + 1) / 2) * (g.h + g.gap));
+    fit(r, g.area.y + static_cast<float>((g.n + 2) / 3) * (g.h + g.gap));
 }
 
 void Hud::Impl::sheetBuild(const Rect2& r)
@@ -500,7 +509,7 @@ void Hud::Impl::sheetMessages(const Rect2& r)
         const auto lines = app.font().wrap(msg->getText(), fs, view.w - app.dp(70));
         const float h = std::max(app.dp(56), static_cast<float>(lines.size()) * fs * 1.3f + app.dp(30));
         const Rect2 row{view.x, y, view.w, h - app.dp(6)};
-        app.batch().roundRect(row, app.dp(12), ui.pressed(id("msg", k), row) ? ui.theme.raised : Color::rgb(0xFFFFFF, 0.04f));
+        const bool rowHit = ui.row(id("msg", k), row);
         float ty = row.y + app.dp(8);
         for(const auto& l : lines)
         {
@@ -511,7 +520,7 @@ void Hud::Impl::sheetMessages(const Rect2& r)
         if(msg->getPos().isValid())
         {
             ui.icon(Icon::Target, row.right() - app.dp(28), row.y + row.h / 2, app.dp(22), ui.theme.accent);
-            if(ui.area(id("msg", k), row))
+            if(rowHit)
             {
                 game.jumpTo(msg->getPos());
                 closeSheet();
@@ -649,15 +658,15 @@ void Hud::Impl::sheetEconomy(const Rect2& r)
     const Rect2 c = sheetHeader(r, "Wirtschaft", Icon::Sliders);
     Grid g{c, 1, app.dp(58), app.dp(10)};
     gEditValid = false;
-    if(ui.button(id("eco.dist"), g.next(), "Warenverteilung", Icon::Sliders))
+    if(ui.button(id("eco.dist"), g.next(), "Warenverteilung", Icon::Sliders, Style::Nav))
         openSheet(SheetKind::Distribution, MapPoint::invalid(), true);
-    if(ui.button(id("eco.trans"), g.next(), "Transportreihenfolge", Icon::List))
+    if(ui.button(id("eco.trans"), g.next(), "Transportreihenfolge", Icon::List, Style::Nav))
         openSheet(SheetKind::Transport, MapPoint::invalid(), true);
-    if(ui.button(id("eco.tools"), g.next(), "Werkzeugproduktion", Icon::Tools))
+    if(ui.button(id("eco.tools"), g.next(), "Werkzeugproduktion", Icon::Tools, Style::Nav))
         openSheet(SheetKind::Tools, MapPoint::invalid(), true);
-    if(ui.button(id("eco.mil"), g.next(), "Militär", Icon::Shield))
+    if(ui.button(id("eco.mil"), g.next(), "Militär", Icon::Shield, Style::Nav))
         openSheet(SheetKind::Military, MapPoint::invalid(), true);
-    if(ui.button(id("eco.inv"), g.next(), "Inventar", Icon::Boxes))
+    if(ui.button(id("eco.inv"), g.next(), "Inventar", Icon::Boxes, Style::Nav))
         openSheet(SheetKind::Inventory, MapPoint::invalid(), true);
     fit(r, g.area.y + static_cast<float>(g.n) * (g.h + g.gap));
 }
@@ -873,13 +882,12 @@ void Hud::Impl::sheetSaveLoad(const Rect2& r, bool save)
         if(!save && !exists)
             continue;
         const Rect2 row{c.x, y, c.w, rowH - app.dp(8)};
-        app.batch().roundRect(row, app.dp(12),
-                              ui.pressed(id("slot", i), row) ? ui.theme.raised : Color::rgb(0xFFFFFF, 0.05f));
+        const bool rowHit = ui.row(id("slot", i), row);
         ui.icon(save ? Icon::Save : Icon::Folder, row.x + app.dp(26), row.y + row.h / 2, app.dp(22), ui.theme.accent);
         ui.text(row.x + app.dp(50), row.y + app.dp(8), slots[i].second, app.dp(16), ui.theme.text, gfx::Align::Left, true);
         ui.text(row.x + app.dp(50), row.y + app.dp(29), exists ? saveDescription(path) : "leer", app.dp(13), ui.theme.textDim);
         ui.tag(slots[i].second, row);
-        if(ui.area(id("slot", i), row))
+        if(rowHit)
         {
             if(save)
             {

@@ -7,6 +7,7 @@
 #include "ogl/SpriteRenderer.h"
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
 namespace weiler::ui {
 
@@ -96,6 +97,16 @@ bool Ui::wheel(float x, float y, float delta)
 
 void Ui::begin()
 {
+    ++frame_;
+    const double now = app_.time();
+    dt_ = static_cast<float>(std::clamp(now - lastTime_, 0.0, 0.1));
+    lastTime_ = now;
+    // Forget animation states of elements not drawn for a while
+    if(frame_ % 600 == 0)
+    {
+        for(auto it = anims_.begin(); it != anims_.end();)
+            it = frame_ - it->second.frame > 600 ? anims_.erase(it) : std::next(it);
+    }
     blocks_.clear();
     targets_.clear();
 }
@@ -148,17 +159,71 @@ void Ui::end()
         activeSlider_ = 0;
 }
 
-void Ui::panel(const Rect2& r, float radius, Color c)
+float Ui::anim(Id i, float target, float duration)
+{
+    auto it = anims_.find(i);
+    if(it == anims_.end())
+    {
+        anims_.emplace(i, AnimState{target, frame_});
+        return target;
+    }
+    AnimState& st = it->second;
+    if(st.frame != frame_)
+    {
+        // Exponential approach, frame rate independent; snaps when close
+        const float k = duration > 0 ? 1.f - std::exp(-dt_ * 3.f / duration) : 1.f;
+        st.value += (target - st.value) * k;
+        if(std::abs(target - st.value) < 0.002f)
+            st.value = target;
+        st.frame = frame_;
+    }
+    return st.value;
+}
+
+float Ui::pressAnim(Id i, bool down)
+{
+    return anim(i ^ 0x5bd1e995u, down ? 1.f : 0.f, down ? theme.motion.fast * 0.5f : theme.motion.normal);
+}
+
+void Ui::activated(int kind)
+{
+    if(onActivate)
+        onActivate(kind);
+}
+
+void Ui::elevate(const Rect2& r, float radius, const Theme::Elevation& e, float opacity)
+{
+    auto& b = batch();
+    const float amb = dp(e.blur) * 1.6f;
+    b.shadow({r.x - dp(2), r.y + dp(e.y) * 0.4f, r.w + dp(4), r.h + dp(2)}, radius + dp(4), amb,
+             theme.shadow.withAlpha(e.alpha * 0.45f * opacity));
+    b.shadow({r.x + dp(1), r.y + dp(e.y), r.w - dp(2), r.h}, radius, dp(e.blur) * 0.6f,
+             theme.shadow.withAlpha(e.alpha * opacity));
+}
+
+void Ui::panel(const Rect2& r, float radius, Color tint, float opacity)
 {
     if(radius < 0)
-        radius = dp(18);
-    if(c.a < 0)
-        c = theme.panel;
+        radius = dp(theme.radius.xl);
+    if(tint.a < 0)
+        tint = theme.glass;
     auto& b = batch();
-    b.shadow({r.x, r.y + dp(4), r.w, r.h}, radius, dp(18), theme.shadow);
-    b.roundRect(r, radius, c);
-    b.roundRect(r, radius, theme.line, 1.f, dp(1));
+    elevate(r, radius, theme.mid, opacity);
+    b.glass(r, radius, tint, opacity);
+    // Edge: brighter on top (light from above), fading towards the bottom
+    b.roundRectV(r, radius, theme.highlight.withAlpha(theme.highlight.a * opacity),
+                 theme.line.withAlpha(theme.line.a * 0.5f * opacity), 1.f, dp(1));
     block(r);
+}
+
+void Ui::heading(float x, float y, const std::string& s, float size, Color c, gfx::Align align)
+{
+    app_.fontDisplay().draw(batch(), x, y, s, size, c, align);
+}
+
+float Ui::headingWidth(const std::string& s, float size)
+{
+    return app_.fontDisplay().measure(s, size);
 }
 
 void Ui::text(float x, float y, const std::string& s, float size, Color c, gfx::Align align, bool bold)
@@ -213,7 +278,10 @@ bool Ui::area(Id i, const Rect2& r)
         block(r, i);
     if(released_ && !onTop(i))
         return false;
-    return released_ && !dragging_ && r.contains(pressX_, pressY_) && r.contains(relX_, relY_);
+    const bool hitIt = released_ && !dragging_ && r.contains(pressX_, pressY_) && r.contains(relX_, relY_);
+    if(hitIt)
+        activated();
+    return hitIt;
 }
 
 bool Ui::longPress(Id, const Rect2& r)
@@ -227,69 +295,155 @@ bool Ui::longPress(Id, const Rect2& r)
     return false;
 }
 
-bool Ui::button(Id i, const Rect2& r, const std::string& label, Icon ic, Style st, bool enabled)
+namespace {
+Color mix(Color a, Color b, float t)
+{
+    return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t};
+}
+Color darken(Color c, float f)
+{
+    return {c.r * f, c.g * f, c.b * f, c.a};
+}
+/// Shrink a rectangle around its center
+Rect2 squeeze(const Rect2& r, float f)
+{
+    const float dx = r.w * (1 - f) / 2, dy = r.h * (1 - f) / 2;
+    return {r.x + dx, r.y + dy, r.w - 2 * dx, r.h - 2 * dy};
+}
+} // namespace
+
+bool Ui::button(Id i, const Rect2& rIn, const std::string& label, Icon ic, Style st, bool enabled)
 {
     auto& b = batch();
-    const bool down = enabled && pressed(i, r);
-    Color bg = st == Style::Primary ? theme.accent : st == Style::Danger ? theme.danger : theme.raised;
-    Color fg = st == Style::Primary ? theme.accentText : theme.text;
-    if(st == Style::Flat)
-        bg = Color{1, 1, 1, 0.0f};
-    if(!enabled)
+    const float p = pressAnim(i, enabled && pressed(i, rIn));
+    const Rect2 r = squeeze(rIn, 1.f - 0.035f * p);
+    const float radius = std::min(dp(theme.radius.md), r.h / 2);
+    const float dim = enabled ? 1.f : 0.4f;
+    Color fg = theme.text;
+    switch(st)
     {
-        bg = bg.withAlpha(bg.a * 0.4f);
-        fg = theme.textDim.withAlpha(0.6f);
+        case Style::Primary:
+        case Style::TilePrimary:
+        case Style::Danger:
+        {
+            const Color top = st != Style::Danger ? theme.accent : theme.danger;
+            const Color bottom = st != Style::Danger ? theme.accentDeep : darken(theme.danger, 0.85f);
+            const float f = 1.f - 0.12f * p;
+            if(enabled)
+                b.shadow({r.x + dp(4), r.y + dp(5), r.w - dp(8), r.h}, radius, dp(16),
+                         top.withAlpha(0.28f * (1 - p * 0.5f)));
+            b.roundRectV(r, radius, darken(top, f).withAlpha(dim), darken(bottom, f).withAlpha(dim));
+            b.roundRectV(r, radius, Color::rgb(0xFFFFFF, 0.28f * dim), Color::rgb(0xFFFFFF, 0.0f), 1.f, dp(1));
+            fg = st != Style::Danger ? theme.accentText : Color::rgb(0xFFFFFF);
+            break;
+        }
+        case Style::Normal:
+        case Style::Tile:
+        case Style::Nav:
+            b.roundRect(r, radius, mix(theme.surface, theme.surfacePressed, p).withAlpha(
+                                     mix(theme.surface, theme.surfacePressed, p).a * dim));
+            b.roundRectV(r, radius, theme.highlight.withAlpha(0.10f * dim), theme.line.withAlpha(0.04f * dim), 1.f,
+                         dp(1));
+            break;
+        case Style::Flat:
+            if(p > 0.01f)
+                b.roundRect(r, radius, theme.surfacePressed.withAlpha(theme.surfacePressed.a * p));
+            break;
     }
-    if(down)
-        bg = Color{std::min(1.f, bg.r + 0.08f), std::min(1.f, bg.g + 0.08f), std::min(1.f, bg.b + 0.08f),
-                   std::max(bg.a, 0.25f)};
-    const float radius = std::min(dp(14), r.h / 2);
-    b.roundRect(r, radius, bg);
-    if(st == Style::Normal)
-        b.roundRect(r, radius, theme.line, 1.f, dp(1));
-    const float fs = std::min(dp(17), r.h * 0.38f);
-    const float is = std::min(dp(24), r.h * 0.5f);
+    if(!enabled)
+        fg = theme.textFaint;
+    const bool plain = st == Style::Normal || st == Style::Flat || st == Style::Tile || st == Style::Nav;
+    const Color iconColor = plain && enabled ? theme.accent : fg;
+    if(st == Style::Tile || st == Style::TilePrimary)
+    {
+        const float is = std::min(dp(26), r.h * 0.34f);
+        float fs = dp(theme.type.small);
+        const float tw = textWidth(label, fs, true);
+        if(tw > r.w - dp(12))
+            fs *= (r.w - dp(12)) / tw;
+        const float gap = dp(8);
+        const float total = is + gap + fs * 1.2f;
+        const float y0 = r.y + (r.h - total) / 2;
+        icon(ic, r.x + r.w / 2, y0 + is / 2, is, iconColor);
+        text(r.x + r.w / 2, y0 + is + gap - fs * 0.1f, label, fs, fg, gfx::Align::Center, true);
+        tag(label, rIn);
+        return enabled && area(i, rIn);
+    }
+    const float fs = std::min(dp(theme.type.label), r.h * 0.36f);
+    const float is = std::min(dp(theme.size.icon), r.h * 0.46f);
+    if(st == Style::Nav)
+    {
+        float x = r.x + dp(18);
+        if(ic != Icon::None)
+        {
+            icon(ic, x + is / 2, r.y + r.h / 2, is, iconColor);
+            x += is + dp(14);
+        }
+        text(x, r.y + (r.h - fs * 1.3f) / 2, label, fs, fg, gfx::Align::Left, true);
+        icon(Icon::Next, r.right() - dp(22), r.y + r.h / 2, dp(16), theme.textFaint);
+        tag(label, rIn);
+        return enabled && area(i, rIn);
+    }
     if(ic != Icon::None && label.empty())
         icon(ic, r.x + r.w / 2, r.y + r.h / 2, is, fg);
     else if(ic != Icon::None)
     {
         const float tw = textWidth(label, fs, true);
-        const float total = is + dp(8) + tw;
-        const float x0 = r.x + std::max(dp(12), (r.w - total) / 2);
-        icon(ic, x0 + is / 2, r.y + r.h / 2, is, fg);
-        text(x0 + is + dp(8), r.y + (r.h - fs * 1.3f) / 2, label, fs, fg, gfx::Align::Left, true);
+        const float total = is + dp(10) + tw;
+        const float x0 = r.x + std::max(dp(14), (r.w - total) / 2);
+        icon(ic, x0 + is / 2, r.y + r.h / 2, is, iconColor);
+        text(x0 + is + dp(10), r.y + (r.h - fs * 1.3f) / 2, label, fs, fg, gfx::Align::Left, true);
     } else
         text(r.x + r.w / 2, r.y + (r.h - fs * 1.3f) / 2, label, fs, fg, gfx::Align::Center, true);
-    tag(label.empty() ? std::string("icon:") + iconName(ic) : label, r);
-    return enabled && area(i, r);
+    tag(label.empty() ? std::string("icon:") + iconName(ic) : label, rIn);
+    return enabled && area(i, rIn);
 }
 
-bool Ui::iconButton(Id i, const Rect2& r, Icon ic, bool active, int badge, Style st)
+bool Ui::iconButton(Id i, const Rect2& rIn, Icon ic, bool active, int badge, Style st)
 {
     auto& b = batch();
-    const bool down = pressed(i, r);
+    const float p = pressAnim(i, pressed(i, rIn));
+    const float act = anim(i ^ 0xac71u, active ? 1.f : 0.f, theme.motion.normal);
+    const Rect2 r = squeeze(rIn, 1.f - 0.06f * p);
     const float radius = std::min(r.w, r.h) / 2;
-    Color bg = active ? theme.accent : theme.panel;
-    if(st == Style::Flat && !active)
-        bg = Color{0, 0, 0, 0};
-    if(down)
-        bg = active ? theme.accent.withAlpha(0.8f) : theme.raised;
-    if(st != Style::Flat || active || down)
+    if(st != Style::Flat)
     {
-        if(st != Style::Flat)
-            b.shadow({r.x, r.y + dp(2), r.w, r.h}, radius, dp(10), theme.shadow.withAlpha(0.3f));
-        b.roundRect(r, radius, bg);
+        elevate(r, radius, theme.low);
+        b.glass(r, radius, theme.glass);
+        b.roundRectV(r, radius, theme.highlight, theme.line.withAlpha(0.03f), 1.f, dp(1));
     }
-    icon(ic, r.x + r.w / 2, r.y + r.h / 2, std::min(r.w, r.h) * 0.5f, active ? theme.accentText : theme.text);
+    if(act > 0.01f)
+        b.roundRectV(squeeze(r, 0.86f + 0.14f * act), radius, theme.accent.withAlpha(act),
+                     theme.accentDeep.withAlpha(act));
+    if(p > 0.01f)
+        b.roundRect(r, radius, theme.surfacePressed.withAlpha(theme.surfacePressed.a * p));
+    icon(ic, r.x + r.w / 2, r.y + r.h / 2, std::min(r.w, r.h) * 0.46f, mix(theme.text, theme.accentText, act));
     if(badge > 0)
     {
         const float br = dp(9);
-        const float bx = r.right() - br * 0.9f, by = r.y + br * 0.9f;
+        const float bx = rIn.right() - br * 0.9f, by = rIn.y + br * 0.9f;
+        b.circle(bx, by, br + dp(2), Color::rgb(0x000000, 0.35f), 0, dp(3));
         b.circle(bx, by, br, theme.danger);
         const std::string t = badge > 99 ? "99" : std::to_string(badge);
         text(bx, by - dp(7), t, dp(11), Color::rgb(0xFFFFFF), gfx::Align::Center, true);
     }
-    tag(std::string("icon:") + iconName(ic), r);
+    tag(std::string("icon:") + iconName(ic), rIn);
+    return area(i, rIn);
+}
+
+bool Ui::row(Id i, const Rect2& r, bool selected)
+{
+    auto& b = batch();
+    const float p = pressAnim(i, pressed(i, r));
+    const float sel = anim(i ^ 0x5e1u, selected ? 1.f : 0.f, theme.motion.normal);
+    const float radius = dp(theme.radius.md);
+    b.roundRect(r, radius, mix(theme.surface.withAlpha(0.035f), theme.surfacePressed, p));
+    if(sel > 0.01f)
+    {
+        b.roundRect(r, radius, theme.accentSoft.withAlpha(theme.accentSoft.a * sel));
+        b.roundRect(r, radius, theme.accent.withAlpha(0.75f * sel), 1.f, dp(1.5f));
+        b.roundRect({r.x + dp(6), r.y + r.h * 0.25f, dp(3), r.h * 0.5f}, dp(1.5f), theme.accent.withAlpha(sel));
+    }
     return area(i, r);
 }
 
@@ -298,11 +452,12 @@ bool Ui::slider(Id i, const Rect2& r, float& value, float lo, float hi, float st
     auto& b = batch();
     block(r);
     const float trackH = dp(6);
-    const float knob = dp(11);
+    const float knob = dp(12);
     const float x0 = r.x + knob, x1 = r.right() - knob;
     const float cy = r.y + r.h / 2;
     bool changed = false;
-    if(captured_ && r.contains(pressX_, pressY_) && (activeSlider_ == 0 || activeSlider_ == i))
+    const bool active = captured_ && r.contains(pressX_, pressY_) && (activeSlider_ == 0 || activeSlider_ == i);
+    if(active)
     {
         activeSlider_ = i;
         dragging_ = true;
@@ -316,10 +471,15 @@ bool Ui::slider(Id i, const Rect2& r, float& value, float lo, float hi, float st
             changed = true;
         }
     }
+    const float grow = anim(i ^ 0x511du, active ? 1.f : 0.f, theme.motion.fast);
     const float t = hi > lo ? std::clamp((value - lo) / (hi - lo), 0.f, 1.f) : 0.f;
-    b.roundRect({x0, cy - trackH / 2, x1 - x0, trackH}, trackH / 2, Color::rgb(0xFFFFFF, 0.12f));
-    b.roundRect({x0, cy - trackH / 2, (x1 - x0) * t, trackH}, trackH / 2, theme.accent);
-    b.circle(x0 + (x1 - x0) * t, cy, knob, theme.text);
+    b.roundRect({x0, cy - trackH / 2, x1 - x0, trackH}, trackH / 2, Color::rgb(0xFFFFFF, 0.10f));
+    b.roundRectV({x0, cy - trackH / 2, (x1 - x0) * t, trackH}, trackH / 2, theme.accent, theme.accentDeep);
+    const float kx = x0 + (x1 - x0) * t;
+    if(grow > 0.01f)
+        b.circle(kx, cy, knob * (1.f + 0.9f * grow), theme.accent.withAlpha(0.18f * grow));
+    b.circle(kx, cy + dp(1.5f), knob, Color::rgb(0x000000, 0.35f), 0, dp(4));
+    b.circle(kx, cy, knob, theme.text);
     return changed;
 }
 
@@ -327,11 +487,16 @@ bool Ui::toggle(Id i, const Rect2& r, bool& value, const std::string& label)
 {
     auto& b = batch();
     const float h = dp(30), w = dp(52);
-    const float fs = dp(16);
+    const float fs = dp(theme.type.label);
+    const float on = anim(i ^ 0x7091u, value ? 1.f : 0.f, theme.motion.normal);
     text(r.x, r.y + (r.h - fs * 1.3f) / 2, label, fs, theme.text);
     const Rect2 sw{r.right() - w, r.y + (r.h - h) / 2, w, h};
-    b.roundRect(sw, h / 2, value ? theme.accent : Color::rgb(0xFFFFFF, 0.15f));
-    b.circle(value ? sw.right() - h / 2 : sw.x + h / 2, sw.y + h / 2, h / 2 - dp(3), theme.text);
+    b.roundRect(sw, h / 2, Color::rgb(0xFFFFFF, 0.12f));
+    if(on > 0.01f)
+        b.roundRectV(sw, h / 2, theme.accent.withAlpha(on), theme.accentDeep.withAlpha(on));
+    const float kx = sw.x + h / 2 + (sw.w - h) * on;
+    b.circle(kx, sw.y + h / 2 + dp(1), h / 2 - dp(3), Color::rgb(0x000000, 0.3f), 0, dp(3));
+    b.circle(kx, sw.y + h / 2, h / 2 - dp(3), theme.text);
     tag(label, r);
     if(area(i, r))
     {
@@ -344,28 +509,38 @@ bool Ui::toggle(Id i, const Rect2& r, bool& value, const std::string& label)
 bool Ui::segmented(Id i, const Rect2& r, const std::vector<std::string>& options, int& selected)
 {
     auto& b = batch();
-    const float radius = std::min(dp(12), r.h / 2);
-    b.roundRect(r, radius, Color::rgb(0xFFFFFF, 0.06f));
+    const float radius = std::min(dp(theme.radius.md), r.h / 2);
+    b.roundRect(r, radius, Color::rgb(0x000000, 0.22f));
+    b.roundRect(r, radius, theme.line, 1.f, dp(1));
     const float w = r.w / static_cast<float>(std::max<size_t>(1, options.size()));
     bool changed = false;
     // One font size for all cells, small enough for the widest label
-    float fs = std::min(dp(15), r.h * 0.38f);
+    float fs = std::min(dp(theme.type.body), r.h * 0.38f);
     for(const auto& o : options)
     {
         const float tw = textWidth(o, fs, true);
         if(tw > w - dp(10))
             fs *= (w - dp(10)) / tw;
     }
+    // Selection pill slides between the cells
+    const float pos = anim(i ^ 0x5e9u, static_cast<float>(selected), theme.motion.normal);
+    if(selected >= 0)
+    {
+        const Rect2 pill = Rect2{r.x + w * pos, r.y, w, r.h}.inset(dp(3));
+        b.shadow({pill.x, pill.y + dp(2), pill.w, pill.h}, radius - dp(2), dp(8), theme.shadow.withAlpha(0.3f));
+        b.roundRectV(pill, radius - dp(2), theme.accent, theme.accentDeep);
+    }
     for(size_t k = 0; k < options.size(); ++k)
     {
         const Rect2 cell{r.x + w * static_cast<float>(k), r.y, w, r.h};
-        const bool sel = static_cast<int>(k) == selected;
-        if(sel)
-            b.roundRect(cell.inset(dp(3)), radius - dp(2), theme.accent);
-        text(cell.x + w / 2, r.y + (r.h - fs * 1.3f) / 2, options[k], fs, sel ? theme.accentText : theme.text,
+        const float near = std::clamp(1.f - std::abs(pos - static_cast<float>(k)), 0.f, 1.f);
+        const float p = pressAnim(i + k + 1, pressed(i + k + 1, cell));
+        if(p > 0.01f)
+            b.roundRect(cell.inset(dp(3)), radius - dp(2), theme.surfacePressed.withAlpha(theme.surfacePressed.a * p));
+        text(cell.x + w / 2, r.y + (r.h - fs * 1.3f) / 2, options[k], fs, mix(theme.textDim, theme.accentText, near),
              gfx::Align::Center, true);
         tag(options[k], cell);
-        if(area(i + k + 1, cell) && !sel)
+        if(area(i + k + 1, cell) && static_cast<int>(k) != selected)
         {
             selected = static_cast<int>(k);
             changed = true;
@@ -433,7 +608,7 @@ void Ui::endScroll(float contentHeight)
     {
         const float h = s.view.h * s.view.h / contentHeight;
         const float y = s.view.y + (s.view.h - h) * (s.y / std::max(1.f, contentHeight - s.view.h));
-        batch().roundRect({s.view.right() - dp(4), y, dp(3), h}, dp(1.5f), Color::rgb(0xFFFFFF, 0.25f));
+        batch().roundRect({s.view.right() - dp(4), y, dp(3), h}, dp(1.5f), theme.text.withAlpha(0.22f));
     }
 }
 

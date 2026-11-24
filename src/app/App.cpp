@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "App.h"
+#include "menu/MenuBackdrop.h"
 #include "Audio.h"
 #include "Loader.h"
 #include "Settings.h"
@@ -37,11 +38,13 @@ App::~App()
 {
     screen_.reset();
     nextScreen_.reset();
+    backdrop_.reset();
     ui_.reset();
     audio_.reset();
     atlas_.reset();
     font_.reset();
     fontBold_.reset();
+    fontDisplay_.reset();
     if(gl_)
         SDL_GL_DestroyContext(gl_);
     if(window_)
@@ -129,6 +132,7 @@ int App::run()
     ui_ = std::make_unique<ui::Ui>(*this);
     font_ = std::make_unique<gfx::Font>();
     fontBold_ = std::make_unique<gfx::Font>();
+    fontDisplay_ = std::make_unique<gfx::Font>();
     std::vector<bfs::path> fontDirs = {paths_.appData / "fonts", bfs::path(WEILER_FONT_DIR)};
     for(const auto& dir : fontDirs)
     {
@@ -136,6 +140,8 @@ int App::run()
         {
             font_->load((dir / "Lato-Regular.ttf").string());
             fontBold_->load((dir / "Lato-Bold.ttf").string());
+            if(!fontDisplay_->load((dir / "NotoSerifDisplay-SemiBold.ttf").string()))
+                fontDisplay_->load((dir / "Lato-Bold.ttf").string());
             break;
         }
     }
@@ -235,6 +241,18 @@ void App::frame(double dt)
         posted_.pop_front();
         fn();
     }
+}
+
+MenuBackdrop& App::menuBackdrop()
+{
+    if(!backdrop_)
+        backdrop_ = std::make_unique<MenuBackdrop>(*this);
+    return *backdrop_;
+}
+
+void App::releaseMenuBackdrop()
+{
+    backdrop_.reset();
 }
 
 void App::setScreen(std::unique_ptr<Screen> screen)

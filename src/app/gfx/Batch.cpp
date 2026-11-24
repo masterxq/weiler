@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "Batch.h"
+#include <algorithm>
 #include <cmath>
 
 namespace weiler::gfx {
@@ -34,6 +35,8 @@ void main()
 const char* FS = R"(#version 300 es
 precision highp float;
 uniform sampler2D uTex;
+uniform sampler2D uBackdrop;
+uniform vec2 uScreen;
 in vec2 vUv;
 in vec4 vColor;
 in vec4 vShape;
@@ -51,6 +54,18 @@ void main()
         fragColor = texture(uTex, vUv) * vColor;
     else if(kind == 1)
         fragColor = vColor * texture(uTex, vUv).r;
+    else if(kind == 3)
+    {
+        // Frosted glass: blurred backdrop, slightly desaturated and darkened, tinted, with a little grain
+        float d = sdRoundBox(vUv, vShape.xy, vShape.z);
+        float a = clamp(0.5 - d / max(vShape.w, 0.001), 0.0, 1.0);
+        vec3 b = texture(uBackdrop, gl_FragCoord.xy / uScreen).rgb;
+        float l = dot(b, vec3(0.299, 0.587, 0.114));
+        b = mix(vec3(l), b, 0.6) * 0.85;
+        float n = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
+        vec3 col = b * (1.0 - vColor.a) + vColor.rgb + vec3(n * 0.012);
+        fragColor = vec4(col, 1.0) * (a * vExtra.x);
+    }
     else
     {
         float d = sdRoundBox(vUv, vShape.xy, vShape.z);
@@ -62,6 +77,33 @@ void main()
             a = clamp(0.5 - d / soft, 0.0, 1.0);
         fragColor = vColor * a;
     }
+}
+)";
+const char* BLUR_VS = R"(#version 300 es
+out vec2 vUv;
+void main()
+{
+    vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+    vUv = p;
+    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}
+)";
+
+// 9 tap gaussian with linear sampling (5 fetches)
+const char* BLUR_FS = R"(#version 300 es
+precision mediump float;
+uniform sampler2D uTex;
+uniform vec2 uDir;
+in vec2 vUv;
+out vec4 fragColor;
+void main()
+{
+    vec3 c = texture(uTex, vUv).rgb * 0.2270270;
+    c += texture(uTex, vUv + uDir * 1.3846154).rgb * 0.3162162;
+    c += texture(uTex, vUv - uDir * 1.3846154).rgb * 0.3162162;
+    c += texture(uTex, vUv + uDir * 3.2307692).rgb * 0.0702703;
+    c += texture(uTex, vUv - uDir * 3.2307692).rgb * 0.0702703;
+    fragColor = vec4(c, 1.0);
 }
 )";
 } // namespace
@@ -76,12 +118,29 @@ Batch::~Batch()
         glDeleteVertexArrays(1, &vao_);
         glDeleteTextures(1, &whiteTex_);
     }
+    for(Target* t : {&down_[0], &down_[1], &down_[2], &blurTmp_})
+    {
+        if(t->fbo)
+        {
+            glDeleteFramebuffers(1, &t->fbo);
+            glDeleteTextures(1, &t->tex);
+        }
+    }
+    if(blurProgram_)
+    {
+        glDeleteProgram(blurProgram_);
+        glDeleteVertexArrays(1, &blurVao_);
+    }
 }
 
 void Batch::init()
 {
     program_ = createProgram(VS, FS);
     uScreen_ = glGetUniformLocation(program_, "uScreen");
+    uBackdrop_ = glGetUniformLocation(program_, "uBackdrop");
+    glUseProgram(program_);
+    glUniform1i(glGetUniformLocation(program_, "uTex"), 0);
+    glUniform1i(uBackdrop_, 1);
     glGenVertexArrays(1, &vao_);
     glBindVertexArray(vao_);
     glGenBuffers(1, &vbo_);
@@ -124,6 +183,8 @@ void Batch::begin(int fbWidth, int fbHeight)
     fbW_ = fbWidth;
     fbH_ = fbHeight;
     drawCalls_ = 0;
+    backdropValid_ = false;
+    clip_ = {};
     resetTransform();
     glViewport(0, 0, fbW_, fbH_);
     glDisable(GL_SCISSOR_TEST);
@@ -134,6 +195,7 @@ void Batch::begin(int fbWidth, int fbHeight)
 void Batch::setClip(const Rect2& clip)
 {
     flush();
+    clip_ = clip;
     if(clip.w <= 0 || clip.h <= 0)
     {
         glDisable(GL_SCISSOR_TEST);
@@ -153,6 +215,9 @@ void Batch::flush()
     glBindVertexArray(vao_);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, curTex_ ? curTex_ : whiteTex_);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, backdropValid_ ? down_[2].tex : whiteTex_);
+    glActiveTexture(GL_TEXTURE0);
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
     const size_t total = vertices_.size();
     for(size_t start = 0; start < total; start += 4096 * 4)
@@ -196,7 +261,7 @@ void Batch::quad(GLuint tex, float x0, float y0, float x1, float y1, float u0, f
 }
 
 void Batch::shapeQuad(float cx, float cy, float hx, float hy, float ux, float uy, float extent, float radius, Color c,
-                      float softness, float stroke)
+                      float softness, float stroke, Color c2, float kind)
 {
     // Quad around the shape, enlarged by extent (anti aliasing / shadow blur), axis (ux,uy) = local x direction
     cx = cx * scale_ + tx_;
@@ -204,9 +269,24 @@ void Batch::shapeQuad(float cx, float cy, float hx, float hy, float ux, float uy
     const float ex = hx + extent, ey = hy + extent;
     const float vx = -uy, vy = ux;
     const uint32_t col = c.packed();
+    // Vertical gradient: extrapolate the colors to the enlarged quad so that top/bottom of the shape match
+    uint32_t colTop = col, colBottom = col;
+    if(c2.a >= 0)
+    {
+        const float k = hy > 0 ? extent / (2 * hy) : 0;
+        auto lerp = [](Color a, Color b, float t) {
+            return Color{a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t};
+        };
+        auto sat = [](Color x) {
+            auto c01 = [](float v) { return std::min(1.f, std::max(0.f, v)); };
+            return Color{c01(x.r), c01(x.g), c01(x.b), c01(x.a)};
+        };
+        colTop = sat(lerp(c, c2, -k)).packed();
+        colBottom = sat(lerp(c, c2, 1 + k)).packed();
+    }
     auto mk = [&](float lx, float ly) {
-        return Vertex{cx + ux * lx + vx * ly, cy + uy * lx + vy * ly, lx, ly, col, hx, hy, radius, softness,
-                      stroke, static_cast<float>(KindShape)};
+        return Vertex{cx + ux * lx + vx * ly, cy + uy * lx + vy * ly, lx, ly, ly < 0 ? colTop : colBottom, hx, hy,
+                      radius, softness, stroke, kind};
     };
     const Vertex v[4] = {mk(-ex, -ey), mk(ex, -ey), mk(-ex, ey), mk(ex, ey)};
     push(0, v);
@@ -217,6 +297,107 @@ void Batch::roundRect(const Rect2& r, float radius, Color c, float softness, flo
     const float s = scale_;
     shapeQuad(r.x + r.w / 2, r.y + r.h / 2, r.w / 2 * s, r.h / 2 * s, 1, 0, softness + 1, radius * s, c, softness,
               stroke * s);
+}
+
+void Batch::roundRectV(const Rect2& r, float radius, Color top, Color bottom, float softness, float stroke)
+{
+    const float s = scale_;
+    shapeQuad(r.x + r.w / 2, r.y + r.h / 2, r.w / 2 * s, r.h / 2 * s, 1, 0, softness + 1, radius * s, top, softness,
+              stroke * s, bottom);
+}
+
+void Batch::glass(const Rect2& r, float radius, Color tint, float opacity)
+{
+    if(!backdropValid_)
+        captureBackdrop();
+    const float s = scale_;
+    shapeQuad(r.x + r.w / 2, r.y + r.h / 2, r.w / 2 * s, r.h / 2 * s, 1, 0, 2, radius * s, tint, 1.f, opacity,
+              {0, 0, 0, -1}, static_cast<float>(KindGlass));
+}
+
+void Batch::initBlur()
+{
+    if(!blurProgram_)
+    {
+        blurProgram_ = createProgram(BLUR_VS, BLUR_FS);
+        uBlurDir_ = glGetUniformLocation(blurProgram_, "uDir");
+        uBlurTex_ = glGetUniformLocation(blurProgram_, "uTex");
+        glGenVertexArrays(1, &blurVao_);
+    }
+    auto make = [](Target& t, int w, int h) {
+        if(t.w == w && t.h == h && t.fbo)
+            return;
+        if(!t.fbo)
+        {
+            glGenTextures(1, &t.tex);
+            glGenFramebuffers(1, &t.fbo);
+        }
+        t.w = w;
+        t.h = h;
+        glBindTexture(GL_TEXTURE_2D, t.tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindFramebuffer(GL_FRAMEBUFFER, t.fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, t.tex, 0);
+    };
+    int w = fbW_, h = fbH_;
+    for(Target& t : down_)
+    {
+        w = std::max(1, (w + 1) / 2);
+        h = std::max(1, (h + 1) / 2);
+        make(t, w, h);
+    }
+    make(blurTmp_, down_[2].w, down_[2].h);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void Batch::captureBackdrop()
+{
+    flush();
+    initBlur();
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_BLEND);
+    // Downsample in steps of two (each step averages 2x2 pixels) to 1/8 size
+    GLuint src = 0;
+    int sw = fbW_, sh = fbH_;
+    for(int i = 0; i < 3; ++i)
+    {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, src);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, down_[i].fbo);
+        glBlitFramebuffer(0, 0, sw, sh, 0, 0, down_[i].w, down_[i].h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        src = down_[i].fbo;
+        sw = down_[i].w;
+        sh = down_[i].h;
+    }
+    // Two separable gaussian passes, twice
+    glUseProgram(blurProgram_);
+    glUniform1i(uBlurTex_, 0);
+    glBindVertexArray(blurVao_);
+    glActiveTexture(GL_TEXTURE0);
+    glViewport(0, 0, sw, sh);
+    const Target& t = down_[2];
+    for(int k = 0; k < 2; ++k)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, blurTmp_.fbo);
+        glBindTexture(GL_TEXTURE_2D, t.tex);
+        glUniform2f(uBlurDir_, 1.f / static_cast<float>(sw), 0.f);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glBindFramebuffer(GL_FRAMEBUFFER, t.fbo);
+        glBindTexture(GL_TEXTURE_2D, blurTmp_.tex);
+        glUniform2f(uBlurDir_, 0.f, 1.f / static_cast<float>(sh));
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+    }
+    glBindVertexArray(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, fbW_, fbH_);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    if(clip_.w > 0 && clip_.h > 0)
+        glEnable(GL_SCISSOR_TEST);
+    backdropValid_ = true;
 }
 
 void Batch::shadow(const Rect2& r, float radius, float blur, Color c)

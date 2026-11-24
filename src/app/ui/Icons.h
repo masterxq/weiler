@@ -55,6 +55,7 @@ enum class Icon
     Hand,
     Trophy,
     Exit,
+    Next,
     Count
 };
 

@@ -112,7 +112,7 @@ void Tutorial::draw()
     const float y = app.dp(68);
     const float t = Ui::ease(std::min(1.f, static_cast<float>((app.time() - stepTime_) / 0.25)));
     const Rect2 r{(W - w) / 2, y - (1 - t) * app.dp(12), w, h};
-    ui.panel(r, app.dp(20), ui.theme.panelSolid.withAlpha(0.94f));
+    ui.panel(r, app.dp(ui.theme.radius.xl), ui.theme.glassStrong);
     // Progress dots
     for(size_t i = 0; i < STEPS.size(); ++i)
         app.batch().circle(r.x + app.dp(22) + static_cast<float>(i) * app.dp(14), r.y + app.dp(20), app.dp(4),

@@ -5,10 +5,12 @@
 #pragma once
 
 #include "Icons.h"
+#include "Theme.h"
 #include "Screen.h"
 #include "gfx/Batch.h"
 #include "gfx/Text.h"
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -25,23 +27,6 @@ namespace weiler::ui {
 using gfx::Color;
 using gfx::Rect2;
 
-/// Colors and metrics of the user interface (one place for the look)
-struct Theme
-{
-    Color bg = Color::rgb(0x121417);
-    Color panel = Color::rgb(0x1B1E23, 0.86f);
-    Color panelSolid = Color::rgb(0x1B1E23);
-    Color raised = Color::rgb(0x2A2E35, 0.92f);
-    Color line = Color::rgb(0xFFFFFF, 0.08f);
-    Color text = Color::rgb(0xF2EEE8);
-    Color textDim = Color::rgb(0xA8A198);
-    Color accent = Color::rgb(0xE8A33D);
-    Color accentText = Color::rgb(0x1A1410);
-    Color danger = Color::rgb(0xE0604E);
-    Color ok = Color::rgb(0x7CC47F);
-    Color shadow = Color::rgb(0x000000, 0.45f);
-};
-
 using Id = uint64_t;
 constexpr Id id(std::string_view s, uint64_t n = 0)
 {
@@ -56,7 +41,12 @@ enum class Style
     Normal,
     Primary,
     Danger,
-    Flat
+    Flat,
+    /// Square tile: icon above a short label (menus)
+    Tile,
+    TilePrimary,
+    /// Navigation row: icon and label left aligned, chevron on the right
+    Nav
 };
 
 /// Immediate mode widgets for touch and mouse
@@ -83,7 +73,13 @@ public:
 
     // Drawing
     void block(const Rect2& r, Id owner = 0) { blocks_.push_back({r, owner}); }
-    void panel(const Rect2& r, float radius = -1, Color c = {0, 0, 0, -1});
+    /// Frosted glass panel with soft shadow and edge highlight (tint alpha < 0: theme glass)
+    void panel(const Rect2& r, float radius = -1, Color tint = {0, 0, 0, -1}, float opacity = 1.f);
+    /// Layered soft shadow (ambient + key light)
+    void elevate(const Rect2& r, float radius, const Theme::Elevation& e, float opacity = 1.f);
+    /// Title text in the serif display font
+    void heading(float x, float y, const std::string& s, float size, Color c, gfx::Align align = gfx::Align::Left);
+    float headingWidth(const std::string& s, float size);
     void text(float x, float y, const std::string& s, float size, Color c, gfx::Align align = gfx::Align::Left,
               bool bold = false);
     float textWidth(const std::string& s, float size, bool bold = false);
@@ -97,6 +93,8 @@ public:
     bool button(Id i, const Rect2& r, const std::string& label, Icon ic = Icon::None, Style st = Style::Normal,
                 bool enabled = true);
     bool iconButton(Id i, const Rect2& r, Icon ic, bool active = false, int badge = 0, Style st = Style::Normal);
+    /// Row of a list: background with press and selection state, returns true when tapped
+    bool row(Id i, const Rect2& r, bool selected = false);
     /// Clickable area without drawing (rows of lists)
     bool area(Id i, const Rect2& r);
     bool pressed(Id i, const Rect2& r) const;
@@ -121,8 +119,20 @@ public:
     /// Finds the n-th target whose label equals (or, with a trailing '*', starts with) the pattern
     bool findTarget(const std::string& pattern, Rect2& r, int nth = 0) const;
     std::vector<std::string> targetLabels() const;
-    /// Ease a 0..1 value
+    /// Ease a 0..1 value (cubic out)
     static float ease(float t) { return 1.f - (1.f - t) * (1.f - t) * (1.f - t); }
+    /// Ease with a small overshoot (springy appearance)
+    static float easeBack(float t)
+    {
+        const float c1 = 1.5f, c3 = c1 + 1;
+        t -= 1;
+        return 1 + c3 * t * t * t + c1 * t * t;
+    }
+    /// Value of an element property that follows target smoothly (time constant ~ duration/3).
+    /// The first call returns the target directly.
+    float anim(Id i, float target, float duration);
+    /// Called when a widget was activated (UI sound)
+    std::function<void(int)> onActivate;
 
 private:
     App& app_;
@@ -148,6 +158,18 @@ private:
     std::vector<Id> scrollStack_;
     float wheelDelta_ = 0, wheelX_ = 0, wheelY_ = 0;
     Id activeSlider_ = 0;
+    struct AnimState
+    {
+        float value;
+        unsigned frame;
+    };
+    std::unordered_map<Id, AnimState> anims_;
+    unsigned frame_ = 0;
+    double lastTime_ = 0;
+    float dt_ = 0;
+    /// Pressed state of an element, animated (0..1)
+    float pressAnim(Id i, bool down);
+    void activated(int kind = 0);
 };
 
 } // namespace weiler::ui

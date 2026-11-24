@@ -147,6 +147,7 @@ struct Hud::Impl
     std::string gameOverText;
     std::string confirmText;
     std::function<void()> confirmAction;
+    double confirmTime = 0;
     unsigned attackSoldiers = 1;
     unsigned shipId = 0;
     bool attackStrong = true;

@@ -4,6 +4,7 @@
 
 #include "Menus.h"
 #include "App.h"
+#include "MenuBackdrop.h"
 #include "Audio.h"
 #include "RttrConfig.h"
 #include "Campaign.h"
@@ -32,41 +33,17 @@ using namespace ui;
 
 namespace {
 
-/// Own background: dusky gradient with soft hills
+/// Background of all menu screens: the drifting map (or a gradient without game data)
 void drawBackground(App& app)
 {
-    auto& b = app.batch();
-    const float W = static_cast<float>(app.width()), H = static_cast<float>(app.height());
-    const int bands = 24;
-    for(int i = 0; i < bands; ++i)
-    {
-        const float t = static_cast<float>(i) / bands;
-        const Color c{0.07f + 0.10f * t, 0.075f + 0.06f * t, 0.09f + 0.02f * t, 1};
-        b.quad(0, 0, H * t, W, H * (t + 1.f / bands) + 1, 0, 0, 1, 1, c);
-    }
-    const float tm = static_cast<float>(app.time());
-    // Low evening sun, away from the title
-    const float sunX = W * (app.portrait() ? 0.82f : 0.86f), sunY = H * (app.portrait() ? 0.27f : 0.2f);
-    b.circle(sunX, sunY, std::min(W, H) * 0.07f, Color::rgb(0xF2C27A, 0.9f), 0, app.dp(3));
-    b.circle(sunX, sunY, std::min(W, H) * 0.22f, Color::rgb(0xE8A33D, 0.10f), 0, app.dp(120));
-    const struct
-    {
-        float x, y, r;
-        uint32_t col;
-    } hills[] = {{0.15f, 1.02f, 0.55f, 0x2E3A2C}, {0.75f, 1.05f, 0.60f, 0x273226}, {0.45f, 1.18f, 0.62f, 0x1E271D},
-                 {0.0f, 1.25f, 0.5f, 0x182018},   {0.95f, 1.28f, 0.55f, 0x151C15}};
-    for(const auto& h : hills)
-    {
-        const float r = std::max(W, H) * h.r;
-        b.circle(W * h.x + std::sin(tm * 0.05f + h.x * 6) * app.dp(6), H * h.y, r, Color::rgb(h.col), 0, app.dp(2));
-    }
+    app.menuBackdrop().draw();
 }
 
 class MenuScreen : public Screen
 {
 public:
     explicit MenuScreen(App& app) : Screen(app), ui_(app.ui()) {}
-    void update(double) override {}
+    void update(double dt) override { app_.menuBackdrop().update(dt); }
     void onPointer(const PointerEvent& ev) override { ui_.pointer(ev); }
     void onWheel(float x, float y, float d) override { ui_.wheel(x, y, d); }
 
@@ -78,18 +55,23 @@ protected:
         const float w = std::min(W - app_.dp(32), app_.dp(460));
         return {(W - w) / 2, top, w, H - top - app_.dp(16)};
     }
-    void title(const std::string& t, const std::string& sub = {})
+    void title(const std::string& t)
     {
-        const float y = app_.portrait() ? app_.dp(70) : app_.dp(28);
-        ui_.text(static_cast<float>(app_.width()) / 2, y, t, app_.dp(46), ui_.theme.text, gfx::Align::Center, true);
-        if(!sub.empty())
-            ui_.text(static_cast<float>(app_.width()) / 2, y + app_.dp(62), sub, app_.dp(15), ui_.theme.textDim,
-                     gfx::Align::Center);
+        const float y = app_.portrait() ? app_.dp(80) : app_.dp(30);
+        ui_.heading(static_cast<float>(app_.width()) / 2, y, t, app_.dp(ui_.theme.type.headline), ui_.theme.text,
+                    gfx::Align::Center);
+    }
+    /// Title of a sub screen, centered on the height of the back button
+    void screenTitle(const std::string& t)
+    {
+        const float fs = app_.dp(ui_.theme.type.title + 2);
+        ui_.heading(static_cast<float>(app_.width()) / 2, app_.dp(14) + (app_.dp(48) - fs * 1.3f) / 2, t, fs,
+                    ui_.theme.text, gfx::Align::Center);
     }
     bool backButton()
     {
         const float s = app_.dp(48);
-        return ui_.iconButton(id("menu.back"), {app_.dp(12), app_.dp(12), s, s}, Icon::Back);
+        return ui_.iconButton(id("menu.back"), {app_.dp(14), app_.dp(14), s, s}, Icon::Back);
     }
     Ui& ui_;
 };
@@ -104,6 +86,7 @@ void startLoaded(App& app, const std::string& path)
     app.post([&app, path] {
         try
         {
+            app.releaseMenuBackdrop();
             app.setScreen(createGameScreen(app, Session::loadGame(path, static_cast<unsigned>(std::time(nullptr)))));
         } catch(const std::exception& e)
         {
@@ -186,7 +169,7 @@ public:
         const bool land = !app_.portrait();
         const float W = static_cast<float>(app_.width()), H = static_cast<float>(app_.height());
         const float m = app_.dp(14);
-        ui_.text(W / 2, app_.dp(18), "Neues Spiel", app_.dp(24), ui_.theme.text, gfx::Align::Center, true);
+        screenTitle("Neues Spiel");
         Rect2 listR, optR;
         if(land)
         {
@@ -208,16 +191,15 @@ public:
             const MapEntry& me = maps_[i];
             const Rect2 row{view.x, y, view.w - app_.dp(6), rowH - app_.dp(4)};
             const bool sel = static_cast<int>(i) == selected_;
-            if(sel || ui_.pressed(id("map", i), row))
-                app_.batch().roundRect(row, app_.dp(12), sel ? ui_.theme.accent.withAlpha(0.9f) : ui_.theme.raised);
-            const Color fg = sel ? ui_.theme.accentText : ui_.theme.text;
+            const bool rowHit = ui_.row(id("map", i), row, sel);
+            const Color fg = ui_.theme.text;
             ui_.text(row.x + app_.dp(14), row.y + app_.dp(7), me.name, app_.dp(16), fg, gfx::Align::Left, true);
             static const char* worlds[] = {"Grünland", "Ödland", "Winterwelt"};
             ui_.text(row.x + app_.dp(14), row.y + app_.dp(29),
                      std::to_string(me.w) + "×" + std::to_string(me.h) + " · " + std::to_string(me.players)
                        + " Spieler · " + worlds[std::min(2u, me.gfx)],
-                     app_.dp(12.5f), sel ? fg : ui_.theme.textDim);
-            if(ui_.area(id("map", i), row))
+                     app_.dp(12.5f), ui_.theme.textDim);
+            if(rowHit)
                 selected_ = static_cast<int>(i);
             y += rowH;
         }
@@ -282,6 +264,7 @@ private:
         app.post([&app, setup] {
             try
             {
+                app.releaseMenuBackdrop();
                 app.setScreen(createGameScreen(app, Session::newGame(setup)));
             } catch(const std::exception& e)
             {
@@ -312,7 +295,7 @@ public:
         }
         const float W = static_cast<float>(app_.width()), H = static_cast<float>(app_.height());
         const float m = app_.dp(14);
-        ui_.text(W / 2, app_.dp(18), "Kampagne", app_.dp(24), ui_.theme.text, gfx::Align::Center, true);
+        screenTitle("Kampagne");
         if(campaigns_.empty())
         {
             ui_.textWrapped(m, app_.dp(90), W - 2 * m, "Keine Kampagne gefunden (Karten der Gold Edition fehlen).",
@@ -359,16 +342,15 @@ public:
         {
             const Rect2 row{lv.x, y, lv.w - app_.dp(6), rowH - app_.dp(6)};
             const bool hl = static_cast<int>(i) == last;
-            if(hl || ui_.pressed(id("camp.m", i), row))
-                app_.batch().roundRect(row, app_.dp(12), hl ? ui_.theme.accent.withAlpha(0.9f) : ui_.theme.raised);
-            const Color fg = hl ? ui_.theme.accentText : ui_.theme.text;
-            ui_.text(row.x + app_.dp(14), row.y + app_.dp(7), "Kapitel " + std::to_string(i + 1), app_.dp(12.5f),
-                     hl ? fg : ui_.theme.textDim);
-            ui_.text(row.x + app_.dp(14), row.y + app_.dp(24), c.missionTitles[i], app_.dp(16), fg, gfx::Align::Left,
-                     true);
-            ui_.icon(Icon::Play, row.right() - app_.dp(26), row.y + row.h / 2, app_.dp(20), fg);
+            const bool rowHit = ui_.row(id("camp.m", i), row, hl);
+            ui_.text(row.x + app_.dp(18), row.y + app_.dp(7), "Kapitel " + std::to_string(i + 1), app_.dp(12.5f),
+                     hl ? ui_.theme.accent : ui_.theme.textDim);
+            ui_.text(row.x + app_.dp(18), row.y + app_.dp(24), c.missionTitles[i], app_.dp(16), ui_.theme.text,
+                     gfx::Align::Left, true);
+            ui_.icon(Icon::Play, row.right() - app_.dp(26), row.y + row.h / 2, app_.dp(18),
+                     hl ? ui_.theme.accent : ui_.theme.textFaint);
             ui_.tag("Kapitel " + std::to_string(i + 1), row);
-            if(ui_.area(id("camp.m", i), row))
+            if(rowHit)
                 start(c, i);
             y += rowH;
         }
@@ -392,6 +374,7 @@ private:
             {
                 NewGameSetup setup =
                   makeMissionSetup(campaign, mission, "Du", static_cast<unsigned>(std::time(nullptr)));
+                app.releaseMenuBackdrop();
                 app.setScreen(createGameScreen(app, Session::newGame(setup)));
             } catch(const std::exception& e)
             {
@@ -416,8 +399,7 @@ public:
             app_.setScreen(createMainMenu(app_));
             return;
         }
-        ui_.text(static_cast<float>(app_.width()) / 2, app_.dp(18), "Spielstand laden", app_.dp(24), ui_.theme.text,
-                 gfx::Align::Center, true);
+        screenTitle("Spielstand laden");
         const Rect2 col = column(app_.dp(76));
         ui_.panel(col, app_.dp(20));
         const Rect2 view = col.inset(app_.dp(10));
@@ -440,8 +422,7 @@ public:
         for(size_t i = 0; i < files.size(); ++i)
         {
             const Rect2 row{view.x, y, view.w - app_.dp(6), app_.dp(58)};
-            app_.batch().roundRect(row, app_.dp(12),
-                                   ui_.pressed(id("lf", i), row) ? ui_.theme.raised : Color::rgb(0xFFFFFF, 0.05f));
+            const bool rowHit = ui_.row(id("lf", i), row);
             std::string name = files[i].stem().string();
             if(name == "autosave")
                 name = "Automatisch gesichert";
@@ -454,7 +435,7 @@ public:
             ui_.text(row.x + app_.dp(48), row.y + app_.dp(30), saveDescription(files[i]), app_.dp(13),
                      ui_.theme.textDim);
             ui_.tag(name, row);
-            if(ui_.area(id("lf", i), row))
+            if(rowHit)
                 startLoaded(app_, files[i].string());
             y += app_.dp(64);
         }
@@ -481,8 +462,7 @@ public:
             app_.setScreen(createMainMenu(app_));
             return;
         }
-        ui_.text(static_cast<float>(app_.width()) / 2, app_.dp(18), "Einstellungen", app_.dp(24), ui_.theme.text,
-                 gfx::Align::Center, true);
+        screenTitle("Einstellungen");
         const Rect2 col = column(app_.dp(76));
         const Rect2 p{col.x, col.y, col.w, app_.dp(300)};
         ui_.panel(p, app_.dp(20));
@@ -516,6 +496,67 @@ public:
 };
 
 // ------------------------------------------------------------------------------------------------------------------
+/// Word mark: emblem (two gables under a low sun, in a ring) above "WEILER" in spaced serif capitals
+void drawWordmark(App& app, float cx, float top, float scale, float alpha)
+{
+    auto& b = app.batch();
+    auto& ui = app.ui();
+    const auto& th = ui.theme;
+    const float u = app.dp(1) * scale;
+    const Color gold = th.accent.withAlpha(alpha);
+    const Color ivory = th.text.withAlpha(alpha);
+    // Emblem
+    const float er = 30 * u, ecy = top + er;
+    b.circle(cx, ecy, er, gold, 1.6f * u);
+    b.circle(cx + 9 * u, ecy - 9 * u, 4.2f * u, gold);
+    const float w = 2.2f * u;
+    const float gy = ecy + 13 * u; // ground line
+    b.line(cx - 21 * u, gy, cx + 21 * u, gy, w * 0.8f, gold);
+    // Larger gable on the left, smaller one overlapping on the right
+    b.line(cx - 17 * u, gy - 7 * u, cx - 6 * u, gy - 19 * u, w, gold);
+    b.line(cx - 6 * u, gy - 19 * u, cx + 5 * u, gy - 7 * u, w, gold);
+    b.line(cx - 14 * u, gy - 10 * u, cx - 14 * u, gy, w, gold);
+    b.line(cx + 2 * u, gy - 10 * u, cx + 2 * u, gy, w, gold);
+    b.line(cx + 1 * u, gy - 4.5f * u, cx + 9 * u, gy - 13 * u, w, gold);
+    b.line(cx + 9 * u, gy - 13 * u, cx + 17 * u, gy - 4.5f * u, w, gold);
+    b.line(cx + 15 * u, gy - 7 * u, cx + 15 * u, gy, w, gold);
+    // Door
+    b.roundRect({cx - 7.5f * u, gy - 7 * u, 3 * u, 7 * u}, 1.2f * u, gold);
+    // Letters with wide tracking
+    const std::string word = "WEILER";
+    const float fs = 50 * u;
+    const float track = fs * 0.16f;
+    auto& font = app.fontDisplay();
+    std::vector<float> widths;
+    float total = 0;
+    for(char c : word)
+    {
+        widths.push_back(font.measure(std::string(1, c), fs));
+        total += widths.back();
+    }
+    total += track * static_cast<float>(word.size() - 1);
+    float x = cx - total / 2;
+    const float ty = ecy + er + 12 * u;
+    for(size_t i = 0; i < word.size(); ++i)
+    {
+        font.draw(b, x, ty + 2 * u, std::string(1, word[i]), fs, Color::rgb(0x000000, 0.35f * alpha));
+        font.draw(b, x, ty, std::string(1, word[i]), fs, ivory);
+        x += widths[i] + track;
+    }
+    // Tagline between two fine rules
+    const float ly = ty + fs * 1.3f + 6 * u;
+    const std::string tag = "Siedeln · Bauen · Handeln";
+    const float tfs = 13.5f * u;
+    const float tw = ui.textWidth(tag, tfs);
+    ui.text(cx, ly, tag, tfs, th.textDim.withAlpha(alpha), gfx::Align::Center);
+    const float rl = 26 * u, gap = 12 * u, ry = ly + tfs * 0.68f;
+    b.line(cx - tw / 2 - gap - rl, ry, cx - tw / 2 - gap, ry, 1.f * u, gold.withAlpha(0.6f * alpha));
+    b.line(cx + tw / 2 + gap, ry, cx + tw / 2 + gap + rl, ry, 1.f * u, gold.withAlpha(0.6f * alpha));
+}
+
+/// Height of the word mark at scale 1 in dp
+constexpr float WORDMARK_H = 60 + 12 + 50 * 1.3f + 6 + 20;
+
 class MainMenuScreen : public MenuScreen
 {
 public:
@@ -526,54 +567,76 @@ public:
         const std::string autosave = savePath("autosave");
         const bool canContinue = bfs::exists(autosave);
         const float W = static_cast<float>(app_.width()), H = static_cast<float>(app_.height());
+        const auto& th = ui_.theme;
+        const float t = std::min(1.f, static_cast<float>(app_.time() - shownAt_) / th.motion.slow);
+        const float e = Ui::ease(t);
+        const int n = canContinue ? 6 : 5;
+        float bh = app_.dp(56), gap = app_.dp(10), primH = app_.dp(60);
         Rect2 col;
-        float bh = app_.dp(58), gap = app_.dp(12);
         if(app_.portrait())
         {
-            title("Weiler", "Siedeln, bauen, handeln");
-            col = column(H * 0.36f);
+            const float scale = std::min(1.2f, (W / app_.dp(1)) / 330.f);
+            drawWordmark(app_, W / 2, H * 0.13f - app_.dp(10) * (1 - e), scale, e);
+            const float total = primH + gap * 1.6f + (bh + gap) * static_cast<float>(n - 1) + app_.dp(50);
+            const float w = std::min(W - app_.dp(40), app_.dp(440));
+            col = {(W - w) / 2, H - total - app_.dp(36), w, total};
         } else
         {
-            // Title on the left, buttons on the right; buttons shrink on short screens
-            const float tx = W * 0.27f, ty = H / 2 - app_.dp(46);
-            ui_.text(tx, ty, "Weiler", app_.dp(46), ui_.theme.text, gfx::Align::Center, true);
-            ui_.text(tx, ty + app_.dp(62), "Siedeln, bauen, handeln", app_.dp(15), ui_.theme.textDim, gfx::Align::Center);
-            const int n = canContinue ? 7 : 6;
-            gap = app_.dp(10);
-            bh = std::min(bh, (H - app_.dp(40) - gap * static_cast<float>(n - 1)) / static_cast<float>(n));
-            const float w = std::min(W * 0.42f, app_.dp(420));
-            const float total = bh * static_cast<float>(n) + gap * static_cast<float>(n - 1);
-            col = {W * 0.73f - w / 2, (H - total) / 2 - app_.dp(8), w, total};
+            // Word mark on the left, buttons on the right; buttons shrink on short screens
+            const float scale = std::clamp((H / app_.dp(1)) / 420.f, 0.7f, 1.2f);
+            drawWordmark(app_, W * 0.3f, H / 2 - WORDMARK_H * app_.dp(1) * scale / 2, scale, e);
+            gap = app_.dp(8);
+            const float avail = H - app_.dp(60);
+            bh = std::min(bh, (avail - primH - app_.dp(50) - gap * static_cast<float>(n)) / static_cast<float>(n - 1));
+            const float total = primH + gap * 1.6f + (bh + gap) * static_cast<float>(n - 1) + app_.dp(50);
+            const float w = std::min(W * 0.4f, app_.dp(420));
+            col = {W * 0.72f - w / 2, (H - total) / 2, w, total};
         }
+        // Column slides up into place
+        col.y += app_.dp(24) * (1 - e);
         float y = col.y;
-        auto btn = [&](const char* key, const std::string& label, Icon ic, Style st = Style::Normal) {
-            const bool r = ui_.button(id(key), {col.x, y, col.w, bh}, label, ic, st);
+        const bool first = !canContinue;
+        if(ui_.button(id(first ? "mm.new" : "mm.cont"), {col.x, y, col.w, primH}, first ? "Neues Spiel" : "Fortsetzen",
+                      first ? Icon::Flag : Icon::Play, Style::Primary))
+        {
+            if(first)
+                app_.setScreen(std::make_unique<NewGameScreen>(app_));
+            else
+                startLoaded(app_, autosave);
+        }
+        y += primH + gap * 1.6f;
+        auto nav = [&](const char* key, const std::string& label, Icon ic) {
+            // Cards directly over the world get a glass base
+            app_.batch().glass({col.x, y, col.w, bh}, std::min(app_.dp(th.radius.md), bh / 2), th.glass);
+            const bool r = ui_.button(id(key), {col.x, y, col.w, bh}, label, ic, Style::Nav);
             y += bh + gap;
             return r;
         };
-        if(canContinue && btn("mm.cont", "Fortsetzen", Icon::Play, Style::Primary))
-            startLoaded(app_, autosave);
-        if(btn("mm.new", "Neues Spiel", Icon::Flag, canContinue ? Style::Normal : Style::Primary))
+        if(!first && nav("mm.new", "Neues Spiel", Icon::Flag))
             app_.setScreen(std::make_unique<NewGameScreen>(app_));
-        if(btn("mm.camp", "Kampagne", Icon::Trophy))
+        if(nav("mm.camp", "Kampagne", Icon::Trophy))
             app_.setScreen(std::make_unique<CampaignScreen>(app_));
-        if(btn("mm.tut", "Einführung", Icon::Help))
+        if(nav("mm.tut", "Einführung", Icon::Help))
             startTutorialGame(app_);
-        if(btn("mm.load", "Laden", Icon::Folder))
+        if(nav("mm.load", "Laden", Icon::Folder))
             app_.setScreen(std::make_unique<LoadScreen>(app_));
-        if(btn("mm.set", "Einstellungen", Icon::Gear))
+        if(nav("mm.set", "Einstellungen", Icon::Gear))
             app_.setScreen(std::make_unique<SettingsScreen>(app_));
-        if(btn("mm.quit", "Beenden", Icon::Exit))
+        const float qw = app_.dp(150);
+        if(ui_.button(id("mm.quit"), {col.x + (col.w - qw) / 2, y + app_.dp(2), qw, app_.dp(44)}, "Beenden", Icon::Exit,
+                      Style::Flat))
             app_.quit();
-        ui_.text(app_.portrait() ? W / 2 : W * 0.27f, H - app_.dp(28),
-                 "Benötigt die Daten der Gold Edition · GPL", app_.dp(11), ui_.theme.textDim.withAlpha(0.7f),
-                 gfx::Align::Center);
+        ui_.text(app_.portrait() ? W / 2 : W * 0.3f, H - app_.dp(26), "Benötigt die Daten der Gold Edition · GPL",
+                 app_.dp(11), th.textFaint.withAlpha(e), gfx::Align::Center);
     }
     bool onBack() override
     {
         app_.quit();
         return true;
     }
+
+private:
+    double shownAt_ = app_.time();
 };
 
 class MessageScreen : public MenuScreen
@@ -628,6 +691,7 @@ void startTutorialGame(App& app, bool firstStart)
     app.post([&app, setup, firstStart] {
         try
         {
+            app.releaseMenuBackdrop();
             auto screen = std::make_unique<GameScreen>(app, Session::newGame(setup));
             screen->startTutorial(firstStart);
             app.setScreen(std::move(screen));

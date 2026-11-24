@@ -55,7 +55,9 @@ out vec4 fragColor;
 void main()
 {
     vec4 t = texture(uTex, vUv);
-    fragColor = vec4(t.rgb * vB, t.a);
+    // Unexplored land fades into a warm dark tone instead of hard black
+    vec3 fog = vec3(0.075, 0.068, 0.06);
+    fragColor = vec4(mix(fog, t.rgb * vB, smoothstep(0.0, 0.22, vB)), t.a);
 }
 )";
 
@@ -189,7 +191,9 @@ void TerrainLayer::init(const GameWorldViewer& gwv)
 void TerrainLayer::updateColor(MapPoint pt)
 {
     const auto shadow = static_cast<float>(gwv_->getNode(pt).shadow);
-    const float clr = -1.f / (256.f * 256.f) * shadow * shadow + 1.f / 90.f * shadow + 0.38f;
+    const float orig = -1.f / (256.f * 256.f) * shadow * shadow + 1.f / 90.f * shadow + 0.38f;
+    // Weiler: gentler relief shading than the original (dark slopes were very heavy)
+    const float clr = 1.f + (orig - 1.f) * 0.6f;
     float& c = colors_[static_cast<size_t>(pt.y) * size_.x + pt.x];
     switch(gwv_->getVisibility(pt))
     {

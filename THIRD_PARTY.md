@@ -37,5 +37,13 @@ The game loop in `src/engine/Session.cpp` is adapted from RTTR (`extras/ai-battl
 Files: `data/fonts/Lato-Regular.ttf`, `data/fonts/Lato-Bold.ttf` (version 2.015, taken from the Debian package
 `fonts-lato`, upstream http://www.latofonts.com).
 
-Copyright (c) 2010-2011, Łukasz Dziedzic (as stated by Debian and `OFL.txt`). License: SIL Open Font License 1.1 (OFL-1.1), full text in
-`data/fonts/OFL.txt`.
+Copyright (c) 2010-2011, Łukasz Dziedzic (as stated by Debian and `OFL-Lato.txt`). License: SIL Open Font License 1.1 (OFL-1.1),
+full text in `data/fonts/OFL-Lato.txt`.
+
+## Noto Serif Display (font)
+
+File: `data/fonts/NotoSerifDisplay-SemiBold.ttf`, taken unchanged from the Debian package `fonts-noto-core`
+(upstream https://github.com/notofonts). Used for titles and the "Weiler" word mark.
+
+Copyright 2010, 2012-2020 Google Inc. / Google LLC (as stated by Debian). License: SIL Open Font License 1.1
+(OFL-1.1), full text in `data/fonts/OFL-Noto.txt`.

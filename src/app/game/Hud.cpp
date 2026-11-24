@@ -182,6 +182,7 @@ void Hud::Impl::confirm(const std::string& text, std::function<void()> action)
 {
     confirmText = text;
     confirmAction = std::move(action);
+    confirmTime = app.time();
 }
 
 void Hud::Impl::noteRecent(BuildingType bt)
@@ -747,13 +748,14 @@ void Hud::Impl::drawNameLabels()
         const float barW = l.productivity >= 0 ? app.dp(28) : 0;
         const float w = tw + app.dp(12) + (barW > 0 ? barW + app.dp(6) : 0), h = fs * 1.5f;
         const Rect2 r{sp.x - w / 2, sp.y + app.dp(4), w, h};
-        b.roundRect(r, h / 2, Color::rgb(0x000000, 0.55f));
+        b.roundRect(r, h / 2, ui.theme.panelSolid.withAlpha(0.72f));
+        b.roundRect(r, h / 2, ui.theme.line, 1.f, app.dp(1));
         ui.text(r.x + app.dp(6), r.y + (h - fs * 1.3f) / 2, l.text, fs, ui.theme.text, gfx::Align::Left, true);
         if(barW > 0)
         {
             const Rect2 bar{r.right() - barW - app.dp(6), r.y + h / 2 - app.dp(2.5f), barW, app.dp(5)};
             const float f = std::clamp(static_cast<float>(l.productivity) / 100.f, 0.f, 1.f);
-            b.roundRect(bar, app.dp(2.5f), Color::rgb(0xFFFFFF, 0.15f));
+            b.roundRect(bar, app.dp(2.5f), ui.theme.text.withAlpha(0.15f));
             b.roundRect({bar.x, bar.y, bar.w * f, bar.h}, app.dp(2.5f),
                         l.productivity >= 60 ? ui.theme.ok : l.productivity >= 30 ? ui.theme.accent : ui.theme.danger);
         }
@@ -765,24 +767,37 @@ void Hud::Impl::drawRing()
     if(!ring.open)
         return;
     auto& b = app.batch();
-    const float t = Ui::ease(std::min(1.f, static_cast<float>((app.time() - ring.openTime) / 0.18)));
+    const auto& th = ui.theme;
+    const float age = static_cast<float>(app.time() - ring.openTime);
+    const float t = Ui::ease(std::min(1.f, age / th.motion.normal));
     const size_t n = ring.items.size();
-    const float R = app.dp(n > 6 ? 112 : 100) * (0.6f + 0.4f * t);
+    const float R0 = app.dp(n > 6 ? 112 : 100);
     const float btn = app.dp(60);
-    b.circle(ring.sx, ring.sy, R + btn * 0.75f, Color::rgb(0x000000, 0.28f * t), 0, app.dp(30));
+    // Soft dark halo behind the ring keeps it readable on any terrain
+    b.circle(ring.sx, ring.sy, (R0 + btn * 0.8f) * (0.7f + 0.3f * t), th.shadow.withAlpha(0.55f * t), 0, app.dp(46));
     const Nation nation = player().nation;
     for(size_t i = 0; i < n; ++i)
     {
         const RingItem& item = ring.items[i];
+        // Items spring out one after another
+        const float ti = std::clamp((age - 0.018f * static_cast<float>(i)) / th.motion.slow, 0.f, 1.f);
+        const float k = Ui::easeBack(ti);
+        const float R = R0 * (0.35f + 0.65f * k);
+        const float alphaI = std::min(1.f, ti * 2.5f);
         const float ang = -1.5708f + 6.2832f * static_cast<float>(i) / static_cast<float>(n);
         const float cx = ring.sx + std::cos(ang) * R, cy = ring.sy + std::sin(ang) * R;
-        const Rect2 r{cx - btn / 2, cy - btn / 2, btn, btn};
-        const bool down = ui.pressed(id("ring", i), r);
-        b.shadow({r.x, r.y + app.dp(3), r.w, r.h}, btn / 2, app.dp(12), Color::rgb(0x000000, 0.4f * t));
-        b.circle(cx, cy, btn / 2, (down ? ui.theme.raised : ui.theme.panelSolid).withAlpha(0.95f * t));
-        b.circle(cx, cy, btn / 2, ui.theme.line, app.dp(1));
+        const Rect2 hitR{cx - btn / 2, cy - btn / 2, btn, btn};
+        const float p = ui.anim(id("ringp", i), ui.pressed(id("ring", i), hitR) ? 1.f : 0.f, th.motion.fast);
+        const float bs = btn * (0.6f + 0.4f * std::min(k, 1.08f)) * (1.f - 0.07f * p);
+        const Rect2 r{cx - bs / 2, cy - bs / 2, bs, bs};
+        ui.elevate(r, bs / 2, th.low, alphaI);
+        b.glass(r, bs / 2, th.glassStrong, alphaI);
+        b.roundRectV(r, bs / 2, th.highlight.withAlpha(th.highlight.a * alphaI), th.line.withAlpha(0.03f * alphaI), 1.f,
+                     app.dp(1));
+        if(p > 0.01f)
+            b.circle(cx, cy, bs / 2, th.surfacePressed.withAlpha(th.surfacePressed.a * p));
         if(item.kind == RingItem::Kind::Building)
-            buildingIcon(nation, item.bt, r.inset(app.dp(9)), t);
+            buildingIcon(nation, item.bt, r.inset(bs * 0.15f), alphaI);
         else
         {
             Icon ic = Icon::Info;
@@ -800,23 +815,24 @@ void Hud::Impl::drawRing()
                 case RingItem::Kind::More: ic = Icon::Grid; break;
                 default: break;
             }
-            ui.icon(ic, cx, cy, btn * 0.46f, ui.theme.text.withAlpha(t));
+            const bool destroy = item.kind == RingItem::Kind::DestroyFlag || item.kind == RingItem::Kind::DestroyRoad;
+            ui.icon(ic, cx, cy, bs * 0.42f, (destroy ? th.danger : th.text).withAlpha(alphaI));
         }
         // Label
         const float fs = app.dp(11.5f);
         const float tw = ui.textWidth(item.label, fs, true);
-        b.roundRect({cx - tw / 2 - app.dp(5), cy + btn / 2 + app.dp(2), tw + app.dp(10), fs * 1.45f}, app.dp(6),
-                    Color::rgb(0x000000, 0.55f * t));
-        ui.text(cx, cy + btn / 2 + app.dp(2), item.label, fs, ui.theme.text.withAlpha(t), gfx::Align::Center, true);
-        ui.tag("ring:" + item.label, r);
-        if(ui.area(id("ring", i), r))
+        const Rect2 lr{cx - tw / 2 - app.dp(7), cy + btn / 2 + app.dp(3), tw + app.dp(14), fs * 1.5f};
+        b.roundRect(lr, lr.h / 2, th.panelSolid.withAlpha(0.82f * alphaI));
+        ui.text(cx, lr.y + (lr.h - fs * 1.3f) / 2, item.label, fs, th.text.withAlpha(alphaI), gfx::Align::Center, true);
+        ui.tag("ring:" + item.label, hitR);
+        if(ui.area(id("ring", i), hitR))
         {
             activateRingItem(item);
             return;
         }
     }
     // Center: close
-    const float cb = app.dp(40);
+    const float cb = app.dp(42) * (0.5f + 0.5f * t);
     if(ui.iconButton(id("ringclose"), {ring.sx - cb / 2, ring.sy - cb / 2, cb, cb}, Icon::Close))
     {
         // A quick second tap on the node (the ring opened under the finger) is a double tap: zoom there
@@ -846,10 +862,11 @@ void Hud::Impl::drawTopBar()
     const float W = landscape() && sheet != SheetKind::None ? sheetRect().x : static_cast<float>(app.width());
     const float pillW = app.dp(116) + s * 3;
     const Rect2 pill{W - m - pillW, top, pillW, s};
-    ui.panel(pill, s / 2, ui.theme.panel.withAlpha(0.86f * a));
-    ui.text(pill.x + app.dp(18), pill.y + app.dp(6), clock, app.dp(16), ui.theme.text.withAlpha(a), gfx::Align::Left,
+    ui.panel(pill, s / 2, ui.theme.glass, a);
+    ui.text(pill.x + app.dp(20), pill.y + app.dp(6), clock, app.dp(16), ui.theme.text.withAlpha(a), gfx::Align::Left,
             true);
-    ui.text(pill.x + app.dp(18), pill.y + app.dp(26), speed, app.dp(12), ui.theme.textDim.withAlpha(a));
+    ui.text(pill.x + app.dp(20), pill.y + app.dp(26), speed, app.dp(12),
+            (game.paused() ? ui.theme.accent : ui.theme.textDim).withAlpha(a), gfx::Align::Left, game.paused());
     float bx = pill.right() - s * 3;
     if(ui.iconButton(id("speed"), {bx, top, s, s}, Icon::Fast, game.speedFactor() > 1, 0, Style::Flat))
         game.setSpeedFactor(game.speedFactor() >= 8 ? 1 : game.speedFactor() * 2);
@@ -952,7 +969,7 @@ void Hud::Impl::drawMinimapPanel()
     const float w = std::min(right - m, app.dp(landscape() ? 300 : 340));
     const float h = std::min(w * 0.62f, static_cast<float>(app.height()) - app.dp(86));
     const Rect2 panelR{right - w, m + app.dp(58), w, h};
-    ui.panel(panelR, app.dp(16));
+    ui.panel(panelR, app.dp(ui.theme.radius.lg));
     const Rect2 inner = panelR.inset(app.dp(8));
     auto& b = app.batch();
     const Rect2 mr = game.minimap().draw(b, inner);
@@ -1003,7 +1020,7 @@ void Hud::Impl::drawToasts()
         w += app.dp(28);
         y -= h;
         const Rect2 r{(W - w) / 2, y, w, h};
-        ui.panel(r, app.dp(14), ui.theme.panelSolid.withAlpha(0.92f * a));
+        ui.panel(r, app.dp(ui.theme.radius.lg), ui.theme.glassStrong, a);
         float ty = r.y + app.dp(9);
         for(const auto& l : lines)
         {

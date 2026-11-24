@@ -27,7 +27,9 @@ public:
     {
         KindTexture = 0,
         KindGlyph = 1,
-        KindShape = 2
+        KindShape = 2,
+        /// Rounded rectangle filled with the blurred backdrop, tinted (frosted glass)
+        KindGlass = 3
     };
 
     Batch() = default;
@@ -52,6 +54,13 @@ public:
               Kind kind = KindTexture);
     /// Filled (stroke = 0) or outlined rounded rectangle. softness widens the anti aliasing (for shadows).
     void roundRect(const Rect2& r, float radius, Color c, float softness = 1.f, float stroke = 0.f);
+    /// Rounded rectangle with a vertical gradient from top to bottom color
+    void roundRectV(const Rect2& r, float radius, Color top, Color bottom, float softness = 1.f, float stroke = 0.f);
+    /// Frosted glass: blurred copy of what was drawn so far, tinted with tint (alpha = tint strength).
+    /// The backdrop is captured once per frame on first use.
+    void glass(const Rect2& r, float radius, Color tint, float opacity = 1.f);
+    /// Forget the captured backdrop (the next glass call captures again)
+    void invalidateBackdrop() { backdropValid_ = false; }
     void circle(float cx, float cy, float radius, Color c, float stroke = 0.f, float softness = 1.f);
     /// Line with round caps
     void line(float x0, float y0, float x1, float y1, float width, Color c);
@@ -72,10 +81,23 @@ private:
     };
     void push(GLuint tex, const Vertex (&v)[4]);
     void shapeQuad(float cx, float cy, float hx, float hy, float ux, float uy, float extent, float radius, Color c,
-                   float softness, float stroke);
+                   float softness, float stroke, Color c2 = {0, 0, 0, -1}, float kind = 2.f);
+    void captureBackdrop();
+    void initBlur();
 
     GLuint program_ = 0, vao_ = 0, vbo_ = 0, ibo_ = 0, whiteTex_ = 0;
-    GLint uScreen_ = -1;
+    GLint uScreen_ = -1, uBackdrop_ = -1;
+    // Backdrop blur: chain of half size render targets, the last one is blurred in two passes
+    struct Target
+    {
+        GLuint tex = 0, fbo = 0;
+        int w = 0, h = 0;
+    };
+    Target down_[3], blurTmp_;
+    GLuint blurProgram_ = 0, blurVao_ = 0;
+    GLint uBlurDir_ = -1, uBlurTex_ = -1;
+    bool backdropValid_ = false;
+    Rect2 clip_;
     std::vector<Vertex> vertices_;
     GLuint curTex_ = 0;
     int fbW_ = 1, fbH_ = 1;

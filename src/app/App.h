@@ -20,6 +20,7 @@
 namespace weiler {
 
 class Audio;
+class MenuBackdrop;
 class Settings;
 class TestScript;
 namespace ui {
@@ -49,6 +50,8 @@ public:
     gfx::SpriteAtlas& atlas() { return *atlas_; }
     gfx::Font& font() { return *font_; }
     gfx::Font& fontBold() { return *fontBold_; }
+    /// Serif display font (titles, word mark)
+    gfx::Font& fontDisplay() { return *fontDisplay_; }
     Audio& audio() { return *audio_; }
     ui::IconAtlas& icons() { return icons_; }
     ui::Ui& ui() { return *ui_; }
@@ -78,6 +81,10 @@ public:
     void startTextInput(bool on);
 
     Screen* screen() { return screen_.get(); }
+    /// Background of the menus (created on first use)
+    MenuBackdrop& menuBackdrop();
+    /// Free the background world (before a game session is created)
+    void releaseMenuBackdrop();
 
     /// Run a function on the main thread at the end of the frame
     void post(std::function<void()> fn) { posted_.push_back(std::move(fn)); }
@@ -95,12 +102,13 @@ private:
     SDL_GLContext gl_ = nullptr;
     gfx::Batch batch_;
     std::unique_ptr<gfx::SpriteAtlas> atlas_;
-    std::unique_ptr<gfx::Font> font_, fontBold_;
+    std::unique_ptr<gfx::Font> font_, fontBold_, fontDisplay_;
     std::unique_ptr<Audio> audio_;
     ui::IconAtlas icons_;
     std::unique_ptr<ui::Ui> ui_;
     std::unique_ptr<Settings> settings_;
     std::unique_ptr<Screen> screen_, nextScreen_;
+    std::unique_ptr<MenuBackdrop> backdrop_;
     std::unique_ptr<TestScript> script_;
     std::deque<std::function<void()>> posted_;
     int fbW_ = 1, fbH_ = 1;
