@@ -404,7 +404,11 @@ bool Ui::button(Id i, const Rect2& rIn, const std::string& label, Icon ic, Style
             icon(ic, x + is / 2, r.y + r.h / 2, is, iconColor);
             x += is + dp(14);
         }
-        text(x, r.y + (r.h - fs * 1.3f) / 2, label, fs, fg, gfx::Align::Left, true);
+        // Narrow buttons (landscape menu grid): the label shrinks instead of running into the arrow
+        const float room = r.right() - x - dp(38);
+        const float tw = textWidth(label, fs, true);
+        const float lfs = tw > room ? fs * std::max(0.75f, room / tw) : fs;
+        text(x, r.y + (r.h - lfs * 1.3f) / 2, label, lfs, fg, gfx::Align::Left, true);
         icon(Icon::Next, r.right() - dp(22), r.y + r.h / 2, dp(16), theme.textFaint);
         if(enabled)
             tag(label, rIn);
