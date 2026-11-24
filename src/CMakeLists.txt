@@ -4,6 +4,7 @@ find_package(Boost 1.74 REQUIRED COMPONENTS program_options)
 
 # Engine: game session on top of the RTTR core (no user interface)
 add_library(weiler_engine STATIC
+    engine/Campaign.cpp
     engine/DataPaths.cpp
     engine/Session.cpp
 )

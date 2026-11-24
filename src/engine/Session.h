@@ -69,8 +69,9 @@ public:
 
     /// Frontend callbacks
     void setGameInterface(GameInterface* gi);
-    std::function<void(const LuaMessage&)> onLuaMessage;
     std::function<void(const std::string&)> onSystemChat;
+    /// Receiver of Lua message boxes; messages sent before (e.g. at mission start) are delivered now
+    void setLuaMessageHandler(std::function<void(const LuaMessage&)> handler);
 
     /// Let the AI play for the local player (toggle)
     void toggleLocalAI();
@@ -87,6 +88,8 @@ protected:
     bool addGC(gc::GameCommandPtr gc) override;
 
 private:
+    std::function<void(const LuaMessage&)> onLuaMessage_;
+    mutable std::vector<LuaMessage> pendingLuaMessages_;
     Session(std::shared_ptr<Game> game, unsigned localPlayer, std::string title);
     void createAIs();
 

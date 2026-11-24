@@ -77,7 +77,7 @@ GameScreen::GameScreen(App& app, std::unique_ptr<Session> session)
     VIEWSTATE.onDestroyBuilding = [this](MapPoint pt) { session_->DestroyBuilding(pt); };
     VIEWSTATE.onToggleHumanAIPlayer = [this] { session_->toggleLocalAI(); };
     hud_ = std::make_unique<Hud>(*this, app_);
-    session_->onLuaMessage = [this](const LuaMessage& msg) { hud_->showLuaMessage(msg); };
+    session_->setLuaMessageHandler([this](const LuaMessage& msg) { hud_->showLuaMessage(msg); });
     lastAutosave_ = app.time();
 }
 

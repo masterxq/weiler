@@ -6,6 +6,7 @@
 #include "App.h"
 #include "Audio.h"
 #include "RttrConfig.h"
+#include "Campaign.h"
 #include "Screen.h"
 #include "Settings.h"
 #include "files.h"
@@ -293,6 +294,116 @@ private:
 };
 
 // ------------------------------------------------------------------------------------------------------------------
+class CampaignScreen : public MenuScreen
+{
+public:
+    explicit CampaignScreen(App& app) : MenuScreen(app), campaigns_(loadCampaigns())
+    {
+        sel_ = std::clamp(app.settings().getInt("campaign.selected", 0), 0,
+                          std::max(0, static_cast<int>(campaigns_.size()) - 1));
+    }
+    void draw() override
+    {
+        drawBackground(app_);
+        if(backButton())
+        {
+            app_.setScreen(createMainMenu(app_));
+            return;
+        }
+        const float W = static_cast<float>(app_.width()), H = static_cast<float>(app_.height());
+        const float m = app_.dp(14);
+        ui_.text(W / 2, app_.dp(18), "Kampagne", app_.dp(24), ui_.theme.text, gfx::Align::Center, true);
+        if(campaigns_.empty())
+        {
+            ui_.textWrapped(m, app_.dp(90), W - 2 * m, "Keine Kampagne gefunden (Karten der Gold Edition fehlen).",
+                            app_.dp(16), ui_.theme.textDim, gfx::Align::Center);
+            return;
+        }
+        float top = app_.dp(70);
+        if(campaigns_.size() > 1)
+        {
+            std::vector<std::string> names;
+            for(const auto& c : campaigns_)
+                names.push_back(c.desc.name);
+            const float w = std::min(W - 2 * m, app_.dp(520));
+            if(ui_.segmented(id("camp.sel"), {(W - w) / 2, top, w, app_.dp(42)}, names, sel_))
+                app_.settings().setInt("campaign.selected", sel_);
+            top += app_.dp(54);
+        }
+        const Campaign& c = campaigns_[static_cast<size_t>(sel_)];
+        Rect2 descR, listR;
+        if(app_.portrait())
+        {
+            descR = {m, top, W - 2 * m, (H - top) * 0.36f};
+            listR = {m, descR.bottom() + m, W - 2 * m, H - descR.bottom() - 2 * m};
+        } else
+        {
+            listR = {m + app_.dp(56), top, (W - app_.dp(56)) * 0.46f, H - top - m};
+            descR = {listR.right() + m, top, W - listR.right() - 2 * m, H - top - m};
+        }
+        // Story
+        ui_.panel(descR, app_.dp(20));
+        const Rect2 dv = descR.inset(app_.dp(16));
+        float y = ui_.beginScroll(id("camp.desc", static_cast<uint64_t>(sel_)), dv);
+        const float h = ui_.textWrapped(dv.x, y, dv.w - app_.dp(8), reflowText(c.desc.longDescription), app_.dp(15),
+                                        ui_.theme.text);
+        ui_.endScroll(h);
+        // Chapters
+        ui_.panel(listR, app_.dp(20));
+        const Rect2 lv = listR.inset(app_.dp(8));
+        y = ui_.beginScroll(id("camp.list", static_cast<uint64_t>(sel_)), lv);
+        const float y0 = y;
+        const int last = app_.settings().getInt("campaign." + c.id + ".last", 0);
+        const float rowH = app_.dp(60);
+        for(size_t i = 0; i < c.missionTitles.size(); ++i)
+        {
+            const Rect2 row{lv.x, y, lv.w - app_.dp(6), rowH - app_.dp(6)};
+            const bool hl = static_cast<int>(i) == last;
+            if(hl || ui_.pressed(id("camp.m", i), row))
+                app_.batch().roundRect(row, app_.dp(12), hl ? ui_.theme.accent.withAlpha(0.9f) : ui_.theme.raised);
+            const Color fg = hl ? ui_.theme.accentText : ui_.theme.text;
+            ui_.text(row.x + app_.dp(14), row.y + app_.dp(7), "Kapitel " + std::to_string(i + 1), app_.dp(12.5f),
+                     hl ? fg : ui_.theme.textDim);
+            ui_.text(row.x + app_.dp(14), row.y + app_.dp(24), c.missionTitles[i], app_.dp(16), fg, gfx::Align::Left,
+                     true);
+            ui_.icon(Icon::Play, row.right() - app_.dp(26), row.y + row.h / 2, app_.dp(20), fg);
+            ui_.tag("Kapitel " + std::to_string(i + 1), row);
+            if(ui_.area(id("camp.m", i), row))
+                start(c, i);
+            y += rowH;
+        }
+        ui_.endScroll(y - y0);
+    }
+    bool onBack() override
+    {
+        app_.setScreen(createMainMenu(app_));
+        return true;
+    }
+
+private:
+    void start(const Campaign& c, size_t mission)
+    {
+        app_.settings().setInt("campaign." + c.id + ".last", static_cast<int>(mission));
+        app_.settings().save();
+        App& app = app_;
+        const Campaign campaign = c;
+        app.post([&app, campaign, mission] {
+            try
+            {
+                NewGameSetup setup =
+                  makeMissionSetup(campaign, mission, "Du", static_cast<unsigned>(std::time(nullptr)));
+                app.setScreen(createGameScreen(app, Session::newGame(setup)));
+            } catch(const std::exception& e)
+            {
+                std::cerr << "Could not start mission: " << e.what() << std::endl;
+            }
+        });
+    }
+    std::vector<Campaign> campaigns_;
+    int sel_ = 0;
+};
+
+// ------------------------------------------------------------------------------------------------------------------
 class LoadScreen : public MenuScreen
 {
 public:
@@ -427,7 +538,7 @@ public:
             const float tx = W * 0.27f, ty = H / 2 - app_.dp(46);
             ui_.text(tx, ty, "Weiler", app_.dp(46), ui_.theme.text, gfx::Align::Center, true);
             ui_.text(tx, ty + app_.dp(62), "Siedeln, bauen, handeln", app_.dp(15), ui_.theme.textDim, gfx::Align::Center);
-            const int n = canContinue ? 6 : 5;
+            const int n = canContinue ? 7 : 6;
             gap = app_.dp(10);
             bh = std::min(bh, (H - app_.dp(40) - gap * static_cast<float>(n - 1)) / static_cast<float>(n));
             const float w = std::min(W * 0.42f, app_.dp(420));
@@ -444,6 +555,8 @@ public:
             startLoaded(app_, autosave);
         if(btn("mm.new", "Neues Spiel", Icon::Flag, canContinue ? Style::Normal : Style::Primary))
             app_.setScreen(std::make_unique<NewGameScreen>(app_));
+        if(btn("mm.camp", "Kampagne", Icon::Trophy))
+            app_.setScreen(std::make_unique<CampaignScreen>(app_));
         if(btn("mm.tut", "Einführung", Icon::Help))
             startTutorialGame(app_);
         if(btn("mm.load", "Laden", Icon::Folder))
@@ -533,6 +646,30 @@ std::unique_ptr<Screen> createMissingDataScreen(App& app)
         + app.paths().gameData.string()
         + "\noder starte Weiler mit --data <Ordner> bzw. setze WEILER_DATA.\n\nGrund: "
         + app.paths().missingGameDataReason());
+}
+
+std::string reflowText(const std::string& text)
+{
+    // Texts of the original are wrapped by hand for fixed windows: single line breaks become spaces,
+    // empty lines stay paragraph breaks
+    std::string out;
+    size_t i = 0;
+    while(i < text.size())
+    {
+        if(text[i] == '\n')
+        {
+            size_t n = 0;
+            while(i < text.size() && (text[i] == '\n' || text[i] == ' '))
+                n += text[i++] == '\n';
+            if(!out.empty() && i < text.size())
+                out += n >= 2 ? "\n\n" : " ";
+            continue;
+        }
+        out += text[i++];
+    }
+    while(!out.empty() && (out.back() == ' ' || out.back() == '\n'))
+        out.pop_back();
+    return out;
 }
 
 std::string saveDescription(const bfs::path& path)

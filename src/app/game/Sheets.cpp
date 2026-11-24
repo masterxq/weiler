@@ -184,6 +184,8 @@ void Hud::Impl::sheetGameMenu(const Rect2& r)
         openSheet(SheetKind::Settings, MapPoint::invalid(), true);
     if(ui.button(id("gm.help"), g.next(), "Hilfe", Icon::Help))
         openSheet(SheetKind::Help, MapPoint::invalid(), true);
+    if(!missionText.empty() && ui.button(id("gm.mission"), g.next(), "Auftrag", Icon::Info))
+        openSheet(SheetKind::Mission, MapPoint::invalid(), true);
     if(ui.button(id("gm.quit"), g.next(), "Hauptmenü", Icon::Exit))
     {
         confirm("Partie verlassen? Der Stand wird als Autosave gesichert.", [this] {

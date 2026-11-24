@@ -11,6 +11,7 @@
 #include "Names.h"
 #include "Settings.h"
 #include "Tutorial.h"
+#include "menu/Menus.h"
 #include "addons/const_addons.h"
 #include "buildings/noBaseBuilding.h"
 #include "buildings/nobBaseMilitary.h"
@@ -963,7 +964,7 @@ void Hud::startTutorial(bool firstStart)
 void Hud::showLuaMessage(const LuaMessage& msg)
 {
     d->missionTitle = msg.title;
-    d->missionText = msg.text;
+    d->missionText = reflowText(msg.text);
     d->missionPaused = msg.pause && !d->game.paused();
     if(d->missionPaused)
         d->game.setPaused(true);

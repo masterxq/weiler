@@ -237,8 +237,21 @@ void Session::systemChat(const std::string& text)
 
 void Session::showLuaMessage(const LuaMessage& msg) const
 {
-    if(onLuaMessage)
-        onLuaMessage(msg);
+    if(onLuaMessage_)
+        onLuaMessage_(msg);
+    else
+        pendingLuaMessages_.push_back(msg);
+}
+
+void Session::setLuaMessageHandler(std::function<void(const LuaMessage&)> handler)
+{
+    onLuaMessage_ = std::move(handler);
+    if(!onLuaMessage_)
+        return;
+    std::vector<LuaMessage> pending;
+    std::swap(pending, pendingLuaMessages_);
+    for(const LuaMessage& msg : pending)
+        onLuaMessage_(msg);
 }
 
 } // namespace weiler
