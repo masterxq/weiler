@@ -13,9 +13,9 @@ rttr:RegisterTranslations(
     },
     de =
     {
-        name = 'Welt Kampagne',
-        shortDescription = 'Orginale Welt Kampagne',
-        longDescription= 'Die orginale Welt Kampagne aus der Gold Edition.\n\nErobere die ganze Welt.'
+        name = 'Weltkampagne',
+        shortDescription = 'Originale Weltkampagne',
+        longDescription= 'Die originale Weltkampagne aus der Gold Edition.\n\nErobere die ganze Welt.'
     },
     pl =
     {

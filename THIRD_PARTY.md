@@ -46,6 +46,7 @@ Changes against upstream:
 - `lua/LuaInterfaceBase.cpp`: translated texts of the Lua scripts pass `gettext` once more, so that
   `data/lang/weiler-de.po` (merged before `rttr-de.po` at build time) can adapt the German mission texts to the
   informal address of the Weiler interface.
+- `data/RTTR/campaigns/world/campaign.lua`: German spelling of the campaign name ("Weltkampagne").
 
 The game loop in `src/engine/Session.cpp` is adapted from RTTR (`extras/ai-battle`, `network/GameClient*`).
 

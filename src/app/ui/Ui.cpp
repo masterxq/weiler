@@ -404,12 +404,15 @@ bool Ui::button(Id i, const Rect2& rIn, const std::string& label, Icon ic, Style
             icon(ic, x + is / 2, r.y + r.h / 2, is, iconColor);
             x += is + dp(14);
         }
-        // Narrow buttons (landscape menu grid): the label shrinks instead of running into the arrow
-        const float room = r.right() - x - dp(38);
+        // Narrow buttons (landscape menu grid): the label shrinks instead of running into the arrow; if that is not
+        // enough the arrow goes (it is only a hint)
         const float tw = textWidth(label, fs, true);
-        const float lfs = tw > room ? fs * std::max(0.75f, room / tw) : fs;
+        const bool arrow = tw * 0.75f <= r.right() - x - dp(38);
+        const float room = r.right() - x - dp(arrow ? 38 : 12);
+        const float lfs = tw > room ? fs * std::max(0.6f, room / tw) : fs;
         text(x, r.y + (r.h - lfs * 1.3f) / 2, label, lfs, fg, gfx::Align::Left, true);
-        icon(Icon::Next, r.right() - dp(22), r.y + r.h / 2, dp(16), theme.textFaint);
+        if(arrow)
+            icon(Icon::Next, r.right() - dp(22), r.y + r.h / 2, dp(16), theme.textFaint);
         if(enabled)
             tag(label, rIn);
         return enabled && area(i, rIn);
