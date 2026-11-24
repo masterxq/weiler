@@ -1,0 +1,43 @@
+// Copyright (C) 2005 - 2021 Settlers Freaks (sf-team at siedler25.org)
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#include "noGranite.h"
+
+#include "FOWObjects.h"
+#include "Loader.h"
+#include "SerializedGameData.h"
+
+#include "ogl/glSmartBitmap.h"
+
+noGranite::noGranite(const GraniteType type, const unsigned char state)
+    : noBase(NodalObjectType::Granite), type(type), state(state)
+{}
+
+void noGranite::serialize(SerializedGameData& sgd) const
+{
+    noBase::serialize(sgd);
+
+    sgd.pushEnum<uint8_t>(type);
+    sgd.pushUnsignedChar(state);
+}
+
+noGranite::noGranite(SerializedGameData& sgd, const unsigned obj_id)
+    : noBase(sgd, obj_id), type(sgd.pop<GraniteType>()), state(sgd.popUnsignedChar())
+{}
+
+void noGranite::draw(DrawPoint drawPt)
+{
+    LOADER.granite_cache[type][state].draw(drawPt);
+}
+
+std::unique_ptr<FOWObject> noGranite::createFOWObject() const
+{
+    return std::make_unique<fowGranite>(type, state);
+}
+
+void noGranite::hew()
+{
+    if(state)
+        --state;
+}

@@ -1,0 +1,29 @@
+// Copyright (C) 2005 - 2021 Settlers Freaks (sf-team at siedler25.org)
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#include "GameEvent.h"
+#include "GameObject.h"
+#include "SerializedGameData.h"
+
+GameEvent::GameEvent(unsigned instanceId, GameObject* obj, unsigned startGF, unsigned length, unsigned id)
+    : instanceId(instanceId), obj(obj), startGF(startGF), length(length), id(id)
+{
+    RTTR_Assert(length > 0); // Events cannot be executed in the same GF as they are added
+    RTTR_Assert(obj);        // Events without an object are pointless
+}
+
+GameEvent::GameEvent(SerializedGameData& sgd, const unsigned instanceId)
+    : instanceId(sgd.addEvent(instanceId, this)), obj(sgd.popObject<GameObject>()), startGF(sgd.popUnsignedInt()),
+      length(sgd.popUnsignedInt()), id(sgd.popUnsignedInt())
+{
+    RTTR_Assert(obj);
+}
+
+void GameEvent::serialize(SerializedGameData& sgd) const
+{
+    sgd.pushObject(obj);
+    sgd.pushUnsignedInt(startGF);
+    sgd.pushUnsignedInt(length);
+    sgd.pushUnsignedInt(id);
+}

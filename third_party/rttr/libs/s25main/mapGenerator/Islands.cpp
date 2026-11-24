@@ -1,0 +1,95 @@
+// Copyright (C) 2005 - 2021 Settlers Freaks (sf-team at siedler25.org)
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#include "mapGenerator/Islands.h"
+#include "mapGenerator/TextureHelper.h"
+#include <cmath>
+
+namespace rttr::mapGenerator {
+
+Island createIsland(Map& map, RandomUtility& rnd, unsigned size, unsigned minLandDist, double mountainCoverage)
+{
+    Island island;
+
+    const auto land = [&map](const MapPoint& pt) { return map.z[pt] > map.height.minimum; };
+    const auto distances = distancesTo(map.size, land);
+    const unsigned maxDistance = *std::max_element(distances.begin(), distances.end());
+    const unsigned minDistance = std::min(maxDistance, minLandDist * 10);
+    const auto possibleCenters = selectPoints(
+      [&distances, minDistance](const MapPoint& pt) { return distances[pt] >= minDistance; }, distances.getSize());
+    const MapPoint center = rnd.randomItem(possibleCenters);
+
+    const auto compare = [&distances, &center](const MapPoint& rhs, const MapPoint& lhs) {
+        // computes prefered extension points for the island by considering distance to
+        // center of the island and maximizing distance to other land
+
+        const auto ratioRhs = distances[rhs] - distances.calcDistance(center, rhs);
+        const auto ratioLhs = distances[lhs] - distances.calcDistance(center, lhs);
+
+        return ratioRhs < ratioLhs;
+    };
+
+    std::priority_queue<MapPoint, std::vector<MapPoint>, decltype(compare)> queue(compare);
+
+    queue.push(center);
+    island.insert(center);
+
+    while(!queue.empty() && island.size() < size)
+    {
+        const MapPoint& currentPoint = queue.top();
+
+        queue.pop();
+
+        const auto& points = map.z.getPointsInRadius(currentPoint, minLandDist);
+
+        for(const MapPoint& pt : points)
+        {
+            if(distances[pt] >= 2 * minLandDist)
+            {
+                if(island.insert(pt).second)
+                {
+                    queue.push(pt);
+                }
+            }
+        }
+    }
+
+    auto isCoast = [&map, &island](const MapPoint& pt) {
+        return helpers::containsIf(map.z.getNeighbours(pt),
+                                   [&island](const MapPoint& pt) { return !helpers::contains(island, pt); });
+    };
+
+    const auto& coastDistance = rttr::mapGenerator::distances(map.size, island, 0, isCoast);
+
+    for(const MapPoint& pt : island)
+    {
+        const auto base = map.height.minimum + coastDistance[pt];
+        const auto minimum = rnd.randomValue(base, base + 1u);
+        map.z[pt] = std::min(static_cast<uint8_t>(minimum), map.height.maximum);
+    }
+
+    auto mountain = map.textureMap.findAll(isMinableMountain);
+    auto mountainLevel = limitFor(coastDistance, island, 1. - mountainCoverage, map.height.minimum + 1u);
+    auto mountainRange = ValueRange<unsigned>(mountainLevel, getMaximum(coastDistance, island));
+
+    auto textures = map.textureMap.findAll(isBuildableLand);
+    auto textureRange = ValueRange<unsigned>(0u, mountainLevel);
+
+    map.textureMap.sort(textures, byHumidity);
+
+    for(const MapPoint& pt : island)
+    {
+        if(coastDistance[pt] < mountainLevel)
+        {
+            map.textureMap.set(pt, textures[mapValueToIndex(coastDistance[pt], textureRange, textures.size())]);
+        } else
+        {
+            map.textureMap.set(pt, mountain[mapValueToIndex(coastDistance[pt], mountainRange, mountain.size())]);
+        }
+    }
+
+    return island;
+}
+
+} // namespace rttr::mapGenerator

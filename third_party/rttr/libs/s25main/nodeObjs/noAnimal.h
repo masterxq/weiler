@@ -1,0 +1,102 @@
+// Copyright (C) 2005 - 2021 Settlers Freaks (sf-team at siedler25.org)
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#pragma once
+
+#include "helpers/OptionalEnum.h"
+#include "noMovable.h"
+#include "gameTypes/AnimalTypes.h"
+
+class nofHunter;
+class nofSkinner;
+class SerializedGameData;
+
+/// Klasse für die Tiere (ausgenommen Esel und Schweine natürlich)
+class noAnimal : public noMovable
+{
+    /// Tierart
+    Species species;
+
+    /// Was macht das Tier gerade?
+    enum class State : uint8_t
+    {
+        Walking,                      /// Läuft dumm in der Gegend rum
+        Paused,                       /// macht mal ne kurze Verschnaufpause ;)
+        WaitingForHunter,             /// wartet auf den Jäger bis er es abknallt
+        WalkingUntilWaitingForHunter, /// läuft weiter, wartet aber dann auf den Jäger
+        Dead,                         /// wurde erschossen und liegt tot rum
+        Disappearing                  /// Leiche verschwindet langsam...
+    } state;
+    friend constexpr auto maxEnumValue(State) { return State::Disappearing; }
+
+    /// Wie weit kann es noch rumlaufen, bis es mal wieder eine Pause machen muss
+    unsigned short pause_way;
+    /// Jäger, der das Tier jagt (0, falls nicht gejagt)
+    nofHunter* hunter;
+    /// Skinner, skinning the animal (0, if not skinned)
+    nofSkinner* skinner;
+    /// Nächster Zeitpunkt, ab wann der Sound gespielt werden soll (bei Enten und Schafen)
+    unsigned sound_moment;
+
+private:
+    /// entscheidet, was nach einem gelaufenen Abschnitt weiter zu tun ist
+    void walked();
+    /// Sucht eine Richtung, in die das Tier gehen kann
+    helpers::OptionalEnum<Direction> findDir();
+    /// Fängt an zu laufen
+    void startWalking(Direction dir);
+    /// Sucht eine neue Richtung und läuft in diese, ansonsten stirbt es
+    void standardWalking();
+
+public:
+    noAnimal(Species species, MapPoint pos);
+    noAnimal(SerializedGameData& sgd, unsigned obj_id);
+
+    ~noAnimal() override = default;
+
+    void serialize(SerializedGameData& sgd) const override;
+    void destroy() override
+    {
+        RTTR_Assert(!hunter);
+        RTTR_Assert(!skinner);
+        noMovable::destroy();
+    }
+
+    GO_Type getGOT() const final { return GO_Type::Animal; }
+    Species getSpecies() const { return species; }
+
+    // An x,y zeichnen
+    void draw(DrawPoint drawPt) override;
+    // Benachrichtigen, wenn neuer gf erreicht wurde
+    void handleEvent(unsigned id) override;
+
+    /// Wird aufgerufen, nachdem das Tier erzeugt wurde und zur Figurenliste hinzugefügt wurde
+    void startLiving();
+
+    bool canBeSkinned() const;
+    bool isGettingSkinned() const;
+    void beginSkinning(nofSkinner* skinner);
+    void stopSkinning();
+    void skinned();
+
+    /// Kann das Tier noch vom Jäger gejagt werden?
+    bool canHunted() const;
+    bool isHunted() const;
+
+    /// Ein Jäger geht das Tier jagen
+    void beginHunting(nofHunter* hunter);
+    /// Ein Jäger ist in der Nähe vom Tier und will es abschießen --> Tier muss stillhalten
+    /// gibt die Koordinaten seines (späteren) Standorts zurück
+    MapPoint hunterIsNear();
+    /// Ein Jäger kann doch nicht mehr zum Tier kommen --> kann wieder normal weiterlaufen
+    void stopHunting();
+
+    /// Steht das Tier schon schön ruhig, damit der Jäger es erschießen kann?
+    bool isReadyForShooting() const { return (state == State::WaitingForHunter); }
+    bool isGettingReadyForShooting() const { return (state == State::WalkingUntilWaitingForHunter); }
+    /// Tier soll sterben - erstmal nur Leiche liegen lassen
+    void die();
+    /// Tier wurde vom Jäger ausgenommen und muss sofort verschwinden
+    void eviscerated();
+};

@@ -1,0 +1,90 @@
+// Copyright (C) 2005 - 2021 Settlers Freaks (sf-team at siedler25.org)
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#include "noFire.h"
+
+#include "EventManager.h"
+#include "GlobalGameSettings.h"
+#include "Loader.h"
+#include "SerializedGameData.h"
+#include "SoundManager.h"
+#include "addons/const_addons.h"
+#include "ViewState.h"
+#include "ViewState.h"
+#include "ogl/glArchivItem_Bitmap.h"
+#include "world/GameWorld.h"
+
+constexpr std::array<unsigned, 7> FIREDURATION = {3700, 2775, 1850, 925, 370, 5550, 7400};
+constexpr std::array<unsigned, 7> FIREANIMATIONDURATION = {1000, 750, 500, 250, 100, 1500, 2000};
+
+noFire::noFire(const MapPoint pos, bool isBig)
+    : noCoordBase(NodalObjectType::Fire, pos), isBig(isBig), was_sounding(false), last_sound(0), next_interval(0)
+{
+    // Burn for some time
+    dead_event = getEvMgr().addEvent(this, FIREDURATION[world->getGGS().getSelection(AddonId::BURN_DURATION)]);
+}
+noFire::~noFire() = default;
+
+void noFire::destroy()
+{
+    // Remove from map if still present
+    if(world->getNode(pos).obj == this)
+        world->setNO(pos, nullptr);
+
+    world->recalcBQAroundPoint(pos);
+    world->getSoundMgr().stopSounds(*this);
+
+    getEvMgr().removeEvent(dead_event);
+    noCoordBase::destroy();
+}
+
+void noFire::serialize(SerializedGameData& sgd) const
+{
+    noCoordBase::serialize(sgd);
+
+    sgd.pushBool(isBig);
+    sgd.pushEvent(dead_event);
+}
+
+noFire::noFire(SerializedGameData& sgd, const unsigned obj_id)
+    : noCoordBase(sgd, obj_id), isBig(sgd.popBool()), dead_event(sgd.popEvent()), was_sounding(false), last_sound(0),
+      next_interval(0)
+{}
+
+void noFire::draw(DrawPoint drawPt)
+{
+    unsigned id =
+      VIEWSTATE.interpolate(FIREANIMATIONDURATION[world->getGGS().getSelection(AddonId::BURN_DURATION)], dead_event);
+
+    // Burn for the first 2/3 of the time, leave debris for the last 1/3
+    if(id < FIREANIMATIONDURATION[world->getGGS().getSelection(AddonId::BURN_DURATION)] * 2 / 3)
+    {
+        // Fire animation
+        LOADER.getMapTexture(2500 + (isBig ? 8 : 0) + id % 8)->drawFull(drawPt);
+        LOADER.getMapTexture(2530 + (isBig ? 8 : 0) + id % 8)->drawFull(drawPt, 0xC0101010);
+
+        // Fire sound play in random intervals
+        if(VIEWSTATE.getTickCount() - last_sound > next_interval)
+        {
+            world->getSoundMgr().playNOSound(96, *this, id);
+            was_sounding = true;
+
+            last_sound = VIEWSTATE.getTickCount();
+            next_interval = 500 + rand() % 1400;
+        }
+    } else
+    {
+        // Debris
+        LOADER.getMapTexture(2524 + (isBig ? 1 : 0))->drawFull(drawPt);
+    }
+}
+
+void noFire::handleEvent(const unsigned /*id*/)
+{
+    // End event: Remove from map and destroy
+    RTTR_Assert(world->getNode(pos).obj == this);
+    world->setNO(pos, nullptr);
+    dead_event = nullptr;
+    getEvMgr().addToKillList(this);
+}

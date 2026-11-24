@@ -1,0 +1,394 @@
+// Copyright (C) 2005 - 2026 Settlers Freaks (sf-team at siedler25.org)
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#include "buildings/noBuildingSite.h"
+#include "FOWObjects.h"
+#include "GamePlayer.h"
+#include "Loader.h"
+#include "SerializedGameData.h"
+#include "Ware.h"
+#include "figures/nofBuilder.h"
+#include "figures/nofPlaner.h"
+#include "helpers/containerUtils.h"
+#include "helpers/toString.h"
+#include "ogl/glArchivItem_Bitmap.h"
+#include "ogl/glSmartBitmap.h"
+#include "world/GameWorld.h"
+#include "gameData/BuildingConsts.h"
+#include "gameData/MilitaryConsts.h"
+#include "s25util/colors.h"
+#include <stdexcept>
+
+noBuildingSite::noBuildingSite(const BuildingType type, const MapPoint pos, const unsigned char player)
+    : noBaseBuilding(NodalObjectType::Buildingsite, type, pos, player), state(BuildingSiteState::Building),
+      planer(nullptr), builder(nullptr), boards(0), stones(0), used_boards(0), used_stones(0), build_progress(0)
+{
+    // Überprüfen, ob die Baustelle erst noch planiert werden muss (nur bei mittleren/großen Gebäuden)
+    if(getSize() == BuildingQuality::House || getSize() == BuildingQuality::Castle
+       || getSize() == BuildingQuality::Harbor)
+    {
+        // Höhe auf dem Punkt, wo die Baustelle steht
+        int altitude = world->getNode(pos).altitude;
+
+        for(const auto dir : helpers::EnumRange<Direction>{})
+        {
+            // Richtung 4 wird nicht planiert (Flagge)
+            if(dir != Direction::SouthEast)
+            {
+                // Gibt es da Differenzen?
+                if(altitude - world->getNeighbourNode(pos, dir).altitude != 0)
+                    state = BuildingSiteState::Planing;
+            }
+        }
+    }
+
+    // Wir hätten gerne einen Planierer/Bauarbeiter...
+    world->getPlayer(player).addJobWanted((state == BuildingSiteState::Planing) ? Job::Planer : Job::Builder, this);
+
+    // Bauwaren anfordern
+    orderConstructionMaterial();
+
+    // Baustelle in den Index eintragen, damit die Wirtschaft auch Bescheid weiß
+    world->getPlayer(player).addBuildingSite(this);
+}
+
+/// Konstruktor für Hafenbaustellen vom Schiff aus
+noBuildingSite::noBuildingSite(const MapPoint pos, const unsigned char player)
+    : noBaseBuilding(NodalObjectType::Buildingsite, BuildingType::HarborBuilding, pos, player),
+      state(BuildingSiteState::Building), planer(nullptr), boards(BUILDING_COSTS[BuildingType::HarborBuilding].boards),
+      stones(BUILDING_COSTS[BuildingType::HarborBuilding].stones), used_boards(0), used_stones(0), build_progress(0)
+{
+    GamePlayer& owner = world->getPlayer(player);
+    // Baustelle in den Index eintragen, damit die Wirtschaft auch Bescheid weiß
+    owner.addBuildingSite(this);
+    // Bauarbeiter auch auf der Karte auftragen
+    builder = &world->addFigure(pos, std::make_unique<nofBuilder>(pos, player, this));
+
+    // Baumaterialien in der Inventur verbuchen
+    owner.decreaseInventoryWare(GoodType::Boards, boards);
+    owner.decreaseInventoryWare(GoodType::Stones, stones);
+}
+
+noBuildingSite::~noBuildingSite() = default;
+
+void noBuildingSite::destroy()
+{
+    // Bauarbeiter/Planierer Bescheid sagen
+    if(builder)
+    {
+        builder->lostWork();
+        builder = nullptr;
+    } else if(planer)
+    {
+        planer->lostWork();
+        planer = nullptr;
+    } else
+        world->getPlayer(player).jobNotWanted(this);
+
+    RTTR_Assert(!builder);
+    RTTR_Assert(!planer);
+
+    // Bestellte Waren Bescheid sagen
+    for(Ware* orderedBoard : ordered_boards)
+        wareNotNeeded(orderedBoard);
+    ordered_boards.clear();
+    for(Ware* orderedStone : ordered_stones)
+        wareNotNeeded(orderedStone);
+    ordered_stones.clear();
+
+    // und Feld wird leer
+    world->setNO(pos, nullptr);
+
+    // Baustelle wieder aus der Liste entfernen - dont forget about expedition harbor status
+    bool expeditionharbor = isHarborBuildingSiteFromSea();
+    world->getPlayer(player).removeBuildingSite(this);
+
+    noBaseBuilding::destroy();
+
+    // Hafenbaustelle?
+    if(expeditionharbor)
+    {
+        world->removeHarborBuildingSiteFromSea(this);
+        // Land neu berechnen nach zerstören weil da schon straßen etc entfernt werden
+        world->recalcTerritory(*this, TerritoryChangeReason::Destroyed);
+    }
+    world->recalcBQAroundPointBig(pos);
+}
+
+void noBuildingSite::serialize(SerializedGameData& sgd) const
+{
+    noBaseBuilding::serialize(sgd);
+
+    sgd.pushEnum<uint8_t>(state);
+    sgd.pushObject(planer, true);
+    sgd.pushObject(builder, true);
+    sgd.pushUnsignedChar(boards);
+    sgd.pushUnsignedChar(stones);
+    sgd.pushUnsignedChar(used_boards);
+    sgd.pushUnsignedChar(used_stones);
+    sgd.pushUnsignedChar(build_progress);
+    sgd.pushObjectContainer(ordered_boards, true);
+    sgd.pushObjectContainer(ordered_stones, true);
+}
+
+noBuildingSite::noBuildingSite(SerializedGameData& sgd, const unsigned obj_id)
+    : noBaseBuilding(sgd, obj_id), state(sgd.pop<BuildingSiteState>()),
+      planer(sgd.popObject<nofPlaner>(GO_Type::NofPlaner)), builder(sgd.popObject<nofBuilder>(GO_Type::NofBuilder)),
+      boards(sgd.popUnsignedChar()), stones(sgd.popUnsignedChar()), used_boards(sgd.popUnsignedChar()),
+      used_stones(sgd.popUnsignedChar()), build_progress(sgd.popUnsignedChar())
+{
+    sgd.popObjectContainer(ordered_boards, GO_Type::Ware);
+    sgd.popObjectContainer(ordered_stones, GO_Type::Ware);
+}
+
+void noBuildingSite::orderConstructionMaterial()
+{
+    // Bei Planieren keine Waren bestellen
+    if(state == BuildingSiteState::Planing)
+        return;
+
+    // Optimization: return early if building is isolated
+    if(!isConnected())
+        return;
+
+    // Bretter
+    GamePlayer& owner = world->getPlayer(player);
+    for(int i = used_boards + boards + ordered_boards.size(); i < BUILDING_COSTS[bldType_].boards; ++i)
+    {
+        Ware* w = owner.orderWare(GoodType::Boards, *this);
+        if(!w)
+            break;
+        RTTR_Assert(helpers::contains(ordered_boards, w));
+    }
+    // Steine
+    for(int i = used_stones + stones + ordered_stones.size(); i < BUILDING_COSTS[bldType_].stones; ++i)
+    {
+        Ware* w = owner.orderWare(GoodType::Stones, *this);
+        if(!w)
+            break;
+        RTTR_Assert(helpers::contains(ordered_stones, w));
+    }
+}
+
+unsigned noBuildingSite::getMilitaryRadius() const
+{
+    /// Note: This actually only applies to harbor buildings made from expeditions. We rely on the calling functions to
+    /// only take those into account
+    return bldType_ == BuildingType::HarborBuilding ? HARBOR_RADIUS : 0;
+}
+
+void noBuildingSite::draw(DrawPoint drawPt)
+{
+    if(state == BuildingSiteState::Planing)
+    {
+        // Baustellenschild mit Schatten zeichnen
+        LOADER.getNationImage(world->getPlayer(player).nation, 450)->drawFull(drawPt);
+        LOADER.getNationImage(world->getPlayer(player).nation, 451)->drawFull(drawPt, COLOR_SHADOW);
+    } else
+    {
+        // Baustellenstein und -schatten zeichnen
+        LOADER.getNationImage(world->getPlayer(player).nation, 455)->drawFull(drawPt);
+        LOADER.getNationImage(world->getPlayer(player).nation, 456)->drawFull(drawPt, COLOR_SHADOW);
+
+        // Waren auf der Baustelle
+
+        // Bretter
+        DrawPoint doorPos = drawPt + DrawPoint(getDoorPointX(), getDoorPointY());
+        for(unsigned char i = 0; i < boards; ++i)
+            LOADER.getWareStackTex(GoodType::Boards)->drawFull(doorPos - DrawPoint(5, 10 + i * 4));
+        // Steine
+        for(unsigned char i = 0; i < stones; ++i)
+            LOADER.getWareStackTex(GoodType::Stones)->drawFull(doorPos + DrawPoint(8, -12 - i * 4));
+
+        // bis dahin gebautes Haus zeichnen
+
+        // Rohbau
+
+        // ausrechnen, wie weit er ist
+        unsigned progressRaw, progressBld;
+        unsigned maxProgressRaw, maxProgressBld;
+
+        if(BUILDING_COSTS[bldType_].stones)
+        {
+            // Haus besteht aus Steinen und Brettern
+            maxProgressRaw = BUILDING_COSTS[bldType_].boards * 8;
+            maxProgressBld = BUILDING_COSTS[bldType_].stones * 8;
+        } else
+        {
+            // Haus besteht nur aus Brettern, dann 50:50
+            maxProgressBld = maxProgressRaw = BUILDING_COSTS[bldType_].boards * 4;
+        }
+        progressRaw = std::min<unsigned>(build_progress, maxProgressRaw);
+        progressBld = ((build_progress > maxProgressRaw) ? (build_progress - maxProgressRaw) : 0);
+
+        LOADER.building_cache[nation][bldType_].skeleton.drawPercent(drawPt, progressRaw * 100 / maxProgressRaw);
+        LOADER.building_cache[nation][bldType_].building.drawPercent(drawPt, progressBld * 100 / maxProgressBld);
+    }
+}
+
+/// Erzeugt von ihnen selbst ein FOW Objekt als visuelle "Erinnerung" für den Fog of War
+std::unique_ptr<FOWObject> noBuildingSite::createFOWObject() const
+{
+    return std::make_unique<fowBuildingSite>(state == BuildingSiteState::Planing, bldType_, nation, build_progress);
+}
+
+void noBuildingSite::gotWorker(Job /*job*/, noFigure& worker)
+{
+    // Aha, wir haben nen Planierer/Bauarbeiter bekommen
+    if(state == BuildingSiteState::Planing)
+    {
+        RTTR_Assert(worker.getGOT() == GO_Type::NofPlaner);
+        planer = static_cast<nofPlaner*>(&worker);
+    } else
+    {
+        RTTR_Assert(worker.getGOT() == GO_Type::NofBuilder);
+        builder = static_cast<nofBuilder*>(&worker);
+    }
+}
+
+void noBuildingSite::abrogate()
+{
+    planer = nullptr;
+    builder = nullptr;
+
+    world->getPlayer(player).addJobWanted((state == BuildingSiteState::Planing) ? Job::Planer : Job::Builder, this);
+}
+
+unsigned noBuildingSite::calcDistributionPoints(const GoodType goodtype)
+{
+    // Beim Planieren brauchen wir noch gar nichts
+    if(state == BuildingSiteState::Planing)
+        return 0;
+
+    // We only need boards and stones.
+    if(goodtype != GoodType::Boards && goodtype != GoodType::Stones)
+        return 0;
+
+    const unsigned curBoards = ordered_boards.size() + boards + used_boards;
+    const unsigned curStones = ordered_stones.size() + stones + used_stones;
+    RTTR_Assert(curBoards <= BUILDING_COSTS[this->bldType_].boards);
+    RTTR_Assert(curStones <= BUILDING_COSTS[this->bldType_].stones);
+
+    // Wenn wir schon genug Baumaterial haben, brauchen wir nichts mehr
+    if((goodtype == GoodType::Boards && curBoards == BUILDING_COSTS[this->bldType_].boards)
+       || (goodtype == GoodType::Stones && curStones == BUILDING_COSTS[this->bldType_].stones))
+        return 0;
+
+    // 10000 als Basis wählen, damit man auch noch was abziehen kann
+    constexpr unsigned basePoints = 10000;
+    unsigned points = basePoints;
+
+    // Baumaterial mit einberechnen (wer noch am wenigsten braucht, soll mehr Punkte kriegen, da ja möglichst
+    // zuerst Gebäude fertiggestellt werden sollten)
+    points -= (BUILDING_COSTS[bldType_].boards - curBoards) * 20;
+    points -= (BUILDING_COSTS[bldType_].stones - curStones) * 20;
+
+    // Baupriorität mit einberechnen (niedriger = höhere Priorität, daher - !)
+    const unsigned buildingSitePrio = world->getPlayer(player).getBuidingSitePriority(this) * 30;
+
+    if(points > buildingSitePrio)
+        points -= buildingSitePrio;
+    else
+        points = 0;
+
+    RTTR_Assert(points <= basePoints); // Underflow detection. Should never happen...
+
+    return points;
+}
+
+void noBuildingSite::addWare(std::unique_ptr<Ware> ware)
+{
+    RTTR_Assert(state == BuildingSiteState::Building);
+
+    if(ware->type == GoodType::Boards)
+    {
+        RTTR_Assert(helpers::contains(ordered_boards, ware.get()));
+        ordered_boards.remove(ware.get());
+        ++boards;
+    } else if(ware->type == GoodType::Stones)
+    {
+        RTTR_Assert(helpers::contains(ordered_stones, ware.get()));
+        ordered_stones.remove(ware.get());
+        ++stones;
+    } else
+        throw std::logic_error("Wrong ware type " + helpers::toString(ware->type));
+
+    // Inventur entsprechend verringern
+    world->getPlayer(player).decreaseInventoryWare(ware->type, 1);
+    world->getPlayer(player).removeWare(*ware);
+}
+
+void noBuildingSite::wareLost(Ware& ware)
+{
+    RTTR_Assert(state == BuildingSiteState::Building);
+
+    if(ware.type == GoodType::Boards)
+    {
+        RTTR_Assert(helpers::contains(ordered_boards, &ware));
+        ordered_boards.remove(&ware);
+    } else if(ware.type == GoodType::Stones)
+    {
+        RTTR_Assert(helpers::contains(ordered_stones, &ware));
+        ordered_stones.remove(&ware);
+    } else
+        throw std::logic_error("Wrong ware type lost " + helpers::toString(ware.type));
+
+    orderConstructionMaterial();
+}
+
+void noBuildingSite::takeWare(Ware* ware)
+{
+    RTTR_Assert(state == BuildingSiteState::Building);
+
+    // Ware in die Bestellliste aufnehmen
+    if(ware->type == GoodType::Boards)
+    {
+        RTTR_Assert(!helpers::contains(ordered_boards, ware));
+        ordered_boards.push_back(ware);
+    } else if(ware->type == GoodType::Stones)
+    {
+        RTTR_Assert(!helpers::contains(ordered_stones, ware));
+        ordered_stones.push_back(ware);
+    } else
+        throw std::logic_error("Wrong ware type " + helpers::toString(ware->type));
+}
+
+bool noBuildingSite::isBuildingComplete()
+{
+    return (build_progress == BUILDING_COSTS[bldType_].boards * 8 + BUILDING_COSTS[bldType_].stones * 8);
+}
+
+unsigned char noBuildingSite::getBuildProgress(bool percent) const
+{
+    if(!percent)
+        return build_progress;
+
+    unsigned costs = BUILDING_COSTS[bldType_].boards * 8 + BUILDING_COSTS[bldType_].stones * 8;
+    unsigned progress = (((unsigned)build_progress) * 100) / costs;
+
+    return (unsigned char)progress;
+}
+
+/// Aufgerufen, wenn Planierung beendet wurde
+void noBuildingSite::planingFinished()
+{
+    /// Normale Baustelle
+    state = BuildingSiteState::Building;
+    planer = nullptr;
+
+    // Wir hätten gerne einen Bauarbeiter...
+    world->getPlayer(player).addJobWanted(Job::Builder, this);
+
+    // Bauwaren anfordern
+    orderConstructionMaterial();
+}
+
+/// Gibt zurück, ob eine bestimmte Baustellen eine Baustelle ist, die vom Schiff aus errichtet wurde
+bool noBuildingSite::isHarborBuildingSiteFromSea() const
+{
+    if(this->bldType_ == BuildingType::HarborBuilding)
+        return world->isHarborBuildingSiteFromSea(this);
+    else
+        return false;
+}

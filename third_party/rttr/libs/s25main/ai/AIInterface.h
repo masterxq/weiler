@@ -1,0 +1,225 @@
+// Copyright (C) 2005 - 2021 Settlers Freaks (sf-team at siedler25.org)
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#pragma once
+
+#include "GameCommand.h"
+#include "GamePlayer.h"
+#include "NodalObjectTypes.h"
+#include "ai/AIResource.h"
+#include "factories/GameCommandFactory.h"
+#include "helpers/OptionalEnum.h"
+#include "world/GameWorldBase.h"
+#include "gameTypes/ChatDestination.h"
+#include "gameTypes/Direction.h"
+#include <memory>
+#include <vector>
+
+class nobHQ;
+class nobShipYard;
+class RoadSegment;
+class noBuilding;
+class noBuildingSite;
+class noFlag;
+class noRoadNode;
+class noShip;
+class nobBaseWarehouse;
+class nobHarborBuilding;
+class nobMilitary;
+class nobUsual;
+struct Inventory;
+
+/// Chat message sent by an AI player
+struct AIChatMessage
+{
+    unsigned player;
+    ChatDestination destination;
+    std::string text;
+};
+
+class AIInterface : public GameCommandFactory
+{
+public:
+    AIInterface(const GameWorldBase& gwb, std::vector<gc::GameCommandPtr>& gcs, unsigned char playerID);
+    ~AIInterface();
+
+    unsigned char getPlayerId() const { return playerID_; }
+    unsigned getNumPlayers() const { return gwb.getNumPlayers(); }
+    const std::vector<HarborId>& getUsableHarbors() const { return usableHarbors_; }
+
+    bool isDefeated() const { return player_.isDefeated(); }
+    /// Return the resource buried on a given spot (gold, coal, iron ore, granite (sub), fish, nothing)
+    AISubSurfaceResource getSubsurfaceResource(MapPoint pt) const;
+    /// Return the resource on top on a given spot (wood, stones, nothing)
+    AISurfaceResource getSurfaceResource(MapPoint pt) const;
+    /// Calculate the surface resource value on a given spot (wood/ stones/ farmland)
+    /// when given a direction and lastvalue the calculation will be much faster O(n) vs O(n^2)
+    int calcResourceValue(MapPoint pt, AIResource res, helpers::OptionalEnum<Direction> direction = std::nullopt,
+                          int lastval = 0xffff) const;
+    /// Calculate the resource value for a given point
+    int getResourceRating(MapPoint pt, AIResource res) const;
+    /// Check whether the given mine resource can be produced on otherwise empty mineable mountain.
+    bool isMineResourceWorkEverywhere(AIResource res) const;
+    /// Test whether a given point is part of the border or not
+    bool isBorder(const MapPoint pt) const
+    {
+        return gwb.getNode(pt).boundary_stones[BorderStonePos::OnPoint] == (playerID_ + 1);
+    }
+    /// Test whether a given point is part of own territory
+    bool isOwnTerritory(const MapPoint pt) const { return gwb.getNode(pt).owner == (playerID_ + 1); }
+
+    bool isRoad(const MapPoint pt, Direction dir) { return gwb.getPointRoad(pt, dir) != PointRoad::None; }
+    /// Test whether there is a object of a certain type on a spot
+    bool isObjectTypeOnNode(const MapPoint pt, NodalObjectType objectType) const
+    {
+        return gwb.getNO(pt)->getType() == objectType;
+    }
+    /// Test whether there is specific building on a spot
+    bool isBuildingOnNode(const MapPoint pt, BuildingType bld) const
+    {
+        const noBase* no = gwb.getNO(pt);
+        const NodalObjectType noType = no->getType();
+        return (noType == NodalObjectType::Building || noType == NodalObjectType::Buildingsite)
+               && (static_cast<const noBaseBuilding*>(no)->getBuildingType() == bld);
+    }
+    /// Test whether the ai player can see a point
+    bool isVisible(const MapPoint pt) const
+    {
+        return gwb.calcVisiblityWithAllies(pt, playerID_) == Visibility::Visible;
+    }
+    /// Return true when the building quality at the 2nd point is lower than the bq on the first point
+    bool calcBQSumDifference(MapPoint pt1, MapPoint pt2) const;
+    /// Return building quality on a given spot
+    BuildingQuality getBuildingQuality(MapPoint pt) const;
+    BuildingQuality getBuildingQualityAnyOwner(MapPoint pt) const;
+    /// Tries to find a free path for a road and return length and the route
+    bool findFreePathForNewRoad(MapPoint start, MapPoint target, std::vector<Direction>* route = nullptr,
+                                unsigned* length = nullptr) const;
+    /// Tries to find a route from start to target, returning length of that route if it exists
+    bool findPathOnRoads(const noRoadNode& start, const noRoadNode& target, unsigned* length = nullptr) const;
+    /// Checks if it is allowed to build catapults
+    bool canBuildCatapult() const { return player_.canBuildCatapult(); }
+    /// checks if the player is allowed to build the building type (lua maybe later addon?)
+    bool canBuildBuildingtype(BuildingType bt) const { return player_.isBuildingEnabled(bt); }
+    /// Test whether a player is attackable or not (alliances, etc)
+    bool isPlayerAttackable(unsigned char playerID) const { return player_.isAttackable(playerID); }
+    /// player.findWarehouse
+    template<class T_IsWarehouseGood>
+    nobBaseWarehouse* findWarehouse(const noRoadNode& start, const T_IsWarehouseGood& isWarehouseGood, bool to_wh,
+                                    bool use_boat_roads, unsigned* length = nullptr,
+                                    const RoadSegment* forbidden = nullptr) const
+    {
+        return player_.findWarehouse(start, isWarehouseGood, to_wh, use_boat_roads, length, forbidden);
+    }
+    /// Return the headquarter of the player (or null if destroyed)
+    const nobHQ* getHeadquarter() const;
+    /// Return reference to the list of building sites
+    const std::list<noBuildingSite*>& getBuildingSites() const
+    {
+        return player_.getBuildingRegister().getBuildingSites();
+    }
+    const std::list<noBuildingSite*>& getPlayerBuildingSites(unsigned playerId) const
+    {
+        return gwb.getPlayer(playerId).getBuildingRegister().getBuildingSites();
+    }
+    /// Return a list to buildings of a given type
+    const std::list<nobUsual*>& getBuildings(const BuildingType type) const
+    {
+        return player_.getBuildingRegister().getBuildings(type);
+    }
+    const std::list<nobUsual*>& getPlayerBuildings(const BuildingType type, unsigned playerId) const
+    {
+        return gwb.getPlayer(playerId).getBuildingRegister().getBuildings(type);
+    }
+    // Return a list containing all military buildings
+    const std::list<nobMilitary*>& getMilitaryBuildings() const
+    {
+        return player_.getBuildingRegister().getMilitaryBuildings();
+    }
+    /// Return a list containing all harbors
+    const std::list<nobHarborBuilding*>& getHarbors() const { return player_.getBuildingRegister().getHarbors(); }
+    /// Return a list containing all storehouses and harbors and the hq
+    const std::list<nobBaseWarehouse*>& getStorehouses() const
+    {
+        return player_.getBuildingRegister().getStorehouses();
+    }
+
+    /// Check if there is a building of the given type in a radius of at most maxDistance
+    bool isBuildingNearby(BuildingType bldType, MapPoint pt, unsigned maxDistance) const;
+    /// Check if there is a (useful) harbor spot in at most the given distance. onlyEmpty=True -> No harbor building
+    /// there yet
+    bool isHarborPosClose(MapPoint pt, unsigned maxDistance, bool onlyEmpty = false) const;
+
+    /// Return the inventory of the AI player
+    const Inventory& getInventory() const { return player_.getInventory(); }
+    /// Return the number of ships
+    unsigned getNumShips() const { return player_.getNumShips(); }
+    /// Return the list of ships
+    const std::vector<noShip*>& getShips() const { return player_.getShips(); }
+    /// Return the ID of a given ship
+    unsigned getShipID(const noShip& ship) const { return player_.getShipID(ship); }
+    /// Test whether there is a possibility to start a expedition in a given direction from a given position, assuming a
+    /// given starting harbor
+    bool isExplorationDirectionPossible(MapPoint pt, const nobHarborBuilding* originHarbor,
+                                        ShipDirection direction) const;
+    /// Test whether there is a possibility to start a expedition in a given direction from a given position, assuming a
+    /// given starting harbor
+    bool isExplorationDirectionPossible(MapPoint pt, HarborId originHarborID, ShipDirection direction) const;
+    Nation getNation() const { return player_.nation; }
+
+    bool SetCoinsAllowed(const nobMilitary* building, bool enabled);
+    using GameCommandFactory::SetCoinsAllowed;
+
+    bool StartStopExpedition(const nobHarborBuilding* hb, bool start);
+    using GameCommandFactory::StartStopExpedition;
+
+    bool foundColony(const noShip& ship) { return foundColony(getShipID(ship)); }
+    using GameCommandFactory::foundColony;
+
+    bool travelToNextSpot(ShipDirection direction, const noShip& ship)
+    {
+        return travelToNextSpot(direction, getShipID(ship));
+    }
+    using GameCommandFactory::travelToNextSpot;
+
+    bool CancelExpedition(const noShip& ship) { return CancelExpedition(getShipID(ship)); }
+    using GameCommandFactory::CancelExpedition;
+
+    bool SetShipYardMode(const nobShipYard* shipyard, bool buildShips);
+    using GameCommandFactory::SetShipYardMode;
+
+    bool DestroyBuilding(const noBuilding* building);
+    using GameCommandFactory::DestroyBuilding;
+
+    bool DestroyFlag(const noFlag* flag);
+    using GameCommandFactory::DestroyFlag;
+
+    bool CallSpecialist(const noFlag* flag, Job job);
+    using GameCommandFactory::CallSpecialist;
+
+    /// Sends a chat messsage to all players
+    void chat(const std::string& message, ChatDestination destination = ChatDestination::All);
+
+    std::vector<AIChatMessage> fetchChatMessages();
+
+    /// Pointer to GameWorld, containing all information about the world
+    const GameWorldBase& gwb;
+
+private:
+    bool addGC(gc::GameCommandPtr gc) override
+    {
+        gcs.push_back(gc);
+        return true;
+    }
+
+    /// Pointer to this player, containing all information about his economy, buildings, etc.
+    const GamePlayer& player_;
+    /// Pointer to the game commands queue, to send commands to the game
+    std::vector<gc::GameCommandPtr>& gcs;
+    std::vector<AIChatMessage> pendingChatMsgs_;
+    /// ID of AI player
+    const unsigned char playerID_;
+    /// Harbor ids which have at least one other harbor at the same sea
+    std::vector<HarborId> usableHarbors_;
+};

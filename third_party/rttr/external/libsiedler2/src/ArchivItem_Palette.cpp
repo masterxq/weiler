@@ -1,0 +1,154 @@
+// Copyright (C) 2005 - 2021 Settlers Freaks (sf-team at siedler25.org)
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#include "ArchivItem_Palette.h"
+#include "ColorBGRA.h"
+#include "ErrorCodes.h"
+#include "libendian/EndianIStreamAdapter.h"
+#include "libendian/EndianOStreamAdapter.h"
+#include <iostream>
+#include <sstream>
+#include <stdexcept>
+
+/** @var TRANSPARENT_INDEX
+ *
+ *  Index des Transparenzwertes.
+ */
+
+/** @class libsiedler2::ArchivItem_Palette
+ *
+ *  Klasse für Paletten.
+ */
+
+libsiedler2::ArchivItem_Palette::ArchivItem_Palette()
+    : ArchivItem(BobType::Palette), transparentIdx(DEFAULT_TRANSPARENT_IDX)
+{}
+
+libsiedler2::ArchivItem_Palette::~ArchivItem_Palette() = default;
+
+/**
+ *  liest die Farbwerte aus einer Datei.
+ *
+ *  @param[in] file Dateihandle aus denen die Farbwerte geladen werden sollen
+ *  @param[in] skip Sollen 2 Unbekannte Bytes übersprungen werden (bei LST) oder direkt?
+ *
+ *  @return liefert Null bei Erfolg, ungleich Null bei Fehler
+ */
+int libsiedler2::ArchivItem_Palette::load(std::istream& file, bool skip)
+{
+    if(!file)
+        return ErrorCode::FILE_NOT_ACCESSIBLE;
+
+    libendian::EndianIStreamAdapter<false, std::istream&> fs(file);
+    if(skip)
+    {
+        uint16_t numColors;
+        if(!(fs >> numColors) || numColors != 256)
+            return ErrorCode::WRONG_HEADER;
+    }
+
+    static_assert(sizeof(colors) == 256u * 3u, "Color array has alignment. Cannot read it in whole");
+    if(!fs.read(reinterpret_cast<uint8_t*>(&colors.front()), sizeof(colors)))
+        return ErrorCode::UNEXPECTED_EOF;
+
+    setDefaultTransparentIdx();
+
+    return ErrorCode::NONE;
+}
+
+/**
+ *  schreibt die Farbwerte in eine Datei
+ *
+ *  @param[in] file Dateihandle in die die Farbwerte geschrieben werden sollen
+ *  @param[in] skip Sollen 2 Unbekannte Bytes geschrieben werden (bei LST) oder direkt?
+ *
+ *  @return liefert Null bei Erfolg, ungleich Null bei Fehler
+ */
+int libsiedler2::ArchivItem_Palette::write(std::ostream& file, bool skip) const
+{
+    if(!file)
+        return ErrorCode::FILE_NOT_ACCESSIBLE;
+
+    libendian::EndianOStreamAdapter<false, std::ostream&> fs(file);
+    if(skip)
+        fs << int16_t(256);
+
+    static_assert(sizeof(colors) == 256u * 3u, "Color array has alignment. Cannot write it in whole");
+
+    return fs.write(&colors[0].r, sizeof(colors)) ? ErrorCode::NONE : ErrorCode::UNEXPECTED_EOF;
+}
+
+/**
+ *  setzt einen Farbwert am entsprechenden Index.
+ *
+ *  @param[in] index Index des Farbwertes
+ *  @param[in] r     Roter Farbwert
+ *  @param[in] g     Grüner Farbwert
+ *  @param[in] b     Blauer Farbwert
+ */
+void libsiedler2::ArchivItem_Palette::set(uint8_t index, ColorRGB clr)
+{
+    colors[index] = clr;
+}
+
+bool libsiedler2::ArchivItem_Palette::lookup(const ColorRGB& clr, uint8_t& clrIdx) const
+{
+    for(unsigned i = 0; i < 256; ++i)
+    {
+        if(i != transparentIdx && colors[i] == clr)
+        {
+            clrIdx = static_cast<uint8_t>(i);
+            return true;
+        }
+    }
+    if(hasTransparency() && colors[transparentIdx] == clr)
+    {
+        clrIdx = getTransparentIdx();
+        return true;
+    }
+    return false;
+}
+
+uint8_t libsiedler2::ArchivItem_Palette::lookup(const ColorRGB& clr) const
+{
+    uint8_t result;
+    if(!lookup(clr, result))
+    {
+        std::stringstream str;
+        str << "Color(" << uint32_t(clr.r) << "," << uint32_t(clr.g) << "," << uint32_t(clr.b) << ")"
+            << " not found in palette!";
+        throw std::runtime_error(str.str());
+    }
+    return result;
+}
+
+uint8_t libsiedler2::ArchivItem_Palette::lookupOrDef(const ColorRGB& clr, uint8_t defaultVal) const
+{
+    uint8_t result = defaultVal;
+    lookup(clr, result);
+    return result;
+}
+
+/**
+ *  kopiert die Palette in einen Puffer (als BGRA)
+ *
+ *  @param[in,out] buffer Zielpuffer für die Palettendaten (muss 256*4-Byte groß sein)
+ */
+void libsiedler2::ArchivItem_Palette::copyToBGRA(uint8_t* buffer, size_t bufSize) const
+{
+    if(bufSize < 256 * 4)
+        throw std::runtime_error("Buffer is to small!");
+
+    // Farben kopieren
+    for(uint16_t i = 0; i < 256; ++i)
+        ColorBGRA(colors[i]).toBGRA(&buffer[i * 4]);
+}
+
+void libsiedler2::ArchivItem_Palette::setDefaultTransparentIdx()
+{
+    // If the palette contains the transparent color, we use that, otherwise we use the default.
+    // This is mostly for backwards compatibility (we used to use index 254 which is that pink in PAL5) and ease of use
+    // (black as transparent color in bmps might be confusing)
+    transparentIdx = lookupOrDef(TRANSPARENT_COLOR, DEFAULT_TRANSPARENT_IDX);
+}

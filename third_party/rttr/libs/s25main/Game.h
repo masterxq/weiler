@@ -1,0 +1,44 @@
+// Copyright (C) 2005 - 2021 Settlers Freaks (sf-team at siedler25.org)
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#pragma once
+
+#include "GlobalGameSettings.h"
+#include "world/GameWorld.h"
+#include <boost/ptr_container/ptr_vector.hpp>
+#include <memory>
+
+class AIPlayer;
+
+/// Holds all data for a running game
+class Game
+{
+public:
+    Game(GlobalGameSettings settings, unsigned startGF, const std::vector<PlayerInfo>& players);
+    Game(GlobalGameSettings settings, std::unique_ptr<EventManager> em, const std::vector<PlayerInfo>& players);
+    ~Game();
+
+    const GlobalGameSettings ggs_;
+    std::unique_ptr<EventManager> em_;
+    GameWorld world_;
+    boost::ptr_vector<AIPlayer> aiPlayers_;
+
+    /// Does the remaining initializations for starting the game
+    void start(bool startFromSave);
+    void runGF();
+    bool isStarted() const { return started_; }
+    bool isGameFinished() const { return finished_; }
+    AIPlayer* getAIPlayer(unsigned id);
+    void addAIPlayer(std::unique_ptr<AIPlayer> newAI);
+    void setLua(std::unique_ptr<LuaInterfaceGame> newLua);
+
+private:
+    /// Updates the statistics
+    void statisticStep();
+    /// Check if the objective was reached (if set)
+    void checkObjective();
+
+    bool started_, finished_;
+    std::unique_ptr<LuaInterfaceGame> lua;
+};

@@ -1,0 +1,105 @@
+// Copyright (C) 2005 - 2026 Settlers Freaks (sf-team at siedler25.org)
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#include "nofWorkman.h"
+#include "EventManager.h"
+#include "SoundManager.h"
+#include "buildings/nobUsual.h"
+#include "world/GameWorld.h"
+#include "gameData/JobConsts.h"
+
+nofWorkman::nofWorkman(const Job job, const MapPoint pos, const unsigned char player, nobUsual* workplace)
+    : nofBuildingWorker(job, pos, player, workplace)
+{}
+
+nofWorkman::nofWorkman(SerializedGameData& sgd, const unsigned obj_id) : nofBuildingWorker(sgd, obj_id) {}
+
+void nofWorkman::handleDerivedEvent(const unsigned /*id*/)
+{
+    switch(state)
+    {
+        case State::Waiting1: handleStateWaiting1(); break;
+        case State::Work: handleStateWork(); break;
+        case State::Waiting2: handleStateWaiting2(); break;
+        default: break;
+    }
+}
+
+bool nofWorkman::startWorking()
+{
+    current_ev = getEvMgr().addEvent(this, JOB_CONSTS[job_].work_length, 1);
+    state = State::Work;
+    workplace->is_working = true;
+    // Waren verbrauchen
+    workplace->consumeWares();
+    return true;
+}
+
+void nofWorkman::handleStateWaiting1()
+{
+    current_ev = nullptr;
+    if(!startWorking())
+    {
+        state = State::WaitingForWaresOrProductionStopped;
+        workplace->startNotWorking();
+    }
+}
+
+void nofWorkman::handleStateWaiting2()
+{
+    current_ev = nullptr;
+    // Ware erzeugen... (noch nicht "richtig"!, sondern nur viruell erstmal)
+    if(!(ware = produceWare()).hasValue())
+    {
+        // Soll keine erzeugt werden --> wieder anfangen zu arbeiten
+        tryToWork();
+    } else
+    {
+        // und diese raustragen
+        startWalking(Direction::SouthEast);
+        state = State::CarryoutWare;
+    }
+
+    // abgeleiteten Klassen Bescheid sagen
+    workFinished();
+}
+
+void nofWorkman::handleStateWork()
+{
+    // Nach Arbeiten wird noch ein bisschen gewartet, bevor das Produkt herausgetragen wird
+    // Bei 0 mind. 1 GF
+    current_ev = getEvMgr().addEvent(this, JOB_CONSTS[job_].wait2_length ? JOB_CONSTS[job_].wait2_length : 1, 1);
+    state = State::Waiting2;
+    // wir arbeiten nicht mehr
+    workplace->is_working = false;
+
+    // Evtl. Sounds löschen
+    if(was_sounding)
+    {
+        world->getSoundMgr().stopSounds(*this);
+        was_sounding = false;
+    }
+}
+
+namespace {
+struct NodeHasResource
+{
+    const GameWorld& world;
+    const ResourceType res;
+    NodeHasResource(const GameWorld& world, const ResourceType res) : world(world), res(res) {}
+
+    bool operator()(const MapPoint pt) { return world.getNode(pt).resources.has(res); }
+};
+} // namespace
+
+MapPoint nofWorkman::findPointWithResource(ResourceType type) const
+{
+    // Alle Punkte durchgehen, bis man einen findet, wo man graben kann
+    const std::vector<MapPoint> pts =
+      world->getMatchingPointsInRadius<1>(pos, MINER_RADIUS, NodeHasResource(*world, type), true);
+    if(!pts.empty())
+        return pts.front();
+
+    return MapPoint::invalid();
+}

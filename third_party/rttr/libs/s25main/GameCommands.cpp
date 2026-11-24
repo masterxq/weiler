@@ -1,0 +1,439 @@
+// Copyright (C) 2005 - 2025 Settlers Freaks (sf-team at siedler25.org)
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#include "GameCommands.h"
+#include "AddonHelperFunctions.h"
+#include "GamePlayer.h"
+#include "LeatherLoader.h"
+#include "WineLoader.h"
+#include "buildings/nobBaseWarehouse.h"
+#include "buildings/nobHarborBuilding.h"
+#include "buildings/nobMilitary.h"
+#include "buildings/nobShipYard.h"
+#include "buildings/nobTemple.h"
+#include "enum_cast.hpp"
+#include "helpers/MaxEnumValue.h"
+#include "helpers/format.hpp"
+#include "world/GameWorld.h"
+#include "nodeObjs/noFlag.h"
+#include "nodeObjs/noShip.h"
+#include "gameData/SettingTypeConv.h"
+#include <algorithm>
+#include <stdexcept>
+
+namespace gc {
+
+void SetFlag::execute(GameWorld& world, uint8_t playerId)
+{
+    world.SetFlag(pt_, playerId);
+}
+
+void DestroyFlag::execute(GameWorld& world, uint8_t playerId)
+{
+    world.DestroyFlag(pt_, playerId);
+}
+
+BuildRoad::BuildRoad(Serializer& ser)
+    : Coords(GCType::BuildRoad, ser), boat_road(ser.popBool()), route(ser.popUnsignedInt())
+{
+    for(Direction& i : route)
+        i = helpers::popEnum<Direction>(ser);
+}
+
+void BuildRoad::serialize(Serializer& ser) const
+{
+    Coords::serialize(ser);
+
+    ser.pushBool(boat_road);
+    ser.pushUnsignedInt(route.size());
+    for(auto i : route)
+        helpers::pushEnum<uint8_t>(ser, i);
+}
+
+void BuildRoad::execute(GameWorld& world, uint8_t playerId)
+{
+    world.BuildRoad(playerId, boat_road, pt_, route);
+}
+
+DestroyRoad::DestroyRoad(Serializer& ser)
+    : Coords(GCType::DestroyRoad, ser), start_dir(helpers::popEnum<Direction>(ser))
+{}
+
+void DestroyRoad::serialize(Serializer& ser) const
+{
+    Coords::serialize(ser);
+
+    helpers::pushEnum<uint8_t>(ser, start_dir);
+}
+
+void DestroyRoad::execute(GameWorld& world, uint8_t playerId)
+{
+    auto* flag = world.getSpecObj<noFlag>(pt_);
+    if(flag && flag->getPlayer() == playerId)
+        flag->DestroyRoad(start_dir);
+}
+
+UpgradeRoad::UpgradeRoad(Serializer& ser)
+    : Coords(GCType::UpgradeRoad, ser), start_dir(helpers::popEnum<Direction>(ser))
+{}
+
+void UpgradeRoad::serialize(Serializer& ser) const
+{
+    Coords::serialize(ser);
+    helpers::pushEnum<uint8_t>(ser, start_dir);
+}
+
+void UpgradeRoad::execute(GameWorld& world, uint8_t playerId)
+{
+    auto* flag = world.getSpecObj<noFlag>(pt_);
+    if(flag && flag->getPlayer() == playerId)
+        flag->UpgradeRoad(start_dir);
+}
+
+ChangeDistribution::ChangeDistribution(Deserializer& ser) : GameCommand(GCType::ChangeDistribution)
+{
+    if(ser.getDataVersion() >= 2)
+        helpers::popContainer(ser, data);
+    else
+    {
+        const unsigned wineAddonAdditionalDistributions = 3;
+        const unsigned leatherAddonAdditionalDistributions = 3;
+
+        auto const numNotSavedDistributions =
+          leatherAddonAdditionalDistributions + (ser.getDataVersion() < 1 ? wineAddonAdditionalDistributions : 0);
+
+        std::vector<Distributions::value_type> tmpData(std::tuple_size_v<Distributions> - numNotSavedDistributions);
+
+        auto getSkipBuildingAndDefault = [&](DistributionMapping const& mapping) {
+            // Skipped and standard distribution in skipped case
+            std::tuple<bool, unsigned int> result = {false, 0};
+            if(ser.getDataVersion() < 1)
+            {
+                // skip over wine buildings
+                std::get<0>(result) |= wineaddon::isWineAddonBuildingType(std::get<BuildingType>(mapping));
+            }
+
+            // skip over leather addon buildings and leather addon wares only
+            std::get<0>(result) |= leatheraddon::isLeatherAddonBuildingType(std::get<BuildingType>(mapping));
+
+            if(std::get<BuildingType>(mapping) == BuildingType::Slaughterhouse
+               && (std::get<GoodType>(mapping) == GoodType::Ham))
+                result = {true, 8};
+            return result;
+        };
+
+        helpers::popContainer(ser, tmpData, true);
+        size_t srcIdx = 0, tgtIdx = 0;
+        for(const auto& mapping : distributionMap)
+        {
+            // skip over not stored buildings in tmpData
+            const auto [skipped, defaultValue] = getSkipBuildingAndDefault(mapping);
+            const auto setting = skipped ? defaultValue : tmpData[srcIdx++];
+            data[tgtIdx++] = setting;
+        }
+    }
+}
+
+void ChangeDistribution::execute(GameWorld& world, uint8_t playerId)
+{
+    world.getPlayer(playerId).ChangeDistribution(data);
+}
+
+ChangeBuildOrder::ChangeBuildOrder(Deserializer& ser)
+    : GameCommand(GCType::ChangeBuildOrder), useCustomBuildOrder(ser.popBool())
+{
+    if(ser.getDataVersion() >= 2)
+    {
+        for(BuildingType& i : data)
+            i = helpers::popEnum<BuildingType>(ser);
+    } else
+    {
+        auto countOfNotAvailableBuildingsInSaveGame =
+          ser.getDataVersion() < 1 ? numWineAndLeatherAddonBuildings : numLeatherAddonBuildings;
+        std::vector<BuildingType> buildOrder(data.size() - countOfNotAvailableBuildingsInSaveGame);
+
+        if(ser.getDataVersion() < 1)
+            buildOrder.insert(buildOrder.end(), {BuildingType::Vineyard, BuildingType::Winery, BuildingType::Temple});
+
+        if(ser.getDataVersion() < 2)
+        {
+            buildOrder.insert(buildOrder.end(),
+                              {BuildingType::Skinner, BuildingType::Tannery, BuildingType::LeatherWorks});
+        }
+
+        std::generate(buildOrder.begin(), buildOrder.end() - countOfNotAvailableBuildingsInSaveGame,
+                      [&]() { return helpers::popEnum<BuildingType>(ser); });
+
+        std::copy(buildOrder.begin(), buildOrder.end(), data.begin());
+    }
+}
+
+void ChangeBuildOrder::execute(GameWorld& world, uint8_t playerId)
+{
+    world.getPlayer(playerId).ChangeBuildOrder(useCustomBuildOrder, data);
+}
+
+void SetBuildingSite::execute(GameWorld& world, uint8_t playerId)
+{
+    world.SetBuildingSite(bt, pt_, playerId);
+}
+
+void DestroyBuilding::execute(GameWorld& world, uint8_t playerId)
+{
+    world.DestroyBuilding(pt_, playerId);
+}
+
+ChangeTransport::ChangeTransport(Deserializer& ser) : GameCommand(GCType::ChangeTransport)
+{
+    if(ser.getDataVersion() >= 2)
+        helpers::popContainer(ser, data);
+    else
+    {
+        const unsigned leatherAddonAdditionalTransportOrders = 1;
+        std::vector<TransportOrders::value_type> tmpData(std::tuple_size<TransportOrders>::value
+                                                         - leatherAddonAdditionalTransportOrders);
+
+        helpers::popContainer(ser, tmpData, true);
+        std::copy(tmpData.begin(), tmpData.end(), data.begin());
+        // all transport prios greater equal transportPrioOfLeatherworks are increased by one because the new
+        // leatherwork uses prio transportPrioOfLeatherworks
+        std::transform(data.begin(), data.end() - leatherAddonAdditionalTransportOrders, data.begin(),
+                       [](uint8_t& prio) { return prio < transportPrioOfLeatherworks ? prio : prio + 1; });
+        data[std::tuple_size<TransportOrders>::value - leatherAddonAdditionalTransportOrders] =
+          STD_TRANSPORT_PRIO[GoodType::Leather];
+    }
+}
+
+void ChangeTransport::execute(GameWorld& world, uint8_t playerId)
+{
+    world.getPlayer(playerId).convertTransportData(data);
+}
+
+void ChangeMilitary::execute(GameWorld& world, uint8_t playerId)
+{
+    world.getPlayer(playerId).changeMilitarySettings(data);
+}
+
+ChangeTools::ChangeTools(const ToolSettings& data, const int8_t* orderDelta)
+    : GameCommand(GCType::ChangeTools), data(data), orders()
+{
+    if(orderDelta != nullptr)
+        std::copy_n(orderDelta, orders.size(), orders.begin());
+}
+
+void ChangeTools::execute(GameWorld& world, uint8_t playerId)
+{
+    world.getPlayer(playerId).changeToolsSettings(data, orders);
+}
+
+void CallSpecialist::execute(GameWorld& world, uint8_t playerId)
+{
+    world.getPlayer(playerId).callFlagWorker(pt_, job);
+}
+
+void Attack::execute(GameWorld& world, uint8_t playerId)
+{
+    world.Attack(playerId, pt_, soldiers_count, strong_soldiers);
+}
+
+void SeaAttack::execute(GameWorld& world, uint8_t playerId)
+{
+    world.attackViaSea(playerId, pt_, soldiers_count, strong_soldiers);
+}
+
+void SetCoinsAllowed::execute(GameWorld& world, uint8_t playerId)
+{
+    auto* const bld = world.getSpecObj<nobMilitary>(pt_);
+    if(bld && bld->getPlayer() == playerId)
+        bld->SetCoinsAllowed(enabled);
+}
+
+void SetArmorAllowed::execute(GameWorld& world, uint8_t playerId)
+{
+    auto* const bld = world.getSpecObj<nobMilitary>(pt_);
+    if(bld && bld->getPlayer() == playerId)
+        bld->SetArmorAllowed(enabled);
+}
+
+void SetTroopLimit::execute(GameWorld& world, uint8_t playerId)
+{
+    auto* const bld = world.getSpecObj<nobMilitary>(pt_);
+    if(bld && bld->getPlayer() == playerId)
+        bld->SetTroopLimit(rank, count);
+}
+
+void SetProductionEnabled::execute(GameWorld& world, uint8_t playerId)
+{
+    auto* const bld = world.getSpecObj<nobUsual>(pt_);
+    if(bld && bld->getPlayer() == playerId)
+        bld->SetProductionEnabled(enabled);
+}
+
+void SetInventorySetting::execute(GameWorld& world, uint8_t playerId)
+{
+    auto* const bld = world.getSpecObj<nobBaseWarehouse>(pt_);
+    if(bld && bld->getPlayer() == playerId)
+        bld->SetInventorySetting(what, state);
+}
+
+SetAllInventorySettings::SetAllInventorySettings(Deserializer& ser)
+    : Coords(GCType::SetAllInventorySettings, ser), isJob(ser.popBool())
+{
+    const uint32_t numStates = (isJob ? helpers::NumEnumValues_v<Job> : helpers::NumEnumValues_v<GoodType>);
+    if(ser.getDataVersion() >= 2)
+    {
+        for(unsigned i = 0; i < numStates; i++)
+            states.push_back(InventorySetting(ser.popUnsignedChar()));
+    } else
+    {
+        states.resize(numStates);
+        if(isJob)
+        {
+            auto isJobSkipped = [&](Job const& job) {
+                return (ser.getDataVersion() < 1 && wineaddon::isWineAddonJobType(job))
+                       || leatheraddon::isLeatherAddonJobType(job);
+            };
+
+            size_t tgtIdx = 0;
+            for(const auto job : helpers::enumRange<Job>())
+            {
+                // skip over not stored jobs
+                if(!isJobSkipped(job))
+                    states[tgtIdx] = InventorySetting(ser.popUnsignedChar());
+                tgtIdx++;
+            }
+        } else
+        {
+            auto isWareSkipped = [&](GoodType const& ware) {
+                return (ser.getDataVersion() < 1 && wineaddon::isWineAddonGoodType(ware))
+                       || leatheraddon::isLeatherAddonGoodType(ware);
+            };
+
+            size_t tgtIdx = 0;
+            for(const auto ware : helpers::enumRange<GoodType>())
+            {
+                // skip over not stored wares
+                if(!isWareSkipped(ware))
+                    states[tgtIdx] = InventorySetting(ser.popUnsignedChar());
+                tgtIdx++;
+            }
+        }
+    }
+}
+
+void SetAllInventorySettings::execute(GameWorld& world, uint8_t playerId)
+{
+    auto* const bld = world.getSpecObj<nobBaseWarehouse>(pt_);
+    if(bld && bld->getPlayer() == playerId)
+        bld->SetAllInventorySettings(isJob, states);
+}
+
+void ChangeReserve::execute(GameWorld& world, uint8_t playerId)
+{
+    auto* const bld = world.getSpecObj<nobBaseWarehouse>(pt_);
+    if(bld && bld->getPlayer() == playerId)
+        bld->setRealReserve(rank, count);
+}
+
+void Surrender::execute(GameWorld& world, uint8_t playerId)
+{
+    world.getPlayer(playerId).Surrender();
+}
+
+void CheatArmageddon::execute(GameWorld& world, unsigned char /*playerId*/)
+{
+    world.armageddon();
+}
+
+void DestroyAll::execute(GameWorld& world, uint8_t playerId)
+{
+    world.armageddon(playerId);
+}
+
+void SuggestPact::execute(GameWorld& world, uint8_t playerId)
+{
+    world.getPlayer(playerId).SuggestPact(targetPlayer, pt, duration);
+}
+
+void AcceptPact::execute(GameWorld& world, uint8_t playerId)
+{
+    world.getPlayer(fromPlayer).AcceptPact(id, pt, playerId);
+}
+
+void CancelPact::execute(GameWorld& world, uint8_t playerId)
+{
+    world.getPlayer(playerId).CancelPact(pt, otherPlayer);
+}
+
+void NotifyAlliesOfLocation::execute(GameWorld& world, uint8_t playerId)
+{
+    world.getPlayer(playerId).NotifyAlliesOfLocation(pt_);
+}
+
+void SetShipYardMode::execute(GameWorld& world, uint8_t playerId)
+{
+    auto* const bld = world.getSpecObj<nobShipYard>(pt_);
+    if(bld && bld->getPlayer() == playerId)
+        bld->setMode(buildShips ? nobShipYard::Mode::Ships : nobShipYard::Mode::Boats);
+}
+
+void SetTempleProductionMode::execute(GameWorld& world, uint8_t playerId)
+{
+    auto* const bld = world.getSpecObj<nobTemple>(pt_);
+    if(bld && bld->getPlayer() == playerId)
+        bld->setProductionMode(productionMode);
+}
+
+void StartStopExpedition::execute(GameWorld& world, uint8_t playerId)
+{
+    auto* const bld = world.getSpecObj<nobHarborBuilding>(pt_);
+    if(bld && bld->getPlayer() == playerId)
+    {
+        if(start)
+            bld->startExpedition();
+        else
+            bld->stopExpedition();
+    }
+}
+
+void StartStopExplorationExpedition::execute(GameWorld& world, uint8_t playerId)
+{
+    auto* const bld = world.getSpecObj<nobHarborBuilding>(pt_);
+    if(bld && bld->getPlayer() == playerId)
+    {
+        if(start)
+            bld->startExplorationExpedition();
+        else
+            bld->stopExplorationExpedition();
+    }
+}
+
+void ExpeditionCommand::execute(GameWorld& world, uint8_t playerId)
+{
+    noShip* ship = world.getPlayer(playerId).getShipByID(this->ship_id);
+    if(!ship)
+        return;
+
+    switch(action)
+    {
+        case Action::FoundColony: ship->foundColony(); break;
+        case Action::CancelExpedition: ship->CancelExpedition(); break;
+        case Action::North: ship->continueExpedition(ShipDirection::North); break;
+        case Action::NorthEast: ship->continueExpedition(ShipDirection::NorthEast); break;
+        case Action::SouthEast: ship->continueExpedition(ShipDirection::SouthEast); break;
+        case Action::South: ship->continueExpedition(ShipDirection::South); break;
+        case Action::SouthWest: ship->continueExpedition(ShipDirection::SouthWest); break;
+        case Action::NorthWest: ship->continueExpedition(ShipDirection::NorthWest); break;
+    }
+}
+
+/// Fuehrt das GameCommand aus
+void TradeOverLand::execute(GameWorld& world, uint8_t playerId)
+{
+    auto* const bld = world.getSpecObj<nobBaseWarehouse>(pt_);
+    if(bld)
+        world.getPlayer(playerId).trade(bld, what, count);
+}
+
+} // namespace gc

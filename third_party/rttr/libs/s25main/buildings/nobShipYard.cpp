@@ -1,0 +1,28 @@
+// Copyright (C) 2005 - 2021 Settlers Freaks (sf-team at siedler25.org)
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#include "nobShipYard.h"
+#include "SerializedGameData.h"
+
+nobShipYard::nobShipYard(const MapPoint pos, const unsigned char player, const Nation nation)
+    : nobUsual(BuildingType::Shipyard, pos, player, nation), mode(nobShipYard::Mode::Boats)
+{}
+
+nobShipYard::nobShipYard(SerializedGameData& sgd, const unsigned obj_id)
+    : nobUsual(sgd, obj_id), mode(sgd.pop<nobShipYard::Mode>())
+{}
+
+/// Serialisierungsfunktionen
+void nobShipYard::serialize(SerializedGameData& sgd) const
+{
+    nobUsual::serialize(sgd);
+
+    sgd.pushEnum<uint8_t>(mode);
+}
+
+/// Schaltet Modus entsprechend um
+void nobShipYard::setMode(Mode newMode)
+{
+    mode = newMode;
+}

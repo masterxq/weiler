@@ -1,0 +1,83 @@
+// Copyright (C) 2005 - 2021 Settlers Freaks (sf-team at siedler25.org)
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#pragma once
+
+#include <map>
+
+#include "gameTypes/GameSettingTypes.h"
+#include <memory>
+#include <vector>
+
+class Serializer;
+class Addon;
+enum class AddonId;
+
+class GlobalGameSettings
+{
+public:
+    GlobalGameSettings();
+    GlobalGameSettings(const GlobalGameSettings& ggs);
+    GlobalGameSettings(GlobalGameSettings&&) noexcept;
+    ~GlobalGameSettings();
+
+    GlobalGameSettings& operator=(const GlobalGameSettings& ggs);
+    GlobalGameSettings& operator=(GlobalGameSettings&&) noexcept;
+
+    /// Serialisierung und Deserialisierung
+    void serialize(Serializer& ser) const;
+    void deserialize(Serializer& ser);
+
+    GameSpeed speed;
+    GameObjective objective;
+    StartWares startWares;
+    bool lockedTeams;
+    Exploration exploration;
+    bool teamView;
+    bool randomStartPosition;
+
+    unsigned getNumAddons() const { return addons.size(); }
+    const Addon* getAddon(unsigned idx, unsigned& status) const;
+    const Addon* getAddon(unsigned idx) const;
+    const Addon* getAddon(AddonId id, unsigned& status) const;
+    const Addon* getAddon(AddonId id) const;
+
+    void registerAllAddons();
+
+    /// Reset all addons to their defaults
+    void resetAddons();
+
+    bool isEnabled(AddonId id) const;
+    unsigned getSelection(AddonId id) const;
+    void setSelection(AddonId id, unsigned selection);
+    /// Apply the removed global INEXHAUSTIBLE_MINES addon: make every mine type that is still at its default behavior
+    /// inexhaustible. Used to migrate old settings, savegames and Lua scripts.
+    void applyLegacyInexhaustibleMines();
+
+    /// loads the saved addon configuration from the SETTINGS.
+    void loadSettings(const std::map<unsigned, unsigned>& configuration);
+    /// saves the current addon configuration to the SETTINGS.
+    std::map<unsigned, unsigned> saveSettings() const;
+
+    /// Get current maximum rank for soldiers
+    /// 0 = Private, 1 = Private First Class, ...
+    unsigned getMaxMilitaryRank() const;
+    /// Returns number of scouts required for exploration expeditions
+    unsigned getNumScoutsExpedition() const;
+
+private:
+    struct AddonWithState
+    {
+        explicit AddonWithState(std::unique_ptr<Addon> addon);
+
+        std::unique_ptr<Addon> addon;
+        unsigned status;
+    };
+
+    void registerAddon(std::unique_ptr<Addon> addon);
+    AddonWithState* findAddon(AddonId id);
+    const AddonWithState* findAddon(AddonId id) const;
+
+    std::vector<AddonWithState> addons;
+};

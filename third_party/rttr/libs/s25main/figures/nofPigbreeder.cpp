@@ -1,0 +1,82 @@
+// Copyright (C) 2005 - 2021 Settlers Freaks (sf-team at siedler25.org)
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#include "nofPigbreeder.h"
+#include "EventManager.h"
+#include "GamePlayer.h"
+#include "Loader.h"
+#include "SoundManager.h"
+#include "buildings/nobUsual.h"
+#include "ViewState.h"
+#include "ogl/glArchivItem_Bitmap.h"
+#include "ogl/glArchivItem_Bitmap_Player.h"
+#include "ogl/glSmartBitmap.h"
+#include "world/GameWorld.h"
+
+nofPigbreeder::nofPigbreeder(const MapPoint pos, const unsigned char player, nobUsual* workplace)
+    : nofWorkman(Job::PigBreeder, pos, player, workplace)
+{}
+
+nofPigbreeder::nofPigbreeder(SerializedGameData& sgd, const unsigned obj_id) : nofWorkman(sgd, obj_id) {}
+
+void nofPigbreeder::drawWorking(DrawPoint drawPt)
+{
+    constexpr helpers::EnumArray<DrawPoint, Nation> offsets = {{{10, 2}, {10, 2}, {10, 2}, {10, 2}, {10, 2}}};
+    constexpr helpers::EnumArray<DrawPoint, Nation> walkstart = {{{-6, -6}, {-6, -6}, {-6, -6}, {-6, -6}, {-6, -6}}};
+
+    unsigned maxId = 240;
+    int nowId = VIEWSTATE.interpolate(maxId, current_ev);
+    const Nation wpNation = workplace->getNation();
+    unsigned plColor = world->getPlayer(player).color;
+    int walksteps = 16;
+
+    if(nowId < 16)
+    {
+        if(nowId < 8)
+            LOADER.building_cache[wpNation][BuildingType::PigFarm].door.drawFull(drawPt);
+        // TODO: Use GlobalAnimation?
+        DrawPoint walkPos =
+          drawPt + walkstart[wpNation] + (offsets[wpNation] - walkstart[wpNation]) * nowId / walksteps;
+
+        LOADER.getBobSprite(wpNation, Job::PigBreeder, Direction::SouthEast, nowId % 8)
+          .draw(walkPos, COLOR_WHITE, plColor);
+    } else if(nowId < 40)
+    {
+        LOADER.getPlayerImage("rom_bobs", 148 + (nowId - 16) / 2)
+          ->drawFull(drawPt + offsets[wpNation], COLOR_WHITE, plColor);
+
+        // Evtl Sound abspielen
+        if((nowId - 16) == 10)
+        {
+            world->getSoundMgr().playNOSound(65, *this, 0);
+            was_sounding = true;
+        }
+    } else if(nowId < 56)
+    {
+        if(nowId > 46)
+            LOADER.building_cache[wpNation][BuildingType::PigFarm].door.drawFull(drawPt);
+        // TODO: Use GlobalAnimation?
+        DrawPoint walkPos =
+          drawPt + walkstart[wpNation] + (walkstart[wpNation] - offsets[wpNation]) * (nowId - 40) / walksteps;
+        LOADER.getBobSprite(wpNation, Job::PigBreeder, Direction::NorthWest, (nowId - 40) % 8)
+          .draw(walkPos, COLOR_WHITE, plColor);
+    }
+}
+
+helpers::OptionalEnum<GoodType> nofPigbreeder::produceWare()
+{
+    return GoodType::Ham;
+}
+
+void nofPigbreeder::makePigSounds()
+{
+    /// Ist es wieder Zeit für einen Schweine-Sound?
+    unsigned timeDiffSound = 600 + unsigned(rand() % 200) - workplace->getProductivity() * 5u;
+    if(getEvMgr().getCurrentGF() - last_id > timeDiffSound)
+    {
+        // "Oink"
+        world->getSoundMgr().playNOSound(86, *this, 1);
+        last_id = getEvMgr().getCurrentGF();
+    }
+}

@@ -1,0 +1,37 @@
+// Copyright (C) 2005 - 2026 Settlers Freaks (sf-team at siedler25.org)
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#pragma once
+
+#include "nodeObjs/noCoordBase.h"
+#include "gameTypes/GoodsAndPeopleArray.h"
+class SerializedGameData;
+
+/// Unsichtbares Objekt, welches die fliehenden Leute aus einem ehemaligen abgebrannten Lagerhaus/HQ spuckt
+class BurnedWarehouse : public noCoordBase
+{
+public:
+    BurnedWarehouse(MapPoint pos, unsigned char player, const PeopleCounts& people);
+    BurnedWarehouse(SerializedGameData& sgd, unsigned obj_id);
+
+    ~BurnedWarehouse() override;
+
+    void destroy() override;
+    void serialize(SerializedGameData& sgd) const override;
+
+    GO_Type getGOT() const final { return GO_Type::Burnedwarehouse; }
+
+    /// Benachrichtigen, wenn neuer GF erreicht wurde.
+    void handleEvent(unsigned id) override;
+
+    void draw(DrawPoint /*drawPt*/) override {}
+
+private:
+    /// Spieler des ehemaligen Lagerhauses
+    const unsigned char player;
+    /// Aktuelle Rausgeh-Phase
+    unsigned go_out_phase;
+    // Leute, die noch rauskommen müssen
+    PeopleCounts people;
+};

@@ -1,0 +1,43 @@
+// Copyright (C) 2005 - 2021 Settlers Freaks (sf-team at siedler25.org)
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#pragma once
+
+#include "nofWorkman.h"
+#include "notifications/Subscription.h"
+
+class SerializedGameData;
+class nobUsual;
+
+/// Klasse für den Schreiner
+class nofMetalworker : public nofWorkman
+{
+    helpers::OptionalEnum<GoodType> nextProducedTool;
+    Subscription toolOrderSub;
+
+protected:
+    /// Zeichnet ihn beim Arbeiten
+    void drawWorking(DrawPoint drawPt) override;
+    /// Id in jobs.bob or carrier.bob when carrying a ware
+    unsigned short getCarryID() const override;
+    /// Der Arbeiter erzeugt eine Ware
+    helpers::OptionalEnum<GoodType> produceWare() override;
+    /// Returns the next tool to be produced according to the orders
+    helpers::OptionalEnum<GoodType> getOrderedTool();
+    /// Returns a random tool according to the priorities
+    helpers::OptionalEnum<GoodType> getRandomTool();
+
+    bool hasToolOrder() const;
+
+    bool areWaresAvailable() const override;
+    bool startWorking() override;
+    void checkForOrders();
+
+public:
+    nofMetalworker(MapPoint pos, unsigned char player, nobUsual* workplace);
+    nofMetalworker(SerializedGameData& sgd, unsigned obj_id);
+    void serialize(SerializedGameData& sgd) const override;
+
+    GO_Type getGOT() const final { return GO_Type::NofMetalworker; }
+};

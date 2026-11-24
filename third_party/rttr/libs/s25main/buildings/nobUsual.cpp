@@ -1,0 +1,606 @@
+// Copyright (C) 2005 - 2026 Settlers Freaks (sf-team at siedler25.org)
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#include "nobUsual.h"
+#include "EventManager.h"
+#include "GamePlayer.h"
+#include "GlobalGameSettings.h"
+#include "Loader.h"
+#include "SerializedGameData.h"
+#include "Ware.h"
+#include "addons/const_addons.h"
+#include "figures/nofBuildingWorker.h"
+#include "figures/nofPigbreeder.h"
+#include "helpers/EnumArray.h"
+#include "helpers/containerUtils.h"
+#include "ViewState.h"
+#include "notifications/BuildingNote.h"
+#include "ogl/glArchivItem_Bitmap.h"
+#include "ogl/glArchivItem_Bitmap_Player.h"
+#include "postSystem/PostMsgWithBuilding.h"
+#include "world/GameWorld.h"
+#include "gameTypes/MineResourceBehavior.h"
+#include "gameTypes/Resource.h"
+#include "gameData/BuildingConsts.h"
+#include "gameData/BuildingProperties.h"
+#include <numeric>
+
+/// Number of GFs after which the productivity is recalculated, i.e. productivity is averaged over intervals of this
+/// length
+constexpr unsigned numProductivityGFs = 400u;
+/// Marker for sinceNotWorking to mark the working state for productivity purposes
+constexpr unsigned isWorkingMarker = 0xFFFFFFFF;
+
+nobUsual::nobUsual(BuildingType type, MapPoint pos, unsigned char player, Nation nation)
+    : noBuilding(type, pos, player, nation), worker(nullptr), disableProduction(false), disableProductionVirtual(false),
+      lastOrderedWare(0), orderware_ev(nullptr), productivity_ev(nullptr), numGfNotWorking(0),
+      sinceNotWorking(isWorkingMarker), outOfRessourcesMsgSent(false), is_working(false)
+{
+    std::fill(numWares.begin(), numWares.end(), 0);
+
+    orderedWares.resize(BLD_WORK_DESC[bldType_].waresNeeded.size());
+
+    // Tür aufmachen,bis Gebäude besetzt ist
+    openDoor();
+
+    GamePlayer& owner = world->getPlayer(player);
+    // New building gets half the average productivity from all buildings of the same type
+    productivity = owner.getBuildingRegister().calcAverageProductivity(type) / 2u;
+    // Set last productivities to current to avoid resetting it on first recalculation event
+    std::fill(lastProductivities.begin(), lastProductivities.end(), productivity);
+}
+
+nobUsual::nobUsual(SerializedGameData& sgd, const unsigned obj_id)
+    : noBuilding(sgd, obj_id), worker(sgd.popObject<nofBuildingWorker>()), productivity(sgd.popUnsignedShort()),
+      disableProduction(sgd.popBool()), disableProductionVirtual(disableProduction),
+      lastOrderedWare(sgd.popUnsignedChar()), orderware_ev(sgd.popEvent()), productivity_ev(sgd.popEvent()),
+      numGfNotWorking(sgd.popUnsignedShort()), sinceNotWorking(sgd.popUnsignedInt()),
+      outOfRessourcesMsgSent(sgd.popBool()), is_working(sgd.popBool())
+{
+    helpers::popContainer(sgd, numWares);
+
+    orderedWares.resize(BLD_WORK_DESC[bldType_].waresNeeded.size());
+
+    for(std::list<Ware*>& orderedWare : orderedWares)
+        sgd.popObjectContainer(orderedWare, GO_Type::Ware);
+    helpers::popContainer(sgd, lastProductivities);
+}
+
+void nobUsual::serialize(SerializedGameData& sgd) const
+{
+    noBuilding::serialize(sgd);
+
+    sgd.pushObject(worker);
+    sgd.pushUnsignedShort(productivity);
+    sgd.pushBool(disableProduction);
+    sgd.pushUnsignedChar(lastOrderedWare);
+    sgd.pushEvent(orderware_ev);
+    sgd.pushEvent(productivity_ev);
+    sgd.pushUnsignedShort(numGfNotWorking);
+    sgd.pushUnsignedInt(sinceNotWorking);
+    sgd.pushBool(outOfRessourcesMsgSent);
+    sgd.pushBool(is_working);
+
+    helpers::pushContainer(sgd, numWares);
+    for(const std::list<Ware*>& orderedWare : orderedWares)
+        sgd.pushObjectContainer(orderedWare, true);
+    helpers::pushContainer(sgd, lastProductivities);
+}
+
+nobUsual::~nobUsual() = default;
+
+void nobUsual::DestroyBuilding()
+{
+    // Arbeiter Bescheid sagen
+    if(worker)
+    {
+        worker->lostWork();
+        worker = nullptr;
+    } else
+        world->getPlayer(player).jobNotWanted(this);
+
+    // Bestellte Waren Bescheid sagen
+    for(std::list<Ware*>& orderedWare : orderedWares)
+    {
+        for(Ware* ware : orderedWare)
+            wareNotNeeded(ware);
+        orderedWare.clear();
+    }
+
+    // Events löschen
+    getEvMgr().removeEvent(orderware_ev);
+    getEvMgr().removeEvent(productivity_ev);
+
+    // Inventur entsprechend verringern wegen den Waren, die vernichtetet werden
+    for(unsigned i = 0; i < BLD_WORK_DESC[bldType_].waresNeeded.size(); ++i)
+    {
+        const GoodType ware = BLD_WORK_DESC[bldType_].waresNeeded[i];
+        RTTR_Assert(ware != GoodType::Nothing);
+        world->getPlayer(player).decreaseInventoryWare(ware, numWares[i]);
+    }
+}
+
+void nobUsual::draw(DrawPoint drawPt)
+{
+    // Gebäude an sich zeichnen
+    drawBaseBuilding(drawPt);
+
+    // Wenn Produktion gestoppt ist, Schild außen am Gebäude zeichnen zeichnen
+    if(disableProductionVirtual)
+        LOADER.getMapTexture(46)->drawFull(drawPt + BUILDING_SIGN_CONSTS[nation][bldType_]);
+
+    // Rauch zeichnen
+
+    // Raucht dieses Gebäude und ist es in Betrieb? (nur arbeitende Gebäude rauchen schließlich)
+    if(is_working && BUILDING_SMOKE_CONSTS[nation][bldType_].type)
+    {
+        // Dann Qualm zeichnen (damit Qualm nicht synchron ist, x- und y- Koordinate als Unterscheidung
+        LOADER
+          .getMapTexture(692 + BUILDING_SMOKE_CONSTS[nation][bldType_].type * 8
+                         + VIEWSTATE.getGlobalAnimation(8, 5, 2, (getX() + getY()) * 100))
+          ->drawFull(drawPt + BUILDING_SMOKE_CONSTS[nation][bldType_].offset, 0x99EEEEEE);
+    }
+
+    // TODO: zusätzliche Dinge wie Mühlenräder, Schweinchen etc bei bestimmten Gebäuden zeichnen
+
+    // Bei Mühle, wenn sie nicht arbeitet, immer Mühlenräder (nichtdrehend) zeichnen
+    if(bldType_ == BuildingType::Mill && !is_working)
+    {
+        // Flügel der Mühle
+        LOADER.getNationImage(nation, 250 + 5 * 49)->drawFull(drawPt);
+        // Schatten der Flügel
+        LOADER.getNationImage(nation, 250 + 5 * 49 + 1)->drawFull(drawPt, COLOR_SHADOW);
+    }
+    // Esel in den Kammer bei Eselzucht zeichnen
+    else if(bldType_ == BuildingType::DonkeyBreeder)
+    {
+        // Für alle Völker jeweils
+        // X-Position der Esel
+        constexpr helpers::EnumArray<std::array<DrawPoint, 3>, Nation> DONKEY_OFFSETS = {
+          {{{{13, -9}, {26, -9}, {39, -9}}},
+           {{{3, -17}, {16, -17}, {30, -17}}},
+           {{{2, -21}, {15, -21}, {29, -21}}},
+           {{{7, -17}, {18, -17}, {30, -17}}},
+           {{{3, -22}, {16, -22}, {30, -22}}}}};
+        // Animations-IDS des Esels
+        const std::array<unsigned char, 25> DONKEY_ANIMATION = {
+          {0, 1, 2, 3, 4, 5, 6, 7, 7, 7, 6, 5, 4, 4, 5, 6, 5, 7, 6, 5, 4, 3, 2, 1, 0}};
+
+        // Die drei Esel zeichnen mithilfe von Globalanimation
+        // Anzahl hängt von Produktivität der Eselzucht ab:
+        // 0-29 - kein Esel
+        // 30-60 - 1 Esel
+        // 60-90 - 2 Esel
+        // 90-100 - 3 Esel
+        RTTR_Assert(productivity <= 100u);
+        for(unsigned i = 0; i < productivity / 30u; i++)
+        {
+            unsigned animationFrame = DONKEY_ANIMATION[VIEWSTATE.getGlobalAnimation(
+              DONKEY_ANIMATION.size(), 5, 2, getX() * (player + 2) + getY() * i)];
+            LOADER.getMapTexture(2180 + animationFrame)->drawFull(drawPt + DONKEY_OFFSETS[nation][i]);
+        }
+    }
+    // Bei Katapulthaus Katapult oben auf dem Dach zeichnen, falls er nicht "arbeitet"
+    else if(bldType_ == BuildingType::Catapult && !is_working)
+    {
+        LOADER.getPlayerImage("rom_bobs", 1776)->drawFull(drawPt - DrawPoint(7, 19));
+    }
+
+    // Bei Schweinefarm Schweinchen auf dem Hof zeichnen
+    else if(bldType_ == BuildingType::PigFarm && this->hasWorker())
+    {
+        // Position der 5 Schweinchen für alle 4 Völker (1. ist das große Schwein)
+        constexpr helpers::EnumArray<std::array<DrawPoint, 5>, Nation> PIG_POSITIONS = {{
+          //  gr. S. 1.klS 2. klS usw
+          {{{3, -8}, {17, 3}, {-12, 4}, {-2, 10}, {-22, 11}}},    // Afrikaner
+          {{{-16, 0}, {-37, 0}, {-32, 8}, {-16, 10}, {-22, 18}}}, // Japaner
+          {{{-15, 0}, {-4, 9}, {-22, 10}, {2, 19}, {-15, 20}}},   // Römer
+          {{{5, -5}, {25, -12}, {-7, 7}, {-23, 11}, {-10, 14}}},  // Wikinger
+          {{{-16, 5}, {-37, 5}, {-32, -1}, {-16, 15}, {-27, 18}}} // Babylonier
+        }};
+
+        /// Großes Schwein zeichnen
+        LOADER.getMapTexture(2160)->drawFull(drawPt + PIG_POSITIONS[nation][0], COLOR_SHADOW);
+        LOADER.getMapTexture(2100 + VIEWSTATE.getGlobalAnimation(12, 3, 1, getX() + getY() + getObjId()))
+          ->drawFull(drawPt + PIG_POSITIONS[nation][0]);
+
+        // Die 4 kleinen Schweinchen, je nach Produktivität
+        for(unsigned i = 1; i < std::min(unsigned(productivity) / 20u + 1u, 5u); ++i)
+        {
+            // A random (really, dice-rolled by hand:) ) order of the four possible pig animations, with eating three
+            // times as much as the others ones  To get random-looking, non synchronous, sweet little pigs
+            const std::array<unsigned char, 63> smallpig_animations = {
+              0, 0, 3, 2, 0, 0, 1, 3, 0, 3, 1, 3, 2, 0, 0, 1, 0, 0, 1, 3, 2, 0, 1, 1, 0, 0, 2, 1, 0, 1, 0, 2,
+              2, 0, 0, 2, 2, 0, 1, 0, 3, 1, 2, 0, 1, 2, 2, 0, 0, 0, 3, 0, 2, 0, 3, 0, 3, 0, 1, 1, 0, 3, 0};
+            const unsigned short animpos =
+              VIEWSTATE.getGlobalAnimation(63 * 12, 63 * 4 - i * 5, 1, 183 * i + getX() * getObjId() + getY() * i);
+            LOADER.getMapTexture(2160)->drawFull(drawPt + PIG_POSITIONS[nation][i], COLOR_SHADOW);
+            LOADER.getMapTexture(2112 + smallpig_animations[animpos / 12] * 12 + animpos % 12)
+              ->drawFull(drawPt + PIG_POSITIONS[nation][i]);
+        }
+
+        // Ggf. Sounds abspielen (oink oink), da soll sich der Schweinezüchter drum kümmen
+        dynamic_cast<nofPigbreeder*>(worker)->makePigSounds(); //-V522
+    }
+    // Bei nubischen Bergwerken das Feuer vor dem Bergwerk zeichnen
+    else if(BuildingProperties::isMine(bldType_) && worker && nation == Nation::Africans)
+    {
+        DrawPoint offset;
+        switch(bldType_)
+        {
+            case BuildingType::GraniteMine: offset = NUBIAN_MINE_FIRE[0]; break;
+            case BuildingType::CoalMine: offset = NUBIAN_MINE_FIRE[1]; break;
+            case BuildingType::IronMine: offset = NUBIAN_MINE_FIRE[2]; break;
+            case BuildingType::GoldMine: offset = NUBIAN_MINE_FIRE[3]; break;
+            default: RTTR_Assert_Msg(false, "Not a mine");
+        }
+        LOADER.getMapTexture(740 + VIEWSTATE.getGlobalAnimation(8, 5, 2, getObjId() + getX() + getY()))
+          ->drawFull(drawPt + offset);
+    }
+}
+
+void nobUsual::handleEvent(const unsigned id)
+{
+    if(id)
+    {
+        const unsigned short currentProductivity = calcCurrentProductivity();
+        // Sum over all last productivities and current (as start value)
+        productivity = std::accumulate(lastProductivities.begin(), lastProductivities.end(), currentProductivity);
+        // And average over those N+1 values
+        productivity /= lastProductivities.size() + 1u;
+
+        // Move productivities to the right (removing the last element)
+        std::copy_backward(lastProductivities.begin(), lastProductivities.end() - 1, lastProductivities.end());
+        lastProductivities.front() = currentProductivity;
+
+        // Add next event
+        productivity_ev = getEvMgr().addEvent(this, numProductivityGFs, 1);
+    } else
+    {
+        // Ware bestellen (falls noch Platz ist) und nicht an Betriebe, die stillgelegt wurden!
+        if(!disableProduction)
+        {
+            const BldWorkDescription& workDesc = BLD_WORK_DESC[bldType_];
+            RTTR_Assert(lastOrderedWare < workDesc.waresNeeded.size());
+            // How many wares can we have of each type?
+            unsigned wareSpaces = workDesc.numSpacesPerWare;
+
+            if(numWares[lastOrderedWare] + orderedWares[lastOrderedWare].size() < wareSpaces)
+            {
+                Ware* w = world->getPlayer(player).orderWare(workDesc.waresNeeded[lastOrderedWare], *this);
+                if(w)
+                    RTTR_Assert(helpers::contains(orderedWares[lastOrderedWare], w));
+            }
+
+            ++lastOrderedWare;
+            if(lastOrderedWare >= workDesc.waresNeeded.size())
+                lastOrderedWare = 0;
+        }
+
+        // Nach ner bestimmten Zeit dann nächste Ware holen
+        orderware_ev = getEvMgr().addEvent(this, 210);
+    }
+}
+
+void nobUsual::addWare(std::unique_ptr<Ware> ware)
+{
+    // Gucken, um was für einen Warentyp es sich handelt und dann dort hinzufügen
+    const BldWorkDescription& workDesc = BLD_WORK_DESC[bldType_];
+    for(unsigned char i = 0; i < workDesc.waresNeeded.size(); ++i)
+    {
+        if(ware->type == workDesc.waresNeeded[i])
+        {
+            ++numWares[i];
+            RTTR_Assert(helpers::contains(orderedWares[i], ware.get()));
+            orderedWares[i].remove(ware.get());
+            break;
+        }
+    }
+
+    // Ware vernichten
+    world->getPlayer(player).removeWare(*ware);
+
+    // Arbeiter Bescheid sagen, dass es neue Waren gibt
+    if(worker)
+        worker->gotWareOrProductionAllowed();
+}
+
+bool nobUsual::freePlaceAtFlag()
+{
+    // Arbeiter Bescheid sagen, falls es noch keinen gibt, brauch keine Ware rausgetragen werden
+    if(worker)
+        return worker->freePlaceAtFlag();
+    else
+        return false;
+}
+
+void nobUsual::wareLost(Ware& ware)
+{
+    // Ware konnte nicht kommen --> raus damit
+    const BldWorkDescription& workDesc = BLD_WORK_DESC[bldType_];
+    for(unsigned char i = 0; i < workDesc.waresNeeded.size(); ++i)
+    {
+        if(ware.type == workDesc.waresNeeded[i])
+        {
+            RTTR_Assert(helpers::contains(orderedWares[i], &ware));
+            orderedWares[i].remove(&ware);
+            break;
+        }
+    }
+}
+
+void nobUsual::gotWorker(Job /*job*/, noFigure& worker)
+{
+    this->worker = checkedCast<nofBuildingWorker*>(&worker);
+
+    if(!BLD_WORK_DESC[bldType_].waresNeeded.empty())
+        // erste Ware bestellen
+        handleEvent(0);
+}
+
+void nobUsual::workerLost()
+{
+    // Check if worker is or was here (e.g. hunter could currently be outside)
+    if(hasWorker())
+    {
+        // If we have a worker, we must be producing something
+        RTTR_Assert(productivity_ev);
+        // Open the door till we get a new worker
+        openDoor();
+    }
+    // Produktivitätsevent ggf. abmelden
+    getEvMgr().removeEvent(productivity_ev);
+
+    // Waren-Bestell-Event abmelden
+    getEvMgr().removeEvent(orderware_ev);
+
+    // neuen Arbeiter bestellen
+    worker = nullptr;
+    world->getPlayer(player).addJobWanted(BLD_WORK_DESC[bldType_].job.value(), this);
+}
+
+bool nobUsual::waresAvailable()
+{
+    const BldWorkDescription& workDesc = BLD_WORK_DESC[bldType_];
+    if(workDesc.useOneWareEach)
+    {
+        // Any ware not there -> false, else true
+        for(unsigned char i = 0; i < workDesc.waresNeeded.size(); ++i)
+        {
+            RTTR_Assert(workDesc.waresNeeded[i] != GoodType::Nothing);
+            if(numWares[i] == 0)
+                return false;
+        }
+        return true;
+    } else
+    {
+        // Any ware there -> true else false
+        for(unsigned char i = 0; i < workDesc.waresNeeded.size(); ++i)
+        {
+            RTTR_Assert(workDesc.waresNeeded[i] != GoodType::Nothing);
+            if(numWares[i] != 0)
+                return true;
+        }
+        return false;
+    }
+}
+
+void nobUsual::consumeWares()
+{
+    const BldWorkDescription& workDesc = BLD_WORK_DESC[bldType_];
+    unsigned numWaresNeeded = workDesc.waresNeeded.size();
+    if(numWaresNeeded == 0)
+        return;
+
+    // Set to first ware (default)
+    unsigned wareIdxToUse = 0;
+    if(!workDesc.useOneWareEach)
+    {
+        // Use only 1 ware -> Get the one with the most in store
+        unsigned numBestWare = 0;
+        for(unsigned i = 0; i < numWaresNeeded; ++i)
+        {
+            if(numWares[i] > numBestWare)
+            {
+                wareIdxToUse = i;
+                numBestWare = numWares[i];
+            }
+        }
+        // And tell that we only consume 1
+        numWaresNeeded = 1;
+    }
+
+    GamePlayer& owner = world->getPlayer(player);
+    for(unsigned i = 0; i < numWaresNeeded; i++)
+    {
+        RTTR_Assert(numWares[wareIdxToUse] != 0);
+        // Bestand verringern
+        --numWares[wareIdxToUse];
+        // Inventur entsprechend verringern
+        owner.decreaseInventoryWare(workDesc.waresNeeded[wareIdxToUse], 1);
+
+        // try to get ware from warehouses
+        if(numWares[wareIdxToUse] < 2)
+        {
+            Ware* w = world->getPlayer(player).orderWare(workDesc.waresNeeded[wareIdxToUse], *this);
+            if(w)
+                RTTR_Assert(helpers::contains(orderedWares[wareIdxToUse], w));
+        }
+        // Set to value of next iteration. Note: It might have been not 0 for useOneWareEach == false
+        wareIdxToUse = i + 1;
+    }
+}
+
+unsigned nobUsual::calcDistributionPoints(const GoodType type)
+{
+    // No production -> nothing needed
+    if(disableProduction)
+        return 0;
+
+    const BldWorkDescription& workDesc = BLD_WORK_DESC[bldType_];
+    // Warentyp ermitteln
+    unsigned id;
+    for(id = 0; id < workDesc.waresNeeded.size(); ++id)
+    {
+        if(workDesc.waresNeeded[id] == type)
+            break;
+    }
+
+    // Don't need this ware
+    if(id == workDesc.waresNeeded.size())
+        return 0;
+
+    // Got enough? -> Don't request more
+    if(numWares[id] + orderedWares[id].size() == workDesc.numSpacesPerWare)
+        return 0;
+
+    // 10000 as base points then subtract some
+    // Note: Subtracted points must be at most this.
+    unsigned points = 10000;
+
+    // Every ware we have or is on the way reduces rating
+    // Note: maxValue is numSpacesPerWare * 30 which is <= 60*30=1800 (< 10000 base value)
+    points -= (numWares[id] + orderedWares[id].size()) * 30;
+
+    RTTR_Assert(points <= 10000);
+
+    return points;
+}
+
+void nobUsual::takeWare(Ware* ware)
+{
+    // Ware in die Bestellliste aufnehmen
+    const BldWorkDescription& workDesc = BLD_WORK_DESC[bldType_];
+    for(unsigned char i = 0; i < workDesc.waresNeeded.size(); ++i)
+    {
+        if(ware->type == workDesc.waresNeeded[i])
+        {
+            RTTR_Assert(!helpers::contains(orderedWares[i], ware));
+            orderedWares[i].push_back(ware);
+            return;
+        }
+    }
+}
+
+bool nobUsual::areThereAnyOrderedWares() const
+{
+    return helpers::containsIf(orderedWares, [](const auto& wareList) { return !wareList.empty(); });
+}
+
+void nobUsual::workerArrived()
+{
+    productivity_ev = getEvMgr().addEvent(this, numProductivityGFs, 1);
+}
+
+void nobUsual::SetProductionEnabled(const bool enabled)
+{
+    if(disableProduction == !enabled)
+        return;
+    // Umstellen
+    disableProduction = !enabled;
+    // Wenn das von einem fremden Spieler umgestellt wurde (oder vom Replay), muss auch das visuelle umgestellt werden
+    if(VIEWSTATE.getPlayerId() != player || VIEWSTATE.isReplayModeOn())
+        disableProductionVirtual = disableProduction;
+
+    if(disableProduction)
+    {
+        // Wenn sie deaktiviert wurde, dem Arbeiter Bescheid sagen, damit er entsprechend stoppt, falls er schon
+        // auf die Arbeit warteet
+        if(worker)
+            worker->productionStopped();
+    } else
+    {
+        // Wenn sie wieder aktiviert wurde, evtl wieder mit arbeiten anfangen, falls es einen Arbeiter gibt
+        if(worker)
+            worker->gotWareOrProductionAllowed();
+    }
+}
+
+bool nobUsual::hasWorker() const
+{
+    return worker && worker->getState() != nofBuildingWorker::State::FigureWork;
+}
+
+unsigned short nobUsual::getProductivity() const
+{
+    if(!BuildingProperties::isMine(bldType_)
+       || getMineResourceBehavior(world->getGGS(), bldType_) != MineResourceBehavior::S4LikeExhaustion)
+        return productivity;
+
+    const unsigned resourceAmount = getRemainingMineResources(*world, pos, getMineResourceType(bldType_));
+    return static_cast<unsigned short>(
+      (static_cast<unsigned>(productivity) * getS4LikeMineProductionChance(resourceAmount)) / 100u);
+}
+
+void nobUsual::onOutOfResources()
+{
+    // Post verschicken, keine Rohstoffe mehr da
+    if(outOfRessourcesMsgSent)
+        return;
+    outOfRessourcesMsgSent = true;
+    productivity = 0;
+    std::fill(lastProductivities.begin(), lastProductivities.end(), 0);
+
+    const char* error;
+    if(getBuildingType() == BuildingType::Well)
+        error = _("This well has dried out");
+    else if(BuildingProperties::isMine(getBuildingType()))
+        error = _("This mine is exhausted");
+    else if(getBuildingType() == BuildingType::Quarry)
+        error = _("No more stones in range");
+    else if(getBuildingType() == BuildingType::Fishery)
+        error = _("No more fish in range");
+    else
+        return;
+
+    sendPostMessage(
+      player, std::make_unique<PostMsgWithBuilding>(getEvMgr().getCurrentGF(), error, PostCategory::Economy, *this));
+    world->getNotifications().publish(BuildingNote(BuildingNote::NoRessources, player, getPos(), getBuildingType()));
+
+    if(VIEWSTATE.getPlayerId() == player && world->getGGS().isEnabled(AddonId::DEMOLISH_BLD_WO_RES))
+    {
+        VIEWSTATE.DestroyBuilding(getPos());
+    }
+}
+
+void nobUsual::startNotWorking()
+{
+    // If we haven't stopped working already, then this is the GF since we are not working anymore
+    if(sinceNotWorking == isWorkingMarker)
+        sinceNotWorking = getEvMgr().getCurrentGF();
+}
+
+void nobUsual::stopNotWorking()
+{
+    // Record the number of GFs we haven't worked, if any
+    if(sinceNotWorking != isWorkingMarker)
+    {
+        numGfNotWorking += static_cast<unsigned short>(getEvMgr().getCurrentGF() - sinceNotWorking);
+        sinceNotWorking = isWorkingMarker;
+    }
+}
+
+unsigned short nobUsual::calcCurrentProductivity()
+{
+    if(outOfRessourcesMsgSent)
+        return 0;
+    // Possibly add the number of GFs we haven't worked until now
+    if(sinceNotWorking != isWorkingMarker)
+    {
+        const auto currentGF = getEvMgr().getCurrentGF();
+        numGfNotWorking += static_cast<unsigned short>(currentGF - sinceNotWorking);
+        // Reset marker
+        sinceNotWorking = currentGF;
+    }
+
+    RTTR_Assert(numGfNotWorking <= numProductivityGFs);
+    // Calculate the productivity
+    static_assert(numProductivityGFs / 100u == 4u, "Cannot use simplified percentage calculation");
+    const unsigned short curProductivity = (numProductivityGFs - numGfNotWorking) / 4u;
+
+    // Reset counter
+    numGfNotWorking = 0;
+
+    return curProductivity;
+}

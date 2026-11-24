@@ -1,0 +1,236 @@
+// Copyright (C) 2005 - 2021 Settlers Freaks (sf-team at siedler25.org)
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#pragma once
+
+#include "helpers/containerUtils.h"
+#include "mapGenerator/Algorithms.h"
+#include "mapGenerator/NodeMapUtilities.h"
+#include "mapGenerator/Triangles.h"
+#include "gameData/WorldDescription.h"
+
+namespace rttr::mapGenerator {
+
+struct TexturePair
+{
+    DescIdx<TerrainDesc> rsu;
+    DescIdx<TerrainDesc> lsd;
+
+    TexturePair() = default;
+    TexturePair(DescIdx<TerrainDesc> texture) : rsu(texture), lsd(texture) {}
+};
+
+class TextureOperator
+{
+private:
+    const WorldDescription& worldDesc_;
+    const DescIdx<LandscapeDesc> landscape_;
+
+    const std::vector<DescIdx<TerrainDesc>> terrains_;
+
+public:
+    TextureOperator(const WorldDescription& worldDesc, const DescIdx<LandscapeDesc> landscape)
+        : worldDesc_(worldDesc), landscape_(landscape),
+          terrains_(worldDesc_.terrain.findAll([landscape](const TerrainDesc& t) { return t.landscape == landscape; }))
+    {}
+
+    uint8_t getTextureId(DescIdx<TerrainDesc> texture) const { return worldDesc_.get(texture).s2Id; }
+
+    uint8_t getLandscapeId() const { return worldDesc_.get(landscape_).s2Id; }
+
+    template<class T_Predicate>
+    DescIdx<TerrainDesc> find(T_Predicate predicate) const
+    {
+        for(auto texture : terrains_)
+        {
+            if(predicate(worldDesc_.get(texture)))
+            {
+                return texture;
+            }
+        }
+
+        throw std::invalid_argument("no texture found for specified predicate");
+    }
+
+    template<class T_Predicate>
+    std::vector<DescIdx<TerrainDesc>> findAll(T_Predicate predicate) const
+    {
+        auto condition = [&predicate, this](const auto& texture) { return predicate(worldDesc_.get(texture)); };
+
+        std::vector<DescIdx<TerrainDesc>> textures;
+        std::copy_if(terrains_.begin(), terrains_.end(), std::back_inserter(textures), condition);
+
+        return textures;
+    }
+
+    template<class T_SortBy>
+    void sort(std::vector<DescIdx<TerrainDesc>>& textures, T_SortBy sortBy) const
+    {
+        auto lessThan = [this, &sortBy](const auto& t1, const auto& t2) {
+            return sortBy(worldDesc_.get(t1)) < sortBy(worldDesc_.get(t2));
+        };
+
+        helpers::sort(textures, lessThan);
+    }
+
+    template<class T_Predicate>
+    bool check(DescIdx<TerrainDesc> texture, T_Predicate predicate) const
+    {
+        return predicate(worldDesc_.get(texture));
+    }
+};
+
+class TextureMap : public TextureOperator
+{
+public:
+    NodeMapBase<TexturePair> textures_;
+
+    TextureMap(const WorldDescription& worldDesc, DescIdx<LandscapeDesc> landscape, const MapExtent& size)
+        : TextureOperator(worldDesc, landscape)
+    {
+        textures_.resize(size);
+    }
+
+    template<class T_Predicate>
+    bool check(const Triangle& triangle, T_Predicate predicate) const
+    {
+        if(triangle.rsu)
+        {
+            return TextureOperator::check(textures_[triangle.position].rsu, predicate);
+        } else
+        {
+            return TextureOperator::check(textures_[triangle.position].lsd, predicate);
+        }
+    }
+
+    template<class T_Predicate>
+    bool any(const MapPoint& point, T_Predicate predicate) const
+    {
+        auto condition = [this, &predicate](auto triangle) { return this->check(triangle, predicate); };
+        return helpers::containsIf(getTriangles(point, textures_.getSize()), condition);
+    }
+
+    template<class T_Predicate>
+    bool all(const MapPoint& point, T_Predicate predicate) const
+    {
+        auto condition = [this, &predicate](auto triangle) { return !this->check(triangle, predicate); };
+        return !helpers::containsIf(getTriangles(point, textures_.getSize()), condition);
+    }
+
+    /**
+     * Updates the texture for the specified triangle.
+     *
+     * @param triangle triangle to update
+     * @param texture texture to place on the triangle
+     */
+    void set(const Triangle& triangle, DescIdx<TerrainDesc> texture);
+
+    /**
+     * Updates all textures around the specified node.
+     *
+     * @param pt position of the node
+     * @param texture texture to place
+     */
+    void set(const MapPoint& pt, DescIdx<TerrainDesc> texture);
+
+    /**
+     * Gets the texture of the specified triangle.
+     *
+     * @param triangle reference to the triangle to find the texture for
+     *
+     * @returns the texture of the triangle.
+     */
+    DescIdx<TerrainDesc> get(const Triangle& triangle) const;
+};
+
+class Texturizer
+{
+private:
+    NodeMapBase<uint8_t>& z_;
+    NodeMapBase<TexturePair>& textures_;
+    TextureMap& textureMap_;
+    unsigned seaLevel_;
+
+    /**
+     * Creates a mapping from z-value to texture based on sea- and mountain level.
+     *
+     * @param mountainLevel minimum height mountains start from
+     *
+     * @returns a vector of textures with each index representing a z-value.
+     */
+    std::vector<DescIdx<TerrainDesc>> createTextureMapping(unsigned mountainLevel);
+
+    /**
+     * Adds textures based on z-values, sea- and mountain levels.
+     *
+     * @param mountainLevel minimum height mountains start from
+     */
+    void applyTexturingByHeightMap(unsigned mountainLevel);
+
+    /**
+     * Sets textures near the specified coast to ensure a smooth looking transition from water to buildable land.
+     *
+     * @param coast nodes to consider for re-texturing
+     * @param width width (in node edges) for each coast transition texture
+     */
+    void applyCoastTexturing(const std::vector<MapPoint>& coast, unsigned width);
+
+    /**
+     * Creates smooth transitions between grass and mountain textures.
+     *
+     * @param mountainFoot all points on the map which are surounded by mountain and grass
+     */
+    void applyMountainTransitions(const std::vector<MapPoint>& mountainFoot);
+
+    /**
+     * Creates swamp transitions between water and mountain textures.
+     *
+     * @param transitions all points surounded by mountain and water textures
+     */
+    void applyMountainWaterTransitions(const std::vector<MapPoint>& transitions);
+
+public:
+    Texturizer(NodeMapBase<uint8_t>& z, NodeMapBase<TexturePair>& textures, TextureMap& textureMap)
+        : z_(z), textures_(textures), textureMap_(textureMap)
+    {
+        seaLevel_ = getRange(z).minimum;
+    }
+
+    /**
+     * Adds missing textures based on the height map and the specified sea- and mountain levels.
+     *
+     * @param mountainLevel minimum z-value defining the starting height for mountains
+     * @param coastline size of the coastline
+     */
+    void addTextures(unsigned mountainLevel, unsigned coastline);
+};
+
+/**
+ * Replaces textures around the specified map point with the specified texture if the current texture is not part
+ * of the excluded textures.
+ *
+ * @param textures textures to replace
+ * @param point all triangles around this point are checked and textures being replaced
+ * @param texture new texture to replace current textures with
+ * @param excluded textures which are excluded from replacement
+ */
+void replaceTextureForPoint(NodeMapBase<TexturePair>& textures, const MapPoint& point, DescIdx<TerrainDesc> texture,
+                            const std::set<DescIdx<TerrainDesc>>& excluded);
+
+/**
+ * Replaces textures for all nodes of the map and all neighboring nodes within the specified radius by the
+ * specified texture. Triangles of nodes which contain exlcuded textures are being skipped.
+ *
+ * @param textures textures to replace
+ * @param radius radius around specified nodes to also consider for texture replacement
+ * @param nodes initial nodes to consider for texture replacement. Other nodes which are considered for texture
+ * replacement are added to
+ * this vector.
+ * @param texture texture to apply to nodes' triangles
+ * @param excluded set of texture which shouldn't get replaced
+ */
+void replaceTextures(NodeMapBase<TexturePair>& textures, unsigned radius, std::set<MapPoint, MapPointLess>& nodes,
+                     DescIdx<TerrainDesc> texture, const std::set<DescIdx<TerrainDesc>>& excluded);
+
+} // namespace rttr::mapGenerator

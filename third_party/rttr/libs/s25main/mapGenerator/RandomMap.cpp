@@ -1,0 +1,298 @@
+// Copyright (C) 2005 - 2021 Settlers Freaks (sf-team at siedler25.org)
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#include "mapGenerator/RandomMap.h"
+#include "mapGenerator/Harbors.h"
+#include "mapGenerator/HeadQuarters.h"
+#include "mapGenerator/Islands.h"
+#include "mapGenerator/Resources.h"
+#include "mapGenerator/Terrain.h"
+#include "mapGenerator/TextureHelper.h"
+#include "mapGenerator/Textures.h"
+
+#include "lua/GameDataLoader.h"
+#include "libsiedler2/libsiedler2.h"
+
+#include <stdexcept>
+
+namespace rttr::mapGenerator {
+
+unsigned getMaximumHeight(const MapExtent& size)
+{
+    const unsigned combinedSize = size.x * size.y;
+    if(combinedSize <= 64 * 64)
+        return 32;
+    else if(combinedSize <= 128 * 128)
+        return 64;
+    else if(combinedSize <= 256 * 256)
+        return 128;
+    else if(combinedSize <= 512 * 512)
+        return 150;
+    else if(combinedSize <= 1024 * 1024)
+        return 200;
+    else
+        return 60;
+}
+
+unsigned getCoastline(const MapExtent& size)
+{
+    const unsigned combinedSize = size.x * size.y;
+    if(combinedSize <= 128 * 128)
+        return 1;
+    else if(combinedSize <= 512 * 512)
+        return 2;
+    else if(combinedSize <= 1024 * 1024)
+        return 3;
+    else
+        return 4;
+}
+
+unsigned getIslandRadius(const MapExtent& size)
+{
+    const unsigned combinedSize = size.x * size.y;
+    if(combinedSize <= 128 * 128)
+        return 2;
+    else if(combinedSize <= 256 * 256)
+        return 3;
+    else if(combinedSize <= 512 * 512)
+        return 4;
+    else if(combinedSize <= 1024 * 1024)
+        return 5;
+    else
+        return 6;
+}
+
+unsigned getIslandSize(const MapExtent& size)
+{
+    const unsigned combinedSize = size.x * size.y;
+    if(combinedSize <= 64 * 64)
+        return 200;
+    else if(combinedSize <= 128 * 128)
+        return 400;
+    else if(combinedSize <= 256 * 256)
+        return 600;
+    else if(combinedSize <= 512 * 512)
+        return 900;
+    else
+        return 1200;
+}
+
+unsigned getSmoothRadius(const MapExtent& size)
+{
+    const unsigned combinedSize = size.x * size.y;
+    if(combinedSize <= 128 * 128)
+        return 2;
+    else if(combinedSize <= 256 * 256)
+        return 3;
+    else if(combinedSize <= 512 * 512)
+        return 4;
+    else if(combinedSize <= 1024 * 1024)
+        return 6;
+    else
+        return 7;
+}
+
+unsigned getSmoothIterations(const MapExtent& size)
+{
+    const unsigned combinedSize = size.x * size.y;
+    if(combinedSize <= 64 * 64)
+        return 10;
+    else if(combinedSize <= 128 * 128)
+        return 11;
+    else if(combinedSize <= 256 * 256)
+        return 9;
+    else if(combinedSize <= 512 * 512)
+        return 12;
+    else if(combinedSize <= 1024 * 1024)
+        return 15;
+    else
+        return 13;
+}
+
+void smoothHeightMap(NodeMapBase<uint8_t>& z, const ValueRange<uint8_t>& range)
+{
+    int radius = getSmoothRadius(z.getSize());
+    int iterations = getSmoothIterations(z.getSize());
+
+    smooth(iterations, radius, z);
+    scale(z, range.minimum, range.maximum);
+}
+
+RandomMap::RandomMap(RandomUtility& rnd, Map& map)
+    : rnd_(rnd), map_(map), texturizer_(map.z, map.getTextures(), map.textureMap)
+{}
+
+void RandomMap::create(const MapSettings& settings)
+{
+    auto defaultHeight = map_.height.minimum + map_.height.getDifference() / 2;
+
+    settings_ = settings;
+    map_.z.resize(settings.size, defaultHeight);
+
+    switch(settings.style)
+    {
+        case MapStyle::Water: createWaterMap(); break;
+
+        case MapStyle::Mixed: createMixedMap(); break;
+
+        case MapStyle::Land: createLandMap(); break;
+    }
+
+    addObjects(map_, rnd_, settings_);
+    addResources(map_, rnd_, settings_);
+    addAnimals(map_, rnd_);
+}
+
+std::vector<River> RandomMap::createRivers(const MapPoint source)
+{
+    std::vector<River> rivers;
+
+    const MapExtent size = settings_.size;
+    const unsigned length = size.x + size.y;
+
+    for(const auto dir : helpers::EnumRange<Direction>())
+    {
+        if(rnd_.byChance(settings_.rivers))
+        {
+            const unsigned splitRate = rnd_.randomValue(0u, 2u);
+            rivers.push_back(
+              createStream(rnd_, map_, source.isValid() ? source : rnd_.Point(map_.size), dir, length, splitRate));
+        }
+    }
+    return rivers;
+}
+
+void RandomMap::createFreeIslands(unsigned waterNodes)
+{
+    const auto islandRadius = getIslandRadius(map_.size);
+    const auto islandAmount = static_cast<double>(settings_.islands) / 100;
+    const auto maxIslandSize = getIslandSize(map_.size);
+    const auto minIslandSize = std::min(200u, maxIslandSize);
+    auto islandNodes = static_cast<unsigned>(islandAmount * waterNodes);
+    auto islandSize = rnd_.randomValue(minIslandSize, maxIslandSize);
+    while(islandNodes >= islandSize)
+    {
+        islandNodes -= islandSize;
+        createIsland(map_, rnd_, islandSize, islandRadius, .2);
+        islandSize = rnd_.randomValue(minIslandSize, maxIslandSize);
+    }
+}
+
+void RandomMap::createMixedMap()
+{
+    const auto center = rnd_.Point(map_.size);
+    const unsigned maxDistance = map_.z.calcMaxDistance();
+
+    restructure(map_, [this, &center, maxDistance](const MapPoint& pt) {
+        auto weight = 1. - static_cast<float>(map_.z.calcDistance(pt, center)) / maxDistance;
+        auto percentage = static_cast<unsigned>(12 * weight);
+        return rnd_.byChance(percentage);
+    });
+    smoothHeightMap(map_.z, map_.height);
+
+    const double sea = 0.5;
+    const double mountain = 0.1;
+    const double land = 1. - sea - mountain;
+
+    resetSeaLevel(map_, rnd_, limitFor(map_.z, sea, map_.height.minimum));
+
+    const auto mountainLevel = limitFor(map_.z, land, static_cast<uint8_t>(map_.height.minimum + 1)) + 1;
+    const auto rivers = createRivers(center);
+    const unsigned waterNodes = helpers::count(map_.z, map_.height.minimum);
+
+    createFreeIslands(waterNodes);
+
+    texturizer_.addTextures(mountainLevel, getCoastline(map_.size));
+
+    placeHarbors(map_, rivers);
+    placeHeadquarters(map_, rnd_, map_.players, settings_.mountainDistance);
+}
+
+void RandomMap::createWaterMap()
+{
+    const auto center = rnd_.Point(map_.size);
+    const unsigned maxDistance = map_.z.calcMaxDistance();
+
+    restructure(map_, [this, &center, maxDistance](const MapPoint& pt) {
+        const auto weight = 1. - static_cast<float>(map_.z.calcDistance(pt, center)) / maxDistance;
+        const auto percentage = static_cast<unsigned>(15 * weight * weight);
+        return rnd_.byChance(percentage);
+    });
+    smoothHeightMap(map_.z, map_.height);
+
+    const double sea = 0.80;      // 20% of map is center island (100% - 80% water)
+    const double mountain = 0.05; // 20% of center island is mountain (5% of 20% land)
+    const auto seaLevel = limitFor(map_.z, sea, map_.height.minimum);
+
+    resetSeaLevel(map_, rnd_, seaLevel);
+
+    const unsigned waterNodes = helpers::count(map_.z, map_.height.minimum);
+    const auto land = 1. - static_cast<double>(waterNodes) / (map_.size.x * map_.size.y) - mountain;
+    const auto mountainLevel = limitFor(map_.z, land, static_cast<uint8_t>(1)) + 1;
+    const auto islandSize = getIslandSize(map_.size);
+    const auto islandRadius = getIslandRadius(map_.size);
+
+    std::vector<Island> islands(map_.players);
+
+    for(unsigned i = 0; i < map_.players; i++)
+    {
+        islands[i] = createIsland(map_, rnd_, islandSize, islandRadius, .2);
+    }
+
+    if(waterNodes > map_.players * islandSize)
+    {
+        createFreeIslands(waterNodes - map_.players * islandSize);
+    }
+
+    const auto rivers = createRivers(center);
+
+    texturizer_.addTextures(mountainLevel, getCoastline(map_.size));
+
+    placeHarbors(map_, rivers);
+
+    for(unsigned i = 0; i < map_.players; i++)
+    {
+        placeHeadquarter(map_, islands[i], settings_.mountainDistance);
+    }
+}
+
+void RandomMap::createLandMap()
+{
+    restructure(map_, [this](auto&&) { return rnd_.byChance(5); });
+    smoothHeightMap(map_.z, map_.height);
+
+    const double sea = rnd_.randomDouble(0.1, 0.2);
+    const double mountain = rnd_.randomDouble(0.15, 0.4 - sea);
+    const double land = 1. - sea - mountain;
+
+    resetSeaLevel(map_, rnd_, limitFor(map_.z, sea, map_.height.minimum));
+
+    const auto mountainLevel = limitFor(map_.z, land, static_cast<uint8_t>(1)) + 1;
+    createRivers();
+
+    texturizer_.addTextures(mountainLevel, getCoastline(map_.size));
+
+    placeHeadquarters(map_, rnd_, map_.players, settings_.mountainDistance);
+}
+
+Map generateRandomMap(RandomUtility& rnd, const WorldDescription& worldDesc, const MapSettings& settings)
+{
+    auto height = getMaximumHeight(settings.size);
+    Map map(settings.size, settings.numPlayers, worldDesc, settings.type, height);
+    RandomMap randomMap(rnd, map);
+    randomMap.create(settings);
+    return map;
+}
+
+void createRandomMap(const boost::filesystem::path& filePath, const MapSettings& settings)
+{
+    RandomUtility rnd;
+    WorldDescription worldDesc;
+    loadGameData(worldDesc);
+
+    Map map = generateRandomMap(rnd, worldDesc, settings);
+    libsiedler2::write(filePath, map.createArchiv());
+}
+
+} // namespace rttr::mapGenerator
