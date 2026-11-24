@@ -35,7 +35,7 @@ int main(int argc, char** argv)
       "warmup", po::value(&weiler::gQuickWarmupGF), "Simulate this many game frames before showing --map")(
       "load", po::value(&weiler::gQuickLoad), "Load a savegame directly")(
       "ai-level", po::value(&weiler::gQuickLevel), "AI strength for --map: easy, medium or hard")(
-      "autoplay", po::bool_switch(&weiler::gQuickAutoplay), "Let an AI play for the local player during --warmup");
+      "autoplay", po::bool_switch(&weiler::gQuickAutoplay), "Let an AI play for the local player (during --warmup; whole game with --load)");
     po::variables_map vm;
     try
     {

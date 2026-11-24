@@ -29,7 +29,9 @@ public:
         KindGlyph = 1,
         KindShape = 2,
         /// Rounded rectangle filled with the blurred backdrop, tinted (frosted glass)
-        KindGlass = 3
+        KindGlass = 3,
+        /// Sprite from the texture array of the sprite atlas (layer in the vertex)
+        KindAtlas = 4
     };
 
     Batch() = default;
@@ -52,6 +54,10 @@ public:
 
     void quad(GLuint tex, float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1, Color c,
               Kind kind = KindTexture);
+    /// Sprite from the atlas texture array (see setAtlas); never breaks a batch of shapes or other atlas sprites
+    void atlasQuad(float layer, float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1, Color c);
+    /// Texture array used by atlasQuad
+    void setAtlas(GLuint arrayTex) { atlasTex_ = arrayTex; }
     /// Filled (stroke = 0) or outlined rounded rectangle. softness widens the anti aliasing (for shadows).
     void roundRect(const Rect2& r, float radius, Color c, float softness = 1.f, float stroke = 0.f);
     /// Rounded rectangle with a vertical gradient from top to bottom color
@@ -83,13 +89,14 @@ private:
         float stroke, kind;
     };
     void push(GLuint tex, const Vertex (&v)[4]);
+    void setAttribs(size_t offset);
     void shapeQuad(float cx, float cy, float hx, float hy, float ux, float uy, float extent, float radius, Color c,
                    float softness, float stroke, Color c2 = {0, 0, 0, -1}, float kind = 2.f);
     void captureBackdrop();
     void initBlur();
 
     GLuint program_ = 0, vao_ = 0, vbo_ = 0, ibo_ = 0, whiteTex_ = 0;
-    GLint uScreen_ = -1, uBackdrop_ = -1;
+    GLint uScreen_ = -1, uBackdrop_ = -1, uOverdraw_ = -1;
     // Backdrop blur: chain of half size render targets, the last one is blurred in two passes
     struct Target
     {
@@ -103,6 +110,8 @@ private:
     Rect2 clip_;
     std::vector<Vertex> vertices_;
     GLuint curTex_ = 0;
+    GLuint atlasTex_ = 0;
+    size_t vboOffset_ = 0;
     int fbW_ = 1, fbH_ = 1;
     float scale_ = 1.f, tx_ = 0.f, ty_ = 0.f;
     unsigned drawCalls_ = 0;

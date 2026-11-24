@@ -168,10 +168,16 @@ bool TestScript::execute(const std::string& line)
         {
             waitFor_ = a.at(0);
             waitForFrames_ = static_cast<int>(num(1, 600));
-        } else if(cmd == "perf")
+        } else if(cmd == "perf" || cmd == "perfasync")
         {
-            app_.startPerf(static_cast<int>(num(0, 120)));
-            waitFrames_ = static_cast<int>(num(0, 120)) + 1;
+            // perf: measure and wait; perfasync: measure while the following commands run (gestures)
+            app_.startPerf(static_cast<int>(num(0, 120)), a.size() > 1 ? a[1] : std::string());
+            if(cmd == "perf")
+                waitFrames_ = static_cast<int>(num(0, 120)) + 1;
+        } else if(cmd == "overdraw")
+        {
+            app_.measureOverdraw(a.empty() ? std::string() : a[0]);
+            waitFrames_ = 1;
         } else if(cmd == "labels")
         {
             std::cout << "[script] labels:";

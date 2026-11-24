@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "GameScreen.h"
+#include "Perf.h"
 #include "App.h"
 #include "Music.h"
 #include "Cheats.h"
@@ -64,6 +65,7 @@ GameScreen::GameScreen(App& app, std::unique_ptr<Session> session)
     GameLoader loader(LOADER, session_->gamePtr());
     if(!loader.load())
         throw std::runtime_error("Could not load the graphics of the game");
+    app.atlas().preloadGameSprites();
     GameWorld& world = session_->world();
     gwv_ = std::make_unique<GameWorldViewer>(session_->getPlayerId(), world);
     // Post messages of the local player (notifications, missions)
@@ -127,9 +129,13 @@ void GameScreen::runGame(double dt)
         accum_ += dt;
         // Never more than 50 ms of simulation work per frame; drop time if we cannot keep up
         const auto start = std::chrono::steady_clock::now();
+        perf::Scope timeSim(perf::Phase::Sim);
         while(accum_ >= gfLen)
         {
+            const auto gfStart = std::chrono::steady_clock::now();
             session_->runGF();
+            perf::gameFrame(
+              std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - gfStart).count());
             accum_ -= gfLen;
             if(std::chrono::steady_clock::now() - start > std::chrono::milliseconds(50))
             {
@@ -140,7 +146,10 @@ void GameScreen::runGame(double dt)
     }
     VIEWSTATE.gfLength = std::chrono::milliseconds(std::max<long>(1, std::lround(gfLen * 1000)));
     VIEWSTATE.frameTime = std::chrono::milliseconds(std::lround(accum_ * 1000));
-    VIEWSTATE.lastTime = ViewState::Clock::now() - VIEWSTATE.frameTime;
+    // Global animations (trees, flags) follow the clock; the test mode uses its own clock (reproducible pictures)
+    const auto now = app_.testMode() ? ViewState::Clock::time_point(std::chrono::milliseconds(app_.timeMs())) :
+                                       ViewState::Clock::now();
+    VIEWSTATE.lastTime = now - VIEWSTATE.frameTime;
     VIEWSTATE.currentGF = session_->getGF();
 }
 
@@ -161,7 +170,10 @@ void GameScreen::update(double dt)
 
 void GameScreen::draw()
 {
-    view_.draw(app_.timeMs());
+    {
+        perf::Scope timeWorld(perf::Phase::World);
+        view_.draw(app_.timeMs());
+    }
     hud_->draw();
 }
 
@@ -416,6 +428,11 @@ bool GameScreen::testCommand(const std::string& cmd, const std::vector<std::stri
                 return false;
             jumpTo(MapPoint(static_cast<MapCoord>(px), static_cast<MapCoord>(py)));
         }
+        return true;
+    }
+    if(cmd == "speed")
+    {
+        setSpeedFactor(static_cast<unsigned>(std::stoul(arg(0))));
         return true;
     }
     if(cmd == "zoom")

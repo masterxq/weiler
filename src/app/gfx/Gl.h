@@ -5,11 +5,15 @@
 #pragma once
 
 #include <GLES3/gl3.h>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <utility>
 
 namespace weiler::gfx {
+
+/// Overdraw measurement: when > 0 every shaded fragment adds this value to the red channel instead of its color
+inline float gOverdraw = 0.f;
 
 /// Compile and link a program; throws std::runtime_error with the log on failure
 GLuint createProgram(const char* vertexSrc, const char* fragmentSrc);
@@ -22,13 +26,14 @@ public:
     ~Texture() { reset(); }
     Texture(const Texture&) = delete;
     Texture& operator=(const Texture&) = delete;
-    Texture(Texture&& o) noexcept : id_(std::exchange(o.id_, 0)), w_(o.w_), h_(o.h_) {}
+    Texture(Texture&& o) noexcept : bytes_(std::exchange(o.bytes_, 0)), id_(std::exchange(o.id_, 0)), w_(o.w_), h_(o.h_) {}
     Texture& operator=(Texture&& o) noexcept
     {
         if(this != &o)
         {
             reset();
             id_ = std::exchange(o.id_, 0);
+            bytes_ = std::exchange(o.bytes_, 0);
             w_ = o.w_;
             h_ = o.h_;
         }
@@ -44,8 +49,14 @@ public:
     int width() const { return w_; }
     int height() const { return h_; }
     explicit operator bool() const { return id_ != 0; }
+    /// Video memory of all textures created through this class and accounted with account() (estimate)
+    static size_t totalBytes() { return total_; }
+    /// Add (or remove, negative) memory of textures created elsewhere
+    static void account(long long bytes) { total_ = static_cast<size_t>(static_cast<long long>(total_) + bytes); }
 
 private:
+    static inline size_t total_ = 0;
+    size_t bytes_ = 0;
     GLuint id_ = 0;
     int w_ = 0, h_ = 0;
 };

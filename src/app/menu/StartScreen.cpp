@@ -60,7 +60,12 @@ std::unique_ptr<Screen> createStartScreen(App& app)
     try
     {
         if(!gQuickLoad.empty())
-            return createGameScreen(app, Session::loadGame(gQuickLoad, gQuickSeed));
+        {
+            auto session = Session::loadGame(gQuickLoad, gQuickSeed);
+            if(gQuickAutoplay)
+                session->toggleLocalAI();
+            return createGameScreen(app, std::move(session));
+        }
         if(!gQuickMap.empty())
         {
             bfs::path map(gQuickMap);

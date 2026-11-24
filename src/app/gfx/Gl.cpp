@@ -54,6 +54,8 @@ void Texture::create(int w, int h, bool singleChannel, bool linear, const void* 
     reset();
     w_ = w;
     h_ = h;
+    bytes_ = static_cast<size_t>(w) * h * (singleChannel ? 1 : 4);
+    total_ += bytes_;
     glGenTextures(1, &id_);
     glBindTexture(GL_TEXTURE_2D, id_);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -86,6 +88,8 @@ void Texture::reset()
     if(id_)
         glDeleteTextures(1, &id_);
     id_ = 0;
+    total_ -= bytes_;
+    bytes_ = 0;
 }
 
 uint32_t Color::packed() const

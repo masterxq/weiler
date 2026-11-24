@@ -6,6 +6,7 @@
 // GPL-2.0-or-later.
 
 #include "TerrainLayer.h"
+#include "Perf.h"
 #include "Loader.h"
 #include "RttrForeachPt.h"
 #include "helpers/EnumRange.h"
@@ -49,6 +50,7 @@ void main()
 const char* FS = R"(#version 300 es
 precision mediump float;
 uniform sampler2D uTex;
+uniform float uOverdraw;
 in vec2 vUv;
 in float vB;
 out vec4 fragColor;
@@ -58,6 +60,8 @@ void main()
     // Unexplored land fades into a warm dark tone instead of hard black
     vec3 fog = vec3(0.075, 0.068, 0.06);
     fragColor = vec4(mix(fog, t.rgb * vB, smoothstep(0.0, 0.22, vB)), t.a);
+    if(uOverdraw > 0.0)
+        fragColor = vec4(uOverdraw, 0.0, 0.0, 0.0);
 }
 )";
 
@@ -113,6 +117,7 @@ void TerrainLayer::init(const GameWorldViewer& gwv)
         program_ = createProgram(VS, FS);
         uScreen_ = glGetUniformLocation(program_, "uScreen");
         uCam_ = glGetUniformLocation(program_, "uCam");
+        uOverdraw_ = glGetUniformLocation(program_, "uOverdraw");
         glGenVertexArrays(1, &vao_);
         glGenBuffers(1, &vbo_);
         glBindVertexArray(vao_);
@@ -278,6 +283,7 @@ void TerrainLayer::draw(const Camera& cam, unsigned timeMs)
     for(auto& b : buckets_)
         b.clear();
 
+    perf::Scope timeTerrain(perf::Phase::Terrain);
     const NodeRange r = visibleRange(cam);
     const PointF uv00(0, 0), uv10(1, 0), uvMid(0.5f, 1), uv01(0, 1), uv11(1, 1);
     for(int y = r.y0; y <= r.y1; ++y)
@@ -402,6 +408,7 @@ void TerrainLayer::draw(const Camera& cam, unsigned timeMs)
     glUseProgram(program_);
     glUniform2f(uScreen_, static_cast<float>(cam.screenW), static_cast<float>(cam.screenH));
     glUniform3f(uCam_, cam.x, cam.y, cam.zoom);
+    glUniform1f(uOverdraw_, gOverdraw);
     glBindVertexArray(vao_);
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
     glActiveTexture(GL_TEXTURE0);
@@ -425,6 +432,7 @@ void TerrainLayer::draw(const Camera& cam, unsigned timeMs)
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(verts.size() * sizeof(Vtx)), verts.data(),
                      GL_STREAM_DRAW);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(verts.size()));
+        perf::drawCall();
     }
     glBindVertexArray(0);
 }

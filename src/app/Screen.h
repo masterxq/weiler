@@ -41,6 +41,8 @@ public:
     /// Advance time (seconds of real time)
     virtual void update(double dt) = 0;
     virtual void draw() = 0;
+    /// Name for logs (load times)
+    virtual const char* name() const { return "screen"; }
     virtual void onPointer(const PointerEvent& ev) = 0;
     virtual void onWheel(float x, float y, float delta) { (void)x, (void)y, (void)delta; }
     virtual void onKey(SDL_Keycode key, bool down) { (void)key, (void)down; }

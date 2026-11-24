@@ -116,6 +116,8 @@ public:
     /// Get job symbol texture
     ITexture* getJobTex(Job job);
     glArchivItem_Bitmap_Player* getMapPlayerImage(unsigned nr);
+    /// Weiler: archive of the map objects (preloading the sprite atlas); nullptr if not loaded
+    const libsiedler2::Archiv* getMapArchive() const { return map_gfx; }
 
     bool isWinterGFX() const { return isWinterGFX_; }
 

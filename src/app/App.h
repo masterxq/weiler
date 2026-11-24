@@ -6,6 +6,7 @@
 
 #include "DataPaths.h"
 #include "Screen.h"
+#include "Perf.h"
 #include "gfx/Batch.h"
 #include "gfx/SpriteAtlas.h"
 #include "gfx/Text.h"
@@ -78,7 +79,18 @@ public:
     /// Average work time per frame in milliseconds (update, draw and GPU until the frame is done)
     float frameMs() const { return frameMs_; }
     /// Test scripts: measure the next frames (work time incl. glFinish) and print the result
-    void startPerf(int frames) { perfFrames_ = frames, perfLeft_ = frames, perfSum_ = perfMax_ = 0; }
+    void startPerf(int frames, std::string label = {})
+    {
+        // Measure from an idle GPU (queued frames of the past would count into the first frame)
+        glFinish();
+        perf_.start(frames, std::move(label));
+    }
+    /// Test scripts: draw the next frame in overdraw mode and print the number of fragments per pixel
+    void measureOverdraw(std::string heatmapPng = {})
+    {
+        overdrawFrames_ = 1;
+        overdrawPng_ = std::move(heatmapPng);
+    }
 
     /// Replace the current screen at the end of the frame
     void setScreen(std::unique_ptr<Screen> screen);
@@ -136,8 +148,11 @@ private:
     bool running_ = true;
     bool testMode_ = false;
     float fps_ = 0, frameMs_ = 0;
-    int perfFrames_ = 0, perfLeft_ = 0;
-    double perfSum_ = 0, perfMax_ = 0;
+    perf::Recorder perf_;
+    int overdrawFrames_ = 0;
+    std::string overdrawPng_;
+    bool screenTimed_ = false;
+    void reportOverdraw();
     // Two finger tap detection
     struct Touch
     {

@@ -68,6 +68,7 @@ void MenuBackdrop::load()
         GameLoader loader(LOADER, session->gamePtr());
         if(!loader.load())
             return;
+        app_.atlas().preloadGameSprites();
         session->toggleLocalAI();
         session_ = std::move(session);
     } catch(const std::exception& e)

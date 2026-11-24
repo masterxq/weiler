@@ -73,7 +73,7 @@ private:
     std::vector<Texture> roadTex_;
     std::vector<std::vector<Vtx>> buckets_;
     GLuint program_ = 0, vao_ = 0, vbo_ = 0;
-    GLint uScreen_ = -1, uCam_ = -1;
+    GLint uScreen_ = -1, uCam_ = -1, uOverdraw_ = -1;
     int maxAltitudePx_ = 0;
 };
 

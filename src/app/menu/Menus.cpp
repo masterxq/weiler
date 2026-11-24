@@ -46,6 +46,7 @@ class MenuScreen : public Screen
 public:
     explicit MenuScreen(App& app) : Screen(app), ui_(app.ui()) { app.music().play(Music::Context::Menu); }
     void update(double dt) override { app_.menuBackdrop().update(dt); }
+    const char* name() const override { return "menu"; }
     void onPointer(const PointerEvent& ev) override { ui_.pointer(ev); }
     void onWheel(float x, float y, float d) override { ui_.wheel(x, y, d); }
 

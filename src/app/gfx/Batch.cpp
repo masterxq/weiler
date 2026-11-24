@@ -3,13 +3,17 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "Batch.h"
+#include "Perf.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace weiler::gfx {
 
 namespace {
 constexpr unsigned MAX_QUADS = 16384;
+/// Streaming vertex buffer (several frames of typical vertex data)
+constexpr size_t VBO_BYTES = size_t(8) << 20;
 
 const char* VS = R"(#version 300 es
 layout(location = 0) in vec2 aPos;
@@ -36,7 +40,9 @@ const char* FS = R"(#version 300 es
 precision highp float;
 uniform sampler2D uTex;
 uniform sampler2D uBackdrop;
+uniform mediump sampler2DArray uAtlas;
 uniform vec2 uScreen;
+uniform float uOverdraw;
 in vec2 vUv;
 in vec4 vColor;
 in vec4 vShape;
@@ -50,7 +56,9 @@ float sdRoundBox(vec2 p, vec2 b, float r)
 void main()
 {
     int kind = int(vExtra.y + 0.5);
-    if(kind == 0)
+    if(kind == 4)
+        fragColor = texture(uAtlas, vec3(vUv, vExtra.x)) * vColor;
+    else if(kind == 0)
         fragColor = texture(uTex, vUv) * vColor;
     else if(kind == 1)
         fragColor = vColor * texture(uTex, vUv).r;
@@ -77,6 +85,8 @@ void main()
             a = clamp(0.5 - d / soft, 0.0, 1.0);
         fragColor = vColor * a;
     }
+    if(uOverdraw > 0.0)
+        fragColor = vec4(uOverdraw, 0.0, 0.0, 0.0);
 }
 )";
 const char* BLUR_VS = R"(#version 300 es
@@ -138,14 +148,16 @@ void Batch::init()
     program_ = createProgram(VS, FS);
     uScreen_ = glGetUniformLocation(program_, "uScreen");
     uBackdrop_ = glGetUniformLocation(program_, "uBackdrop");
+    uOverdraw_ = glGetUniformLocation(program_, "uOverdraw");
     glUseProgram(program_);
     glUniform1i(glGetUniformLocation(program_, "uTex"), 0);
     glUniform1i(uBackdrop_, 1);
+    glUniform1i(glGetUniformLocation(program_, "uAtlas"), 2);
     glGenVertexArrays(1, &vao_);
     glBindVertexArray(vao_);
     glGenBuffers(1, &vbo_);
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
-    glBufferData(GL_ARRAY_BUFFER, MAX_QUADS * 4 * sizeof(Vertex), nullptr, GL_STREAM_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, VBO_BYTES, nullptr, GL_STREAM_DRAW);
     std::vector<uint16_t> idx;
     // 16 bit indices: draw in chunks of at most 16384 vertices
     for(unsigned q = 0; q < 4096; ++q)
@@ -157,17 +169,9 @@ void Batch::init()
     glGenBuffers(1, &ibo_);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx.size() * sizeof(uint16_t), idx.data(), GL_STATIC_DRAW);
-    const auto stride = static_cast<GLsizei>(sizeof(Vertex));
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(offsetof(Vertex, x)));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(offsetof(Vertex, u)));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride, reinterpret_cast<void*>(offsetof(Vertex, color)));
-    glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(offsetof(Vertex, hx)));
-    glEnableVertexAttribArray(4);
-    glVertexAttribPointer(4, 2, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(offsetof(Vertex, stroke)));
+    for(GLuint a = 0; a < 5; ++a)
+        glEnableVertexAttribArray(a);
+    setAttribs(0);
     glBindVertexArray(0);
     const uint32_t white = 0xFFFFFFFF;
     glGenTextures(1, &whiteTex_);
@@ -206,27 +210,57 @@ void Batch::setClip(const Rect2& clip)
               static_cast<GLsizei>(clip.h));
 }
 
+void Batch::setAttribs(size_t offset)
+{
+    const auto stride = static_cast<GLsizei>(sizeof(Vertex));
+    auto at = [offset](size_t member) { return reinterpret_cast<void*>(offset + member); };
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride, at(offsetof(Vertex, x)));
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride, at(offsetof(Vertex, u)));
+    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride, at(offsetof(Vertex, color)));
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, stride, at(offsetof(Vertex, hx)));
+    glVertexAttribPointer(4, 2, GL_FLOAT, GL_FALSE, stride, at(offsetof(Vertex, stroke)));
+}
+
 void Batch::flush()
 {
     if(vertices_.empty())
         return;
     glUseProgram(program_);
     glUniform2f(uScreen_, static_cast<float>(fbW_), static_cast<float>(fbH_));
+    glUniform1f(uOverdraw_, gOverdraw);
     glBindVertexArray(vao_);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, curTex_ ? curTex_ : whiteTex_);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, atlasTex_);
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, backdropValid_ ? down_[2].tex : whiteTex_);
     glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, curTex_ ? curTex_ : whiteTex_);
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
+    // Streaming without stalls: append to the buffer unsynchronized, orphan it only when it is full
     const size_t total = vertices_.size();
     for(size_t start = 0; start < total; start += 4096 * 4)
     {
         const size_t count = std::min<size_t>(4096 * 4, total - start);
-        glBufferData(GL_ARRAY_BUFFER, MAX_QUADS * 4 * sizeof(Vertex), nullptr, GL_STREAM_DRAW);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, count * sizeof(Vertex), vertices_.data() + start);
+        const size_t bytes = count * sizeof(Vertex);
+        if(vboOffset_ + bytes > VBO_BYTES)
+        {
+            glBufferData(GL_ARRAY_BUFFER, VBO_BYTES, nullptr, GL_STREAM_DRAW);
+            vboOffset_ = 0;
+        }
+        void* dst = glMapBufferRange(GL_ARRAY_BUFFER, static_cast<GLintptr>(vboOffset_), static_cast<GLsizeiptr>(bytes),
+                                     GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT | GL_MAP_INVALIDATE_RANGE_BIT);
+        if(dst)
+        {
+            std::memcpy(dst, vertices_.data() + start, bytes);
+            glUnmapBuffer(GL_ARRAY_BUFFER);
+        } else
+            glBufferSubData(GL_ARRAY_BUFFER, static_cast<GLintptr>(vboOffset_), static_cast<GLsizeiptr>(bytes),
+                            vertices_.data() + start);
+        setAttribs(vboOffset_);
         glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(count / 4 * 6), GL_UNSIGNED_SHORT, nullptr);
+        vboOffset_ += (bytes + 255) & ~size_t(255);
         ++drawCalls_;
+        perf::drawCall();
     }
     glBindVertexArray(0);
     vertices_.clear();
@@ -258,6 +292,24 @@ void Batch::quad(GLuint tex, float x0, float y0, float x1, float y1, float u0, f
                          {x0, y1, u0, v1, col, 0, 0, 0, 0, 0, k},
                          {x1, y1, u1, v1, col, 0, 0, 0, 0, 0, k}};
     push(tex, v);
+}
+
+void Batch::atlasQuad(float layer, float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1,
+                      Color c)
+{
+    x0 = x0 * scale_ + tx_;
+    x1 = x1 * scale_ + tx_;
+    y0 = y0 * scale_ + ty_;
+    y1 = y1 * scale_ + ty_;
+    if(x1 < 0 || y1 < 0 || x0 > fbW_ || y0 > fbH_)
+        return;
+    const uint32_t col = c.packed();
+    const float k = static_cast<float>(KindAtlas);
+    const Vertex v[4] = {{x0, y0, u0, v0, col, 0, 0, 0, 0, layer, k},
+                         {x1, y0, u1, v0, col, 0, 0, 0, 0, layer, k},
+                         {x0, y1, u0, v1, col, 0, 0, 0, 0, layer, k},
+                         {x1, y1, u1, v1, col, 0, 0, 0, 0, layer, k}};
+    push(0, v);
 }
 
 void Batch::shapeQuad(float cx, float cy, float hx, float hy, float ux, float uy, float extent, float radius, Color c,

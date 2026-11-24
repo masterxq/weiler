@@ -16,6 +16,7 @@
 #include "s25util/Log.h"
 #include "mygettext/mygettext.h"
 #include <boost/filesystem.hpp>
+#include <array>
 #include <chrono>
 #include <clocale>
 #include <cstdlib>
@@ -134,6 +135,7 @@ int App::run()
         return 1;
     batch_.init();
     atlas_ = std::make_unique<gfx::SpriteAtlas>(batch_);
+    perf::extraInfo = [this] { return atlas_->describe(); };
     icons_.init(96);
     ui_ = std::make_unique<ui::Ui>(*this);
     font_ = std::make_unique<gfx::Font>();
@@ -215,37 +217,62 @@ int App::run()
 
 void App::frame(double dt)
 {
-    const auto workStart = std::chrono::steady_clock::now();
+    using Clock = std::chrono::steady_clock;
+    auto msSince = [](Clock::time_point t) { return std::chrono::duration<double, std::milli>(Clock::now() - t).count(); };
+    const auto workStart = Clock::now();
     time_ += dt;
     if(nextScreen_)
     {
         screen_ = std::move(nextScreen_);
+        screenTimed_ = false;
     }
     if(screen_)
         screen_->update(dt);
     music_->update(dt);
     audio_->pump(dt);
+    const double updateMs = msSince(workStart);
+    const auto drawStart = Clock::now();
+    atlas_->beginFrame();
+    const bool overdraw = overdrawFrames_ > 0;
+    gfx::gOverdraw = overdraw ? 1.f / 255.f : 0.f;
     batch_.begin(fbW_, fbH_);
-    glClearColor(0.07f, 0.075f, 0.08f, 1.f);
+    if(overdraw)
+        glClearColor(0.f, 0.f, 0.f, 0.f);
+    else
+        glClearColor(0.07f, 0.075f, 0.08f, 1.f);
     glClear(GL_COLOR_BUFFER_BIT);
     ui_->begin();
     if(screen_)
         screen_->draw();
     ui_->end();
     batch_.flush();
-    // Work time of this frame; the GPU part is only included when measuring (glFinish stalls the pipeline)
-    if(perfLeft_ > 0)
-        glFinish();
-    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - workStart).count();
-    frameMs_ = static_cast<float>(frameMs_ * 0.9 + ms * 0.1);
-    if(perfLeft_ > 0)
+    const double drawMs = msSince(drawStart);
+    if(overdraw)
     {
-        perfSum_ += ms;
-        perfMax_ = std::max(perfMax_, ms);
-        if(--perfLeft_ == 0)
-            std::cout << "[perf] " << perfFrames_ << " frames, " << fbW_ << "x" << fbH_ << ": avg "
-                      << perfSum_ / perfFrames_ << " ms, max " << perfMax_ << " ms (" << 1000.0 / (perfSum_ / perfFrames_)
-                      << " fps possible)" << std::endl;
+        reportOverdraw();
+        gfx::gOverdraw = 0.f;
+        --overdrawFrames_;
+    }
+    // Work time of this frame; the GPU part is only included when measuring (glFinish stalls the pipeline)
+    double gpuMs = 0;
+    if(perf_.running())
+    {
+        const auto finishStart = Clock::now();
+        glFinish();
+        gpuMs = msSince(finishStart);
+    }
+    const double ms = msSince(workStart);
+    frameMs_ = static_cast<float>(frameMs_ * 0.9 + ms * 0.1);
+    perf_.frameDone(ms, updateMs, drawMs, gpuMs, fbW_, fbH_);
+    // Load times: first frame of every screen
+    if(screen_ && !screenTimed_)
+    {
+        screenTimed_ = true;
+        double rss, peak;
+        perf::memoryMiB(rss, peak);
+        std::cout << "[time] first frame of " << screen_->name() << " after " << static_cast<long>(perf::sinceStart())
+                  << " ms, rss " << static_cast<long>(rss) << " MiB, textures "
+                  << gfx::Texture::totalBytes() / (1024 * 1024) << " MiB" << std::endl;
     }
     if(script_)
         script_->afterDraw();
@@ -255,6 +282,53 @@ void App::frame(double dt)
         auto fn = std::move(posted_.front());
         posted_.pop_front();
         fn();
+    }
+}
+
+void App::reportOverdraw()
+{
+    std::vector<uint8_t> px(static_cast<size_t>(fbW_) * fbH_ * 4);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, fbW_, fbH_, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+    uint64_t sum = 0;
+    std::array<uint64_t, 6> hist{};
+    unsigned maxV = 0;
+    for(size_t i = 0; i < px.size(); i += 4)
+    {
+        const unsigned v = px[i];
+        sum += v;
+        maxV = std::max(maxV, v);
+        ++hist[std::min<size_t>(v, hist.size() - 1)];
+    }
+    const double n = static_cast<double>(fbW_) * fbH_;
+    std::cout << "[overdraw] " << fbW_ << "x" << fbH_ << ": " << static_cast<double>(sum) / n
+              << " fragments per pixel, max " << maxV << ", share of pixels with 0/1/2/3/4/5+ layers:";
+    for(uint64_t h : hist)
+        std::cout << " " << static_cast<int>(100.0 * static_cast<double>(h) / n + 0.5) << "%";
+    std::cout << std::endl;
+    if(overdrawPng_.empty())
+        return;
+    // Heat map: black = 0, then blue, green, yellow, red, white for 1..5+ layers
+    static const uint8_t ramp[6][3] = {{0, 0, 0}, {30, 60, 200}, {40, 170, 60}, {230, 210, 40}, {220, 60, 30},
+                                       {255, 255, 255}};
+    std::vector<uint8_t> img(px.size());
+    for(int y = 0; y < fbH_; ++y)
+    {
+        for(int x = 0; x < fbW_; ++x)
+        {
+            const size_t src = (static_cast<size_t>(fbH_ - 1 - y) * fbW_ + x) * 4;
+            const size_t dst = (static_cast<size_t>(y) * fbW_ + x) * 4;
+            const auto* c = ramp[std::min<unsigned>(px[src], 5)];
+            img[dst] = c[0];
+            img[dst + 1] = c[1];
+            img[dst + 2] = c[2];
+            img[dst + 3] = 255;
+        }
+    }
+    if(SDL_Surface* surf = SDL_CreateSurfaceFrom(fbW_, fbH_, SDL_PIXELFORMAT_ABGR8888, img.data(), fbW_ * 4))
+    {
+        SDL_SavePNG(surf, overdrawPng_.c_str());
+        SDL_DestroySurface(surf);
     }
 }
 
