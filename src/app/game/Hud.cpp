@@ -304,6 +304,10 @@ bool Hud::Impl::tapShip(MapPoint pt)
 
 void Hud::Impl::onDoubleTap(float x, float y)
 {
+    // The first tap may have opened a ring or a sheet for the node: the double tap only zooms
+    ring.open = false;
+    if(sheet == SheetKind::Building || sheet == SheetKind::Attack || sheet == SheetKind::Ship)
+        closeSheet();
     auto& view = game.view();
     view.zoomAt(x, y, std::min(8.f, view.cam.zoom * 1.6f));
 }
@@ -814,7 +818,15 @@ void Hud::Impl::drawRing()
     // Center: close
     const float cb = app.dp(40);
     if(ui.iconButton(id("ringclose"), {ring.sx - cb / 2, ring.sy - cb / 2, cb, cb}, Icon::Close))
+    {
+        // A quick second tap on the node (the ring opened under the finger) is a double tap: zoom there
+        if(app.time() - ring.openTime < 0.35)
+        {
+            const PointF sp = game.view().worldToScreen(game.view().worldPosNear(ring.pt));
+            onDoubleTap(sp.x, sp.y);
+        }
         ring.open = false;
+    }
 }
 
 void Hud::Impl::drawTopBar()
