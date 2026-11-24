@@ -442,12 +442,11 @@ void SpriteAtlas::drawSprite(const ISpriteSource& src, const Rect& dst, const Re
     const auto x0 = static_cast<float>(dst.left), y0 = static_cast<float>(dst.top);
     const auto x1 = static_cast<float>(dst.right), y1 = static_cast<float>(dst.bottom);
     const auto layer = static_cast<float>(e->page);
-    batch_.atlasQuad(layer, x0, y0, x1, y1, u0, v0, u1, v1, Color::fromARGB(color));
     if(e->player && playerColor)
-    {
-        const float du = static_cast<float>(e->w) * inv;
-        batch_.atlasQuad(layer, x0, y0, x1, y1, u0 + du, v0, u1 + du, v1, Color::fromARGB(playerColor));
-    }
+        batch_.atlasQuadPlayer(layer, x0, y0, x1, y1, u0, v0, u1, v1, static_cast<float>(e->w) * inv,
+                               Color::fromARGB(color), Color::fromARGB(playerColor));
+    else
+        batch_.atlasQuad(layer, x0, y0, x1, y1, u0, v0, u1, v1, Color::fromARGB(color));
 }
 
 void SpriteAtlas::drawSource(const ISpriteSource& src, const Rect2& dst, Color c, unsigned playerColor)
@@ -460,13 +459,11 @@ void SpriteAtlas::drawSource(const ISpriteSource& src, const Rect2& dst, Color c
     const float u0 = static_cast<float>(e->x) * inv, u1 = (static_cast<float>(e->x) + static_cast<float>(size.x)) * inv;
     const float v0 = static_cast<float>(e->y) * inv, v1 = (static_cast<float>(e->y) + static_cast<float>(size.y)) * inv;
     const auto layer = static_cast<float>(e->page);
-    batch_.atlasQuad(layer, dst.x, dst.y, dst.right(), dst.bottom(), u0, v0, u1, v1, c);
     if(e->player && playerColor)
-    {
-        const float du = static_cast<float>(e->w) * inv;
-        batch_.atlasQuad(layer, dst.x, dst.y, dst.right(), dst.bottom(), u0 + du, v0, u1 + du, v1,
-                         Color::fromARGB(playerColor));
-    }
+        batch_.atlasQuadPlayer(layer, dst.x, dst.y, dst.right(), dst.bottom(), u0, v0, u1, v1,
+                               static_cast<float>(e->w) * inv, c, Color::fromARGB(playerColor));
+    else
+        batch_.atlasQuad(layer, dst.x, dst.y, dst.right(), dst.bottom(), u0, v0, u1, v1, c);
 }
 
 void SpriteAtlas::drawRect(const Rect& rect, unsigned color)

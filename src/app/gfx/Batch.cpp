@@ -59,6 +59,15 @@ void main()
     int kind = int(vExtra.y + 0.5);
     if(kind == 4)
         fragColor = texture(uAtlas, vec3(vUv, vExtra.x)) * vColor;
+    else if(kind == 5)
+    {
+        // Sprite with its player color layer (stored to the right of the base image) in one pass:
+        // the same result as drawing the base and then the player layer on top
+        vec4 base = texture(uAtlas, vec3(vUv, vExtra.x)) * vColor;
+        vec4 pc = vec4(vShape.rgb * vShape.a, vShape.a);
+        vec4 pl = texture(uAtlas, vec3(vUv.x + (vExtra.y - 5.0) * 2.0, vUv.y, vExtra.x)) * pc;
+        fragColor = pl + base * (1.0 - pl.a);
+    }
     else if(kind == 0)
         fragColor = texture(uTex, vUv) * vColor;
     else if(kind == 1)
@@ -323,6 +332,26 @@ void Batch::atlasQuad(float layer, float x0, float y0, float x1, float y1, float
                          {x1, y0, u1, v0, col, 0, 0, 0, 0, layer, k},
                          {x0, y1, u0, v1, col, 0, 0, 0, 0, layer, k},
                          {x1, y1, u1, v1, col, 0, 0, 0, 0, layer, k}};
+    push(0, v);
+}
+
+void Batch::atlasQuadPlayer(float layer, float x0, float y0, float x1, float y1, float u0, float v0, float u1,
+                            float v1, float du, Color c, Color player)
+{
+    x0 = x0 * scale_ + tx_;
+    x1 = x1 * scale_ + tx_;
+    y0 = y0 * scale_ + ty_;
+    y1 = y1 * scale_ + ty_;
+    if(x1 < 0 || y1 < 0 || x0 > fbW_ || y0 > fbH_)
+        return;
+    const uint32_t col = c.packed();
+    // Kind 5, the offset of the player layer in the fraction (constant across the quad, exact in float)
+    const float k = static_cast<float>(KindAtlasPlayer) + du * 0.5f;
+    const float pr = player.r, pg = player.g, pb = player.b, pa = player.a;
+    const Vertex v[4] = {{x0, y0, u0, v0, col, pr, pg, pb, pa, layer, k},
+                         {x1, y0, u1, v0, col, pr, pg, pb, pa, layer, k},
+                         {x0, y1, u0, v1, col, pr, pg, pb, pa, layer, k},
+                         {x1, y1, u1, v1, col, pr, pg, pb, pa, layer, k}};
     push(0, v);
 }
 

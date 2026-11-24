@@ -31,7 +31,9 @@ public:
         /// Rounded rectangle filled with the blurred backdrop, tinted (frosted glass)
         KindGlass = 3,
         /// Sprite from the texture array of the sprite atlas (layer in the vertex)
-        KindAtlas = 4
+        KindAtlas = 4,
+        /// Atlas sprite with its player color layer in one pass
+        KindAtlasPlayer = 5
     };
 
     Batch() = default;
@@ -56,6 +58,9 @@ public:
               Kind kind = KindTexture);
     /// Sprite from the atlas texture array (see setAtlas); never breaks a batch of shapes or other atlas sprites
     void atlasQuad(float layer, float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1, Color c);
+    /// Atlas sprite plus its player layer (du to the right, colored with player) in one quad
+    void atlasQuadPlayer(float layer, float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1,
+                         float du, Color c, Color player);
     /// Texture array used by atlasQuad
     void setAtlas(GLuint arrayTex) { atlasTex_ = arrayTex; }
     /// Filled (stroke = 0) or outlined rounded rectangle. softness widens the anti aliasing (for shadows).
