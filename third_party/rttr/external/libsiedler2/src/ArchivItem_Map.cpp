@@ -83,22 +83,22 @@ int ArchivItem_Map::load(std::istream& file, bool onlyHeader)
             return ErrorCode::WRONG_FORMAT;
         }
         // Multiplier of 0 means unused block and implies no data
+        // Weiler: damaged files are reported as wrong format instead of asserting
         if(bHeader.multiplier == 0)
         {
-            assert(bHeader.blockLength == 0);
+            if(bHeader.blockLength != 0)
+                return ErrorCode::WRONG_FORMAT;
             push(nullptr);
             continue;
         }
         // Blocksize must match extents
         if(bHeader.blockLength != static_cast<uint32_t>(w) * static_cast<uint32_t>(h))
         {
-            assert(false);
             return ErrorCode::WRONG_FORMAT;
         }
         // If there is data, size must match
         if(bHeader.w != w || bHeader.h != h)
         {
-            assert(false);
             return ErrorCode::WRONG_FORMAT;
         }
 

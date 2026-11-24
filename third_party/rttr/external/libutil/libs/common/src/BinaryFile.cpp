@@ -134,25 +134,28 @@ void BinaryFile::readRawData(void* const data, const unsigned length)
     CHECKED_READ(libendian::read((char*)data, length, *file));
 }
 
+// Weiler: strings may lack the terminating zero in damaged files, the buffer is owned and the length is checked
 std::string BinaryFile::readShortString()
 {
-    unsigned char length;
-    length = readUnsignedChar();
-    auto* tmp = new char[length];
-    readRawData(tmp, length);
-    std::string str = tmp;
-    delete[] tmp;
+    const unsigned length = readUnsignedChar();
+    std::string str(length, '\0');
+    readRawData(str.data(), length);
+    str.resize(str.find('\0') == std::string::npos ? length : str.find('\0'));
     return str;
 }
 
 std::string BinaryFile::readLongString()
 {
-    unsigned length;
-    length = readUnsignedInt();
-    auto* tmp = new char[length];
-    readRawData(tmp, length);
-    std::string str = tmp;
-    delete[] tmp;
+    const unsigned length = readUnsignedInt();
+    const long pos = tell();
+    seek(0, SEEK_END);
+    const long size = tell();
+    seek(pos, SEEK_SET);
+    if(pos < 0 || size < pos || length > static_cast<unsigned long>(size - pos))
+        throw std::runtime_error("String length exceeds the file");
+    std::string str(length, '\0');
+    readRawData(str.data(), length);
+    str.resize(str.find('\0') == std::string::npos ? length : str.find('\0'));
     return str;
 }
 

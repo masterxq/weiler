@@ -104,7 +104,9 @@ uint32_t Serializer::popVarSize()
 bool Serializer::popBool()
 {
     const auto value = popUnsignedChar();
-    assert(value == 0 || value == 1);
+    // Weiler: damaged data is an error, not an assertion
+    if(value > 1)
+        throw std::runtime_error("Invalid bool entry!");
     return (value != 0);
 }
 

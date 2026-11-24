@@ -814,8 +814,13 @@ void Loader::fillCaches()
     if(!bobCarrier)
         throw std::runtime_error("carrier not found");
 
-    libsiedler2::Archiv& wine_bob_carrier = getArchive("wine_bobs");
-    libsiedler2::Archiv& leather_bob_carrier = getArchive("leather_bobs");
+    // Weiler: the addon graphics are only loaded when their addon is enabled, use an empty archive otherwise
+    static libsiedler2::Archiv noArchive;
+    auto loadedOrEmpty = [this](const ResourceId& file) -> libsiedler2::Archiv& {
+        return helpers::contains(files_, file) ? getArchive(file) : noArchive;
+    };
+    libsiedler2::Archiv& wine_bob_carrier = loadedOrEmpty("wine_bobs");
+    libsiedler2::Archiv& leather_bob_carrier = loadedOrEmpty("leather_bobs");
 
     for(bool fat : {true, false})
     {
