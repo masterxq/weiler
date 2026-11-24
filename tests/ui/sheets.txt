@@ -28,6 +28,11 @@ wait 5
 tap ui:Statistik
 wait 20
 shot shots/s_stats.png
+tap ui:Waren
+wait 5
+tap ui:Kohle
+wait 5
+shot shots/s_stats_wares.png
 key Escape
 wait 5
 tap ui:Nachrichten

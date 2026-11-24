@@ -125,31 +125,95 @@ void Hud::Impl::sheetStats(const Rect2& r)
             legendX -= app.dp(28);
         }
         ui.text(chart.x + app.dp(10), chart.y + app.dp(7), std::to_string(maxV), app.dp(12), ui.theme.textDim);
-    } else if(sheetTab == 1 || sheetTab == 2 || sheetTab == 3)
+    } else if(sheetTab == 1)
+    {
+        // Ware statistics as in the original: produced amounts of 14 groups over time, several at once
+        struct Group
+        {
+            GoodType icon;
+            const char* name;
+        };
+        static const Group groups[NUM_STAT_MERCHANDISE_TYPES] = {
+          {GoodType::Wood, "Holz"},      {GoodType::Boards, "Bretter"}, {GoodType::Stones, "Steine"},
+          {GoodType::Bread, "Nahrung"},  {GoodType::Water, "Wasser"},   {GoodType::Beer, "Bier"},
+          {GoodType::Coal, "Kohle"},     {GoodType::IronOre, "Eisenerz"}, {GoodType::Gold, "Gold"},
+          {GoodType::Iron, "Eisen"},     {GoodType::Coins, "Münzen"},   {GoodType::Hammer, "Werkzeuge"},
+          {GoodType::Sword, "Waffen"},   {GoodType::Boat, "Boote"}};
+        static const uint32_t colors[NUM_STAT_MERCHANDISE_TYPES] = {
+          0xE8A33C, 0xC9783E, 0xA9A9A9, 0x7FC97F, 0x5DADE2, 0xF4D03F, 0x8E9EB8,
+          0xB9770E, 0xFFD700, 0xD5DBDB, 0xF39C12, 0xAF7AC5, 0xE74C3C, 0x48C9B0};
+        const bool wide = landscape();
+        const unsigned perRow = wide ? NUM_STAT_MERCHANDISE_TYPES : NUM_STAT_MERCHANDISE_TYPES / 2;
+        const float chipGap = app.dp(4);
+        const float chipW = (body.w - chipGap * static_cast<float>(perRow - 1)) / static_cast<float>(perRow);
+        const float chipH = app.dp(wide ? 38 : 44);
+        float y = body.y;
+        for(unsigned g = 0; g < NUM_STAT_MERCHANDISE_TYPES; ++g)
+        {
+            const Rect2 chip{body.x + static_cast<float>(g % perRow) * (chipW + chipGap),
+                             y + static_cast<float>(g / perRow) * (chipH + chipGap), chipW, chipH};
+            const bool on = (statsWares >> g) & 1u;
+            const Color col = Color::rgb(colors[g]);
+            b.roundRect(chip, app.dp(8), on ? col.withAlpha(0.28f) : Color::rgb(0xFFFFFF, 0.05f));
+            if(on)
+                b.roundRect({chip.x + app.dp(6), chip.bottom() - app.dp(5), chip.w - app.dp(12), app.dp(3)}, app.dp(1.5f),
+                            col);
+            const float is = std::min(chip.w, chip.h) - app.dp(12);
+            ui.sprite(src(LOADER.getWareTex(groups[g].icon)), {chip.x + (chip.w - is) / 2, chip.y + app.dp(4), is, is}, 0,
+                      on ? 1.f : 0.55f);
+            ui.tag(groups[g].name, chip);
+            if(ui.area(id("stats.ware", g), chip))
+                statsWares ^= 1u << g;
+        }
+        y += static_cast<float>((NUM_STAT_MERCHANDISE_TYPES + perRow - 1) / perRow) * (chipH + chipGap) + app.dp(4);
+        static const std::vector<std::string> times = {"15 min", "1 h", "4 h", "16 h"};
+        ui.segmented(id("stats.time"), {body.x, y, body.w, app.dp(34)}, times, statsTime);
+        y += app.dp(42);
+        const Rect2 chart{body.x, y, body.w, std::max(app.dp(60), body.bottom() - y)};
+        b.roundRect(chart, app.dp(10), Color::rgb(0xFFFFFF, 0.04f));
+        const Rect2 plot{chart.x + app.dp(10), chart.y + app.dp(30), chart.w - app.dp(20), chart.h - app.dp(40)};
+        const auto& st = player().getStatistic(static_cast<StatisticTime>(std::clamp(statsTime, 0, 3)));
+        unsigned maxV = 1;
+        for(unsigned g = 0; g < NUM_STAT_MERCHANDISE_TYPES; ++g)
+        {
+            if((statsWares >> g) & 1u)
+            {
+                for(unsigned i = 0; i < NUM_STAT_STEPS; ++i)
+                    maxV = std::max<unsigned>(maxV, st.merchandiseData[g][i]);
+            }
+        }
+        b.roundRect({plot.x, plot.y, plot.w, 1}, 0, Color::rgb(0xFFFFFF, 0.08f));
+        b.roundRect({plot.x, plot.bottom(), plot.w, 1}, 0, Color::rgb(0xFFFFFF, 0.08f));
+        std::string names;
+        for(unsigned g = 0; g < NUM_STAT_MERCHANDISE_TYPES; ++g)
+        {
+            if(!((statsWares >> g) & 1u))
+                continue;
+            names += (names.empty() ? "" : ", ") + std::string(groups[g].name);
+            float px = 0, py = 0;
+            for(unsigned i = 0; i < NUM_STAT_STEPS; ++i)
+            {
+                const unsigned idx = (st.currentIndex + 1 + i) % NUM_STAT_STEPS;
+                const float x = plot.x + plot.w * static_cast<float>(i) / (NUM_STAT_STEPS - 1);
+                const float yv =
+                  plot.bottom() - plot.h * static_cast<float>(st.merchandiseData[g][idx]) / static_cast<float>(maxV);
+                if(i > 0)
+                    b.line(px, py, x, yv, app.dp(2.5f), Color::rgb(colors[g]));
+                px = x;
+                py = yv;
+            }
+        }
+        ui.text(chart.x + app.dp(10), chart.y + app.dp(7), std::to_string(maxV), app.dp(12), ui.theme.textDim);
+        std::string head = names.empty() ? std::string("Warengruppen oben antippen") : "Erzeugt: " + names;
+        if(ui.textWidth(head, app.dp(12)) > chart.w - app.dp(80))
+            head = "Erzeugt: " + std::to_string(std::count(names.begin(), names.end(), ',') + 1) + " Gruppen";
+        ui.text(chart.right() - app.dp(10), chart.y + app.dp(7), head, app.dp(12), ui.theme.textDim, gfx::Align::Right);
+    } else if(sheetTab == 2 || sheetTab == 3)
     {
         float y = ui.beginScroll(id("stats.scroll", static_cast<uint64_t>(sheetTab)), body);
         const float y0 = y;
         const float rowH = app.dp(40);
-        if(sheetTab == 1)
-        {
-            const Inventory& inv = player().getInventory();
-            unsigned maxV = 1;
-            for(const auto gt : helpers::enumRange<GoodType>())
-                maxV = std::max(maxV, static_cast<unsigned>(inv[gt]));
-            for(const auto gt : helpers::enumRange<GoodType>())
-            {
-                if(hiddenWare(world(), gt))
-                    continue;
-                ui.sprite(src(LOADER.getWareTex(gt)), {body.x, y + app.dp(4), app.dp(30), app.dp(30)});
-                ui.text(body.x + app.dp(40), y + app.dp(10), wareName(gt), app.dp(14), ui.theme.text);
-                const float bx = body.x + app.dp(150), bw = body.w - app.dp(200);
-                b.roundRect({bx, y + app.dp(15), bw * static_cast<float>(inv[gt]) / static_cast<float>(maxV), app.dp(10)},
-                            app.dp(5), ui.theme.accent);
-                ui.text(body.right() - app.dp(8), y + app.dp(10), std::to_string(inv[gt]), app.dp(14), ui.theme.textDim,
-                        gfx::Align::Right);
-                y += rowH;
-            }
-        } else if(sheetTab == 2)
+        if(sheetTab == 2)
         {
             const BuildingCount bc = player().getBuildingRegister().getBuildingNums();
             for(unsigned i = 0; i < helpers::NumEnumValues_v<BuildingType>; ++i)

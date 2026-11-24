@@ -177,6 +177,7 @@ struct Hud::Impl
     int sheetTab = 0;
     int msgFilter = 0; // messages sheet: all, military, economy, geologist
     int statsType = 0, statsTime = 0;
+    unsigned statsWares = 0b11; // merchandise groups shown in the ware statistics (bit per group)
     std::string missionTitle, missionText;
     /// Portrait or picture of the mission message from the game data (file, index; empty = none)
     std::string missionImageFile;
