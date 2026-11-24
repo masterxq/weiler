@@ -16,3 +16,17 @@ target_compile_definitions(weiler_engine PRIVATE
 
 add_executable(weiler-headless tools/HeadlessMain.cpp)
 target_link_libraries(weiler-headless PRIVATE weiler_engine Boost::program_options)
+
+# Game application
+find_package(SDL3 REQUIRED CONFIG)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(FREETYPE REQUIRED IMPORTED_TARGET freetype2)
+pkg_check_modules(HARFBUZZ REQUIRED IMPORTED_TARGET harfbuzz)
+pkg_check_modules(GLES REQUIRED IMPORTED_TARGET glesv2)
+
+file(GLOB_RECURSE APP_SRC CONFIGURE_DEPENDS app/*.cpp app/*.h)
+add_executable(weiler ${APP_SRC})
+target_include_directories(weiler PRIVATE app)
+target_link_libraries(weiler PRIVATE weiler_engine SDL3::SDL3 PkgConfig::FREETYPE PkgConfig::HARFBUZZ PkgConfig::GLES
+    Boost::program_options)
+target_compile_definitions(weiler PRIVATE WEILER_FONT_DIR="${PROJECT_SOURCE_DIR}/data/fonts")

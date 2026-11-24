@@ -1,0 +1,86 @@
+// Copyright (C) 2026 Weiler contributors
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#pragma once
+
+#include "Gl.h"
+#include <vector>
+
+namespace weiler::gfx {
+
+struct Rect2
+{
+    float x = 0, y = 0, w = 0, h = 0;
+    float right() const { return x + w; }
+    float bottom() const { return y + h; }
+    bool contains(float px, float py) const { return px >= x && py >= y && px < x + w && py < y + h; }
+    Rect2 inset(float d) const { return {x + d, y + d, w - 2 * d, h - 2 * d}; }
+};
+
+/// Unified 2D batch renderer: textured sprites, glyphs and anti aliased shapes (signed distance fields).
+/// Coordinates are framebuffer pixels after applying the current transform (scale + translation).
+class Batch
+{
+public:
+    enum Kind : int
+    {
+        KindTexture = 0,
+        KindGlyph = 1,
+        KindShape = 2
+    };
+
+    Batch() = default;
+    ~Batch();
+    void init();
+    /// Start a frame with the given framebuffer size
+    void begin(int fbWidth, int fbHeight);
+    void flush();
+
+    void setTransform(float scale, float tx, float ty)
+    {
+        scale_ = scale;
+        tx_ = tx;
+        ty_ = ty;
+    }
+    void resetTransform() { setTransform(1.f, 0.f, 0.f); }
+    float scale() const { return scale_; }
+    /// Restrict drawing to a rectangle in framebuffer pixels (w <= 0 disables)
+    void setClip(const Rect2& clip);
+
+    void quad(GLuint tex, float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1, Color c,
+              Kind kind = KindTexture);
+    /// Filled (stroke = 0) or outlined rounded rectangle. softness widens the anti aliasing (for shadows).
+    void roundRect(const Rect2& r, float radius, Color c, float softness = 1.f, float stroke = 0.f);
+    void circle(float cx, float cy, float radius, Color c, float stroke = 0.f, float softness = 1.f);
+    /// Line with round caps
+    void line(float x0, float y0, float x1, float y1, float width, Color c);
+    /// Shadow below a rounded rectangle
+    void shadow(const Rect2& r, float radius, float blur, Color c);
+
+    int width() const { return fbW_; }
+    int height() const { return fbH_; }
+    unsigned drawCalls() const { return drawCalls_; }
+
+private:
+    struct Vertex
+    {
+        float x, y, u, v;
+        uint32_t color;
+        float hx, hy, radius, soft;
+        float stroke, kind;
+    };
+    void push(GLuint tex, const Vertex (&v)[4]);
+    void shapeQuad(float cx, float cy, float hx, float hy, float ux, float uy, float extent, float radius, Color c,
+                   float softness, float stroke);
+
+    GLuint program_ = 0, vao_ = 0, vbo_ = 0, ibo_ = 0, whiteTex_ = 0;
+    GLint uScreen_ = -1;
+    std::vector<Vertex> vertices_;
+    GLuint curTex_ = 0;
+    int fbW_ = 1, fbH_ = 1;
+    float scale_ = 1.f, tx_ = 0.f, ty_ = 0.f;
+    unsigned drawCalls_ = 0;
+};
+
+} // namespace weiler::gfx

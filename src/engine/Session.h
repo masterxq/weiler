@@ -59,6 +59,7 @@ public:
     AsyncChecksum checksum() const;
 
     Game& game() { return *game_; }
+    const std::shared_ptr<Game>& gamePtr() const { return game_; }
     const Game& game() const { return *game_; }
     GameWorld& world();
     const GameWorld& world() const;
@@ -84,10 +85,10 @@ protected:
     bool addGC(gc::GameCommandPtr gc) override;
 
 private:
-    Session(std::unique_ptr<Game> game, unsigned localPlayer, std::string title);
+    Session(std::shared_ptr<Game> game, unsigned localPlayer, std::string title);
     void createAIs();
 
-    std::unique_ptr<Game> game_;
+    std::shared_ptr<Game> game_;
     unsigned localPlayer_;
     std::string title_;
     std::vector<gc::GameCommandPtr> localCommands_;

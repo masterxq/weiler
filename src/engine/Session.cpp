@@ -46,7 +46,7 @@ void seedRandom(unsigned seed)
 }
 } // namespace
 
-Session::Session(std::unique_ptr<Game> game, unsigned localPlayer, std::string title)
+Session::Session(std::shared_ptr<Game> game, unsigned localPlayer, std::string title)
     : game_(std::move(game)), localPlayer_(localPlayer), title_(std::move(title))
 {}
 
@@ -61,7 +61,7 @@ Session::~Session()
 std::unique_ptr<Session> Session::newGame(const NewGameSetup& setup)
 {
     seedRandom(setup.seed);
-    auto game = std::make_unique<Game>(setup.ggs, 0u, setup.players);
+    auto game = std::make_shared<Game>(setup.ggs, 0u, setup.players);
     std::unique_ptr<Session> session(
       new Session(std::move(game), findLocalPlayer(setup.players),
                   setup.title.empty() ? setup.map.stem().string() : setup.title));
@@ -85,7 +85,7 @@ std::unique_ptr<Session> Session::loadGame(const bfs::path& path, unsigned seed)
     std::vector<PlayerInfo> players;
     for(unsigned i = 0; i < save->getNumPlayers(); ++i)
         players.emplace_back(save->getPlayer(i));
-    auto game = std::make_unique<Game>(save->ggs, save->start_gf, players);
+    auto game = std::make_shared<Game>(save->ggs, save->start_gf, players);
     std::unique_ptr<Session> session(new Session(std::move(game), findLocalPlayer(players), save->getMapName()));
     MapInfo mapInfo;
     mapInfo.type = MapType::Savegame;
