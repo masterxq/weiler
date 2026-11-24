@@ -77,13 +77,46 @@ std::unique_ptr<Session> Session::newGame(const NewGameSetup& setup)
     return session;
 }
 
-std::unique_ptr<Session> Session::loadGame(const bfs::path& path, unsigned seed)
+std::unique_ptr<Savegame> Session::readSave(const bfs::path& path)
 {
     waitForSaves();
     auto save = std::make_unique<Savegame>();
-    if(!save->load(path, SaveGameDataToLoad::All))
+    bool ok = false;
+    try
+    {
+        ok = save->load(path, SaveGameDataToLoad::All);
+    } catch(const std::exception& e)
+    {
+        throw std::runtime_error("Could not load savegame " + path.string() + ": " + e.what());
+    }
+    if(!ok)
         throw std::runtime_error("Could not load savegame " + path.string());
-    seedRandom(seed);
+    return save;
+}
+
+std::unique_ptr<Session> Session::loadGame(const bfs::path& path, std::optional<unsigned> seed)
+{
+    return loadGame(readSave(path), path, seed);
+}
+
+std::unique_ptr<Session> Session::loadGame(std::unique_ptr<Savegame> save, const bfs::path& path,
+                                           std::optional<unsigned> seed)
+{
+    // Savegames do not contain the state of the random generators: derive a seed from the saved game
+    if(!seed)
+    {
+        uint32_t h = 2166136261u;
+        auto mix = [&h](uint32_t v) {
+            for(int i = 0; i < 4; ++i, v >>= 8)
+                h = (h ^ (v & 0xFF)) * 16777619u;
+        };
+        mix(save->start_gf);
+        mix(save->sgd.getLength());
+        for(const char c : save->getMapName())
+            mix(static_cast<unsigned char>(c));
+        seed = h;
+    }
+    seedRandom(*seed);
     std::vector<PlayerInfo> players;
     for(unsigned i = 0; i < save->getNumPlayers(); ++i)
         players.emplace_back(save->getPlayer(i));
@@ -275,8 +308,14 @@ AsyncChecksum Session::checksum() const
 std::string Session::describeSave(const bfs::path& path)
 {
     Savegame save;
-    if(!save.load(path, SaveGameDataToLoad::HeaderAndSettings))
+    try
+    {
+        if(!save.load(path, SaveGameDataToLoad::HeaderAndSettings))
+            return {};
+    } catch(const std::exception&)
+    {
         return {};
+    }
     const auto gfLen = std::chrono::duration_cast<std::chrono::milliseconds>(SPEED_GF_LENGTHS[save.ggs.speed]);
     const unsigned sec = static_cast<unsigned>(static_cast<uint64_t>(save.start_gf) * gfLen.count() / 1000);
     return (boost::format("%s · %u:%02u h") % save.getMapName() % (sec / 3600) % (sec / 60 % 60)).str();

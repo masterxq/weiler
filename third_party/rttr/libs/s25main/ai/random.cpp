@@ -8,7 +8,8 @@ namespace AI {
 
 std::minstd_rand& getRandomGenerator()
 {
-    static std::minstd_rand rng(std::random_device{}());
+    // Weiler: seeded from the game seed when a game starts or is loaded (reproducible single player games)
+    static std::minstd_rand rng;
     return rng;
 }
 

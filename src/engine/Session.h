@@ -15,6 +15,7 @@
 #include <functional>
 #include <future>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -44,8 +45,15 @@ class Session : public ILocalGameState, public GameCommandFactory
 {
 public:
     static std::unique_ptr<Session> newGame(const NewGameSetup& setup);
-    /// Load a savegame. Throws std::runtime_error on failure.
-    static std::unique_ptr<Session> loadGame(const boost::filesystem::path& path, unsigned seed);
+    /// Load a savegame. Throws std::runtime_error on failure. Without a seed the random generators are seeded from
+    /// the saved game state, so loading the same savegame always continues the same way.
+    static std::unique_ptr<Session> loadGame(const boost::filesystem::path& path,
+                                             std::optional<unsigned> seed = std::nullopt);
+    /// Read a savegame completely without creating a game (throws std::runtime_error on failure); loadGame(save)
+    /// creates the game from it. Allows checking a file before the running game is closed.
+    static std::unique_ptr<Savegame> readSave(const boost::filesystem::path& path);
+    static std::unique_ptr<Session> loadGame(std::unique_ptr<Savegame> save, const boost::filesystem::path& path,
+                                             std::optional<unsigned> seed = std::nullopt);
     /// Short description of a savegame ("map · played time"), empty if unreadable
     static std::string describeSave(const boost::filesystem::path& path);
     ~Session() override;

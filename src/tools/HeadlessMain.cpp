@@ -67,7 +67,7 @@ int main(int argc, char** argv)
     desc.add_options()("help,h", "Show help")("data", po::value(&dataDir), "Folder with the original game data")(
       "map", po::value(&map), "Map file (relative paths are looked up in the game data)")(
       "ais", po::value(&numAIs)->default_value(2), "Number of AI players for a new game")(
-      "seed", po::value(&seed)->default_value(1), "Random seed")(
+      "seed", po::value(&seed)->default_value(1), "Random seed (--load: derived from the savegame if not given)")(
       "minutes", po::value(&minutes)->default_value(30), "Game minutes to simulate (normal speed)")(
       "gfs", po::value(&extraGFs), "Game frames to simulate (overrides --minutes)")(
       "load", po::value(&loadPath), "Load a savegame instead of starting a new game")(
@@ -102,7 +102,9 @@ int main(int argc, char** argv)
     try
     {
         if(!loadPath.empty())
-            session = Session::loadGame(loadPath, seed);
+            session = Session::loadGame(loadPath, vm.count("seed") && !vm["seed"].defaulted() ?
+                                                    std::optional<unsigned>(seed) :
+                                                    std::nullopt);
         else
         {
             NewGameSetup setup;
