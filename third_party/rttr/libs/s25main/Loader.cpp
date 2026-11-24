@@ -1062,7 +1062,10 @@ void addDefaultResourceFolders(const RttrConfig& config, ArchiveLocator& locator
         if(bfs::exists(overrideFolder))
             locator.addOverrideFolder(overrideFolder);
     }
-    locator.addOverrideFolder(config.expandPath(s25::folders::assetsOverrides));
+    // Weiler: the RTTR override graphics are not shipped (possibly derived from the original data)
+    const bfs::path overrides = config.expandPath(s25::folders::assetsOverrides);
+    if(bfs::exists(overrides))
+        locator.addOverrideFolder(overrides);
     for(AddonId addonId : enabledAddons)
     {
         const auto overrideFolder = config.expandPath(s25::folders::assetsAddons)

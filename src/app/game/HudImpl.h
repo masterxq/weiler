@@ -221,6 +221,8 @@ struct Hud::Impl
     void sheetMission(const ui::Rect2& r);
     void sheetGameOver(const ui::Rect2& r);
     void sheetHelp(const ui::Rect2& r);
+    /// Icon of a building type from the game data (own symbol if the data has none)
+    void buildingIcon(Nation nation, BuildingType bt, const ui::Rect2& r, float alpha = 1);
     /// Title row with close button; returns the remaining content rect
     ui::Rect2 sheetHeader(const ui::Rect2& r, const std::string& title, ui::Icon icon = ui::Icon::None);
 };

@@ -49,7 +49,12 @@ void noSign::draw(DrawPoint drawPt)
         default: return;
     }
     imgId += std::min(resource.getAmount() / 3u, 2u);
-    LOADER.getMapTexture(imgId)->drawFull(drawPt, getDrawColor());
+    // Weiler: the original data has only one water sign, the other sizes came from the RTTR overrides
+    ITexture* sign = LOADER.getMapTexture(imgId);
+    if(!sign)
+        sign = LOADER.getMapTexture(imgId - std::min(resource.getAmount() / 3u, 2u));
+    if(sign)
+        sign->drawFull(drawPt, getDrawColor());
 
     // Schatten des Schildes
     LOADER.getMapTexture(700)->drawFull(drawPt, getDrawShadowColor());

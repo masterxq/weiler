@@ -269,7 +269,7 @@ void Hud::Impl::sheetBuild(const Rect2& r)
         ++n;
         if(ui.pressed(id("build", static_cast<uint64_t>(bt)), cr))
             app.batch().roundRect(cr.inset(app.dp(3)), app.dp(14), ui.theme.raised);
-        ui.sprite(LOADER.getNationIcon(nation, bt), {cr.x + app.dp(8), cr.y + app.dp(6), cr.w - app.dp(16), app.dp(56)});
+        buildingIcon(nation, bt, {cr.x + app.dp(8), cr.y + app.dp(6), cr.w - app.dp(16), app.dp(56)});
         ui.textWrapped(cr.x + app.dp(2), cr.y + app.dp(66), cr.w - app.dp(4), buildingName(bt), app.dp(11.5f),
                        ui.theme.text, gfx::Align::Center);
         ui.tag(std::string("build:") + buildingName(bt), cr);
@@ -311,7 +311,7 @@ void Hud::Impl::sheetBuilding(const Rect2& r)
     Rect2 c = sheetHeader(r, std::string(isSite ? "Baustelle: " : "") + buildingName(bt));
     // Picture
     const float picW = std::min(app.dp(120), c.w * 0.32f);
-    ui.sprite(LOADER.getNationIcon(bld->getNation(), bt), {c.x, c.y, picW, picW * 0.9f});
+    buildingIcon(bld->getNation(), bt, {c.x, c.y, picW, picW * 0.9f});
     const float tx = c.x + picW + app.dp(16);
     const float tw = c.right() - tx;
     float y = c.y;
@@ -605,7 +605,7 @@ void Hud::Impl::sheetStats(const Rect2& r)
                 const auto bt = static_cast<BuildingType>(i);
                 if(bc.buildings[bt] == 0 && bc.buildingSites[bt] == 0)
                     continue;
-                ui.sprite(LOADER.getNationIcon(player().nation, bt), {body.x, y + app.dp(2), app.dp(36), app.dp(36)});
+                buildingIcon(player().nation, bt, {body.x, y + app.dp(2), app.dp(36), app.dp(36)});
                 ui.text(body.x + app.dp(46), y + app.dp(10), buildingName(bt), app.dp(14), ui.theme.text);
                 std::string cnt = std::to_string(bc.buildings[bt]);
                 if(bc.buildingSites[bt])

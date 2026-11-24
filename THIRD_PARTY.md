@@ -13,6 +13,7 @@ Source: https://github.com/Return-To-The-Roots/s25client and its submodules. Exa
 | libutil, libendian, mygettext | `third_party/rttr/external/{libutil,libendian,mygettext}` | GPL-2.0-or-later (single files BSL-1.0 / BSD-3-Clause / CC0-1.0, see SPDX headers) |
 | kaguya (Lua binding, header only) | `third_party/rttr/external/kaguya` | BSL-1.0 |
 | RTTR data: world descriptions, campaigns, additional graphics for addon buildings | `third_party/rttr/data/RTTR` | GPL-2.0-or-later (see `.reuse/dep5` of the upstream repository) |
+| German translation of the core texts (from the `languages` submodule) | `third_party/rttr/data/RTTR/languages/rttr-de.po` | GPL-2.0-or-later |
 
 License texts: `third_party/rttr/LICENSE`, `third_party/rttr/LICENSES/`.
 
@@ -25,6 +26,16 @@ Changes against upstream:
   `ILocalGameState.h` (Lua message boxes), `world/GameWorldViewer.h` (terrain change observer),
   `GlobalGameSettings` (addon configuration passed in instead of read from the RTTR settings).
 - Sound conversion only corrects the sample rate in the header (no libsamplerate).
+- The override graphics of RTTR (`assets/overrides`) are not included; the loader skips the missing folder and
+  geologist water signs fall back to the single sign of the original data.
 - `RttrConfig` no longer changes the working directory.
 
 The game loop in `src/engine/Session.cpp` is adapted from RTTR (`extras/ai-battle`, `network/GameClient*`).
+
+## Lato (font)
+
+Files: `data/fonts/Lato-Regular.ttf`, `data/fonts/Lato-Bold.ttf` (version 2.015, taken from the Debian package
+`fonts-lato`, upstream http://www.latofonts.com).
+
+Copyright (c) 2010-2011, Łukasz Dziedzic (as stated by Debian and `OFL.txt`). License: SIL Open Font License 1.1 (OFL-1.1), full text in
+`data/fonts/OFL.txt`.

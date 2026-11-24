@@ -533,6 +533,14 @@ void Hud::Impl::buildRoad()
         tutorial->onRoadBuilt();
 }
 
+void Hud::Impl::buildingIcon(Nation nation, BuildingType bt, const Rect2& r, float alpha)
+{
+    if(const auto* icon = LOADER.getNationIcon(nation, bt))
+        ui.sprite(icon, r, 0, alpha);
+    else
+        ui.icon(Icon::House, r.x + r.w / 2, r.y + r.h / 2, std::min(r.w, r.h) * 0.7f, ui.theme.text.withAlpha(alpha));
+}
+
 bool Hud::Impl::autoConnect(MapPoint flag)
 {
     const noBase* obj = world().getNO(flag);
@@ -692,7 +700,7 @@ void Hud::Impl::drawRing()
         b.circle(cx, cy, btn / 2, (down ? ui.theme.raised : ui.theme.panelSolid).withAlpha(0.95f * t));
         b.circle(cx, cy, btn / 2, ui.theme.line, app.dp(1));
         if(item.kind == RingItem::Kind::Building)
-            ui.sprite(LOADER.getNationIcon(nation, item.bt), r.inset(app.dp(9)), 0, t);
+            buildingIcon(nation, item.bt, r.inset(app.dp(9)), t);
         else
         {
             Icon ic = Icon::Info;
