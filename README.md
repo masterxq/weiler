@@ -39,7 +39,7 @@ Tests need the game data: `cmake -S . -B build -DWEILER_TEST_DATA=<folder>`, the
 ## Playing
 
 The world fills the screen. At the top: menu, game time, speed, pause and messages. On the right edge: building
-sites, roads, minimap and a jump to the headquarters. Menus open as a sheet from the bottom (portrait) or from the
+sites, roads, minimap and a jump button (newest event first, then headquarters and warehouses). Menus open as a sheet from the bottom (portrait) or from the
 side (landscape).
 
 | Action | Touch | Mouse and keyboard |
@@ -52,13 +52,15 @@ side (landscape).
 | Building, flag, ship | tap it | click |
 | Attack | tap an enemy military building, choose the soldiers | click |
 | Information about a place | long press | |
-| Messages | tap a message to jump to its place | N |
+| Messages | tap a message to jump to its place; the post office filters by kind and deletes | N |
 | Pause, speed (1x to 8x) | buttons at the top | Space, + and - |
 | Building sites, minimap, headquarters | buttons on the right | B, M, H |
 | Building names | settings | P |
 | Quick save, quick load | menu | F5, F9 |
 
-New buildings are connected to the road network automatically (can be switched off in the settings). The
+New buildings are connected to the road network automatically (can be switched off in the settings). Military
+buildings limit their garrison per rank and exchange their soldiers; the economy sheets have default buttons as in
+the original. The victory condition of a free game and the own share of the land are shown in the post office. The
 introduction in the main menu shows the gestures step by step.
 
 ## License
