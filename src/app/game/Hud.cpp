@@ -419,8 +419,10 @@ void Hud::Impl::openRingAt(MapPoint pt)
     ring.openTime = app.time();
     const PointF sp = game.view().worldToScreen(game.view().worldPosNear(pt));
     const float R = app.dp(104);
-    ring.sx = std::clamp(sp.x, R + app.dp(40), static_cast<float>(app.width()) - R - app.dp(40));
-    ring.sy = std::clamp(sp.y, R + app.dp(90), static_cast<float>(app.height()) - R - app.dp(60));
+    // Keep the ring on screen (on very short screens it is simply centered)
+    auto keepIn = [](float v, float lo, float hi) { return lo > hi ? (lo + hi) / 2 : std::clamp(v, lo, hi); };
+    ring.sx = keepIn(sp.x, R + app.dp(40), static_cast<float>(app.width()) - R - app.dp(40));
+    ring.sy = keepIn(sp.y, R + app.dp(70), static_cast<float>(app.height()) - R - app.dp(50));
     if(tutorial)
         tutorial->onRingOpened(isFlag);
 }

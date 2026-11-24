@@ -1111,10 +1111,15 @@ void Hud::Impl::sheetHelp(const Rect2& r)
       {"Zoomen", "Zwei Finger auseinander/zusammen, Doppeltipp vergrößert. Maus: Rad."},
       {"Zurück", "Tipp mit zwei Fingern, Rechtsklick oder Esc schließt Menüs und bricht Aktionen ab."},
       {"Bauen", "Bauplatz antippen: Kreismenü mit passenden Gebäuden, zuletzt benutzte zuerst."},
-      {"Straßen", "Von einer Flagge aus ziehen, der Weg folgt dem Finger. Flaggen werden automatisch gesetzt."},
+      {"Straßen", "Von einer Flagge aus ziehen, der Weg folgt dem Finger. Flaggen werden automatisch gesetzt. "
+                  "Neue Gebäude werden mit der nächsten Flagge verbunden (abschaltbar), im Flaggenmenü "
+                  "verbindet „Verbinden“ eine Flagge auf kürzestem Weg."},
+      {"Angriff", "Feindliches Militärgebäude antippen, Anzahl der Soldaten wählen, Angreifen."},
+      {"Schiffe", "Eigenes Schiff antippen: Expeditionen steuern, Kolonie gründen."},
       {"Gebäude", "Antippen öffnet Details: Produktion, Soldaten, Lager, Abriss."},
       {"Infos", "Lange drücken zeigt, was an einer Stelle ist."},
-      {"Tastatur", "Leertaste Pause, +/- Tempo, F5/F9 Schnellspeichern/-laden, B Bauplätze, M Karte, H Hauptquartier."},
+      {"Tastatur", "Leertaste Pause, +/- Tempo, F5/F9 Schnellspeichern/-laden, B Bauplätze, M Karte, "
+                   "H Hauptquartier, N Nachrichten, P Gebäudenamen."},
     };
     for(const auto& it : items)
     {
