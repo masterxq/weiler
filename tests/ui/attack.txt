@@ -12,4 +12,18 @@ shot shots/a2.png
 game ff 3000
 game dump
 shot shots/a3.png
+key Escape
+wait 5
+game center mil
+wait 3
+tap mil:
+wait 20
+shot shots/a_mil.png
+tap ui:icon:Minus
+wait 3
+tap ui:Soldaten_austauschen
+wait 5
+shot shots/a_mil_exchange.png
+key Escape
+wait 5
 quit

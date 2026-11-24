@@ -22,10 +22,11 @@ class App;
 /// Extra commands: waitfor <point> [frames] | tapfirst <point>... | tapopt <point>... | labels | perf [frames] [label] |
 ///   perfasync [frames] [label] (measure while the next commands run) | overdraw [heatmap.png] |
 ///   failshots <dir> | game <screen command> [args]
-/// Game screen commands: ff <gf> | speed <1..8> | center hq|found|ship|x,y | zoom <z> | findbq <flag|small|medium|large|mine>
+/// Game screen commands: ff <gf> | speed <1..8> | center hq|found|ship|mil|bld:<name>|x,y | zoom <z> | findbq <flag|small|medium|large|mine>
 ///   [from=hq|found|enemy] [min=<n>] [mil] [near=tree|granite|water|mountain] | findenemy | dump [mine] | node x,y
 /// Instead of "x y" a symbolic point can be given: ui:<label>[#n] (button label, spaces as '_', trailing '*' for a
-/// prefix, icon buttons as ui:icon:Name) or a point the current screen knows (game: node:x,y, hq:dx,dy, ...).
+/// prefix, icon buttons as ui:icon:Name) or a point the current screen knows (game: node:x,y, hq:dx,dy,
+/// bld:<name>[#n], mil: = own military building with the most soldiers, ...).
 class TestScript
 {
 public:

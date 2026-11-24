@@ -382,6 +382,68 @@ std::string underscored(std::string s)
     std::replace(s.begin(), s.end(), ' ', '_');
     return s;
 }
+
+/// bld:<German name, spaces as _>[#n]: n-th own building or building site of that type
+MapPoint findBuildingByName(const GamePlayer& me, std::string name)
+{
+    int nth = 0;
+    const auto hash = name.rfind('#');
+    if(hash != std::string::npos)
+    {
+        nth = std::stoi(name.substr(hash + 1));
+        name.resize(hash);
+    }
+    const auto& reg = me.getBuildingRegister();
+    std::vector<MapPoint> pts;
+    for(unsigned i = 0; i < helpers::NumEnumValues_v<BuildingType>; ++i)
+    {
+        const auto bt = static_cast<BuildingType>(i);
+        if(underscored(buildingName(bt)) != name)
+            continue;
+        if(BuildingProperties::isMilitary(bt))
+        {
+            for(const auto* b : reg.getMilitaryBuildings())
+            {
+                if(b->getBuildingType() == bt)
+                    pts.push_back(b->getPos());
+            }
+        } else if(BuildingProperties::isWareHouse(bt))
+        {
+            for(const auto* b : reg.getStorehouses())
+            {
+                if(b->getBuildingType() == bt)
+                    pts.push_back(b->getPos());
+            }
+        } else if(BuildingProperties::isUsual(bt))
+        {
+            for(const auto* b : reg.getBuildings(bt))
+                pts.push_back(b->getPos());
+        }
+    }
+    // Building sites after the finished buildings
+    for(const auto* site : reg.getBuildingSites())
+    {
+        if(underscored(buildingName(site->getBuildingType())) == name)
+            pts.push_back(site->getPos());
+    }
+    return nth < static_cast<int>(pts.size()) ? pts[static_cast<size_t>(nth)] : MapPoint::invalid();
+}
+
+/// Own military building with the most soldiers (tests of the garrison)
+MapPoint fullestMilitary(const GamePlayer& me)
+{
+    MapPoint best = MapPoint::invalid();
+    unsigned most = 0;
+    for(const auto* b : me.getBuildingRegister().getMilitaryBuildings())
+    {
+        if(b->getNumTroops() > most)
+        {
+            most = b->getNumTroops();
+            best = b->getPos();
+        }
+    }
+    return best;
+}
 } // namespace
 
 bool GameScreen::testPoint(const std::string& spec, float& x, float& y)
@@ -416,50 +478,10 @@ bool GameScreen::testPoint(const std::string& spec, float& x, float& y)
         pt = world.getNeighbour(base, Direction::SouthEast);
     } else if(kind == "bld")
     {
-        // bld:<German name, spaces as _>[#n]
-        std::string name = arg;
-        int nth = 0;
-        const auto hash = name.rfind('#');
-        if(hash != std::string::npos)
-        {
-            nth = std::stoi(name.substr(hash + 1));
-            name.resize(hash);
-        }
-        const auto& reg = me.getBuildingRegister();
-        std::vector<MapPoint> pts;
-        for(const auto* site : reg.getBuildingSites())
-        {
-            if(underscored(buildingName(site->getBuildingType())) == name)
-                pts.push_back(site->getPos());
-        }
-        for(unsigned i = 0; i < helpers::NumEnumValues_v<BuildingType>; ++i)
-        {
-            const auto bt = static_cast<BuildingType>(i);
-            if(underscored(buildingName(bt)) != name)
-                continue;
-            if(BuildingProperties::isMilitary(bt))
-            {
-                for(const auto* b : reg.getMilitaryBuildings())
-                {
-                    if(b->getBuildingType() == bt)
-                        pts.push_back(b->getPos());
-                }
-            } else if(BuildingProperties::isWareHouse(bt))
-            {
-                for(const auto* b : reg.getStorehouses())
-                {
-                    if(b->getBuildingType() == bt)
-                        pts.push_back(b->getPos());
-                }
-            } else if(BuildingProperties::isUsual(bt))
-            {
-                for(const auto* b : reg.getBuildings(bt))
-                    pts.push_back(b->getPos());
-            }
-        }
-        if(nth >= static_cast<int>(pts.size()))
-            return false;
-        pt = pts[static_cast<size_t>(nth)];
+        pt = findBuildingByName(me, arg);
+    } else if(kind == "mil")
+    {
+        pt = fullestMilitary(me);
     } else
         return false;
     if(!pt.isValid())
@@ -494,7 +516,15 @@ bool GameScreen::testCommand(const std::string& cmd, const std::vector<std::stri
             jumpTo(me.getHQPos());
         else if(arg(0) == "found" && testFound_.isValid())
             jumpTo(testFound_);
-        else if(arg(0) == "ship")
+        else if(arg(0) == "mil")
+            jumpTo(fullestMilitary(me));
+        else if(arg(0).rfind("bld:", 0) == 0)
+        {
+            const MapPoint pt = findBuildingByName(me, arg(0).substr(4));
+            if(!pt.isValid())
+                return false;
+            jumpTo(pt);
+        } else if(arg(0) == "ship")
         {
             if(me.getShips().empty())
                 return false;

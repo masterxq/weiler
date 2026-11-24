@@ -346,6 +346,14 @@ void Hud::Impl::sheetBuilding(const Rect2& r)
     const BuildingType bt = bld->getBuildingType();
     const bool isSite = obj->getType() == NodalObjectType::Buildingsite;
     Rect2 c = sheetHeader(r, std::string(isSite ? "Baustelle: " : "") + buildingName(bt));
+    // Everything but the store (own list) scrolls when the sheet is too low (landscape)
+    const bool isStore = !isSite && dynamic_cast<const nobBaseWarehouse*>(obj);
+    const Rect2 view = c;
+    if(!isStore)
+    {
+        c.y = ui.beginScroll(id("bld.scroll", static_cast<uint64_t>(sheetPt.x) << 16 | sheetPt.y), view);
+        c.h = 1e5f;
+    }
     // Picture
     const float picW = std::min(app.dp(120), c.w * 0.32f);
     buildingIcon(bld->getNation(), bt, {c.x, c.y, picW, picW * 0.9f});
@@ -370,8 +378,10 @@ void Hud::Impl::sheetBuilding(const Rect2& r)
         const unsigned prog = site->getBuildProgress();
         line("Fortschritt " + std::to_string(prog) + " %", ui.theme.text);
         bar(static_cast<float>(prog) / 100.f, ui.theme.accent);
-        line("Bretter " + std::to_string(site->getUsedBoards() + site->getBoards()) + " · Steine "
-               + std::to_string(site->getUsedStones() + site->getStones()),
+        const BuildingCost cost = BUILDING_COSTS[bt];
+        line("Bretter " + std::to_string(site->getUsedBoards() + site->getBoards()) + "/" + std::to_string(cost.boards)
+               + " · Steine " + std::to_string(site->getUsedStones() + site->getStones()) + "/"
+               + std::to_string(cost.stones),
              ui.theme.textDim);
     } else if(const auto* usual = dynamic_cast<const nobUsual*>(obj))
     {
@@ -408,21 +418,72 @@ void Hud::Impl::sheetBuilding(const Rect2& r)
         }
     } else if(const auto* mil = dynamic_cast<const nobMilitary*>(obj))
     {
+        tallSheet = true;
+        const char* zone = mil->getFrontierDistance() == FrontierDistance::Far    ? "Landesinneres" :
+                           mil->getFrontierDistance() == FrontierDistance::Mid    ? "Mittelland" :
+                           mil->getFrontierDistance() == FrontierDistance::Harbor ? "Hafennähe" :
+                                                                                    "Grenze";
         line("Soldaten " + std::to_string(mil->getNumTroops()) + " / " + std::to_string(mil->getMaxTroopsCt()),
              ui.theme.text);
-        std::array<unsigned, NUM_SOLDIER_RANKS> ranks{};
-        for(auto&& soldier : mil->getTroops())
-            ++ranks[std::min<unsigned>(soldier.getRank(), NUM_SOLDIER_RANKS - 1)];
-        std::string rs;
-        for(unsigned i = 0; i < NUM_SOLDIER_RANKS; ++i)
-            rs += (i ? " · " : "") + std::to_string(ranks[i]);
-        line("Ränge: " + rs, ui.theme.textDim);
-        line("Gold " + std::to_string(mil->getNumCoins()) + " / " + std::to_string(mil->getMaxCoinCt()),
+        line(std::string(zone) + " · Gold " + std::to_string(mil->getNumCoins()) + "/"
+               + std::to_string(mil->getMaxCoinCt()),
              ui.theme.textDim);
+        // The soldiers inside, weakest first (the picture shows the rank)
+        const unsigned nt = mil->getNumTroops();
+        const float fsz = app.dp(30);
+        const float step = nt > 1 ? std::min(fsz + app.dp(4), (tw - fsz) / static_cast<float>(nt - 1)) : 0;
+        float fx = tx;
+        for(auto&& soldier : mil->getTroops())
+        {
+            ui.sprite(src(LOADER.getJobTex(SOLDIER_JOBS[std::min<unsigned>(soldier.getRank(), NUM_SOLDIER_RANKS - 1)])),
+                      {fx, y + app.dp(2), fsz, fsz});
+            fx += step;
+        }
+        if(nt == 0)
+            line("Noch keine Soldaten", ui.theme.textDim);
+        else
+            y += fsz + app.dp(6);
         by = std::max(y, c.y + picW) + app.dp(10);
+        // Promotion: soldiers train with gold coins
         bool gold = !mil->isGoldDisabled();
-        if(ui.toggle(id("bld.gold"), {c.x, by, c.w, bh}, gold, "Goldmünzen annehmen"))
+        if(ui.toggle(id("bld.gold"), {c.x, by, c.w, bh}, gold, "Gold zur Beförderung"))
             s.SetCoinsAllowed(sheetPt, gold);
+        by += bh + app.dp(10);
+        // Troop limit per rank: + above, - below the number
+        ui.text(c.x, by, "Höchstbesatzung je Rang", app.dp(13), ui.theme.textDim);
+        by += app.dp(22);
+        const unsigned maxT = mil->getMaxTroopsCt();
+        const float colW = c.w / NUM_SOLDIER_RANKS;
+        const float sbw = std::min(colW - app.dp(6), app.dp(56)), sbh = app.dp(44);
+        for(unsigned rank = 0; rank < NUM_SOLDIER_RANKS; ++rank)
+        {
+            const float cx = c.x + colW * static_cast<float>(rank);
+            const float bx = cx + (colW - sbw) / 2;
+            const unsigned lim = std::min(mil->getTroopLimit(rank), maxT);
+            ui.sprite(src(LOADER.getJobTex(SOLDIER_JOBS[rank])), {cx + (colW - app.dp(30)) / 2, by, app.dp(30), app.dp(30)});
+            if(ui.button(id("mil.more", rank), {bx, by + app.dp(32), sbw, sbh}, "", Icon::Plus, Style::Normal, lim < maxT))
+                s.SetTroopLimit(sheetPt, static_cast<unsigned char>(rank), lim + 1);
+            ui.text(cx + colW / 2, by + app.dp(32) + sbh + app.dp(4), lim >= maxT ? "alle" : std::to_string(lim),
+                    app.dp(15), lim >= maxT ? ui.theme.textDim : ui.theme.accent, gfx::Align::Center, true);
+            if(ui.button(id("mil.less", rank), {bx, by + app.dp(32) + sbh + app.dp(28), sbw, sbh}, "", Icon::Minus,
+                         Style::Normal, lim > 0))
+                s.SetTroopLimit(sheetPt, static_cast<unsigned char>(rank), lim - 1);
+        }
+        by += app.dp(32) + 2 * sbh + app.dp(38);
+        // Send all but one soldier home; the building then orders new ones (exchanges trained soldiers)
+        if(ui.button(id("mil.home"), {c.x, by, c.w, bh}, "Soldaten austauschen", Icon::People, Style::Normal,
+                     mil->getNumTroops() > 1))
+        {
+            std::array<unsigned, NUM_SOLDIER_RANKS> lim{};
+            for(unsigned rank = 0; rank < NUM_SOLDIER_RANKS; ++rank)
+            {
+                lim[rank] = mil->getTroopLimit(rank);
+                s.SetTroopLimit(sheetPt, static_cast<unsigned char>(rank), rank == 0 ? 1 : 0);
+            }
+            for(unsigned rank = 0; rank < NUM_SOLDIER_RANKS; ++rank)
+                s.SetTroopLimit(sheetPt, static_cast<unsigned char>(rank), lim[rank]);
+            toast("Soldaten gehen heim, neue sind bestellt");
+        }
         by += bh + app.dp(8);
     } else if(const auto* wh = dynamic_cast<const nobBaseWarehouse*>(obj))
     {
@@ -524,8 +585,11 @@ void Hud::Impl::sheetBuilding(const Rect2& r)
                 closeSheet();
             });
         }
-        if(!dynamic_cast<const nobBaseWarehouse*>(obj))
-            fit(r, dr.bottom());
+        if(!isStore)
+        {
+            ui.endScroll(dr.bottom() - c.y);
+            fit(r, view.y + dr.bottom() - c.y);
+        }
     }
 }
 

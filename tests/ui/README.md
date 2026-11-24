@@ -15,7 +15,7 @@ working folder that contains a `shots/` directory, with a separate user data fol
 | `save.txt` | as above | save slots, quick save/load |
 | `camp.txt` | main menu | campaign missions |
 | `land.txt` | main menu, `--size 2400x1080` or `1920x1080` | landscape layout |
-| `attack.txt` | `--map DATA/MAPS3/AKARTE01.WLD --ais 1 --warmup 60000 --autoplay` | attack sheet |
+| `attack.txt` | `--map DATA/MAPS3/AKARTE01.WLD --ais 1 --warmup 60000 --autoplay` | attack sheet, garrison (troop limits, exchange) |
 | `perf.txt`, `names.txt` | `--map ... --warmup 36000 --autoplay` | frame time (`[perf]` lines), name labels |
 | `genlong.py` | writes a long game script: `python3 genlong.py long.txt` | economy, military, attack |
 
