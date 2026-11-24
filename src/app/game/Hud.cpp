@@ -494,8 +494,33 @@ void Hud::Impl::activateRingItem(const RingItem& item)
             if(!autoConnect(pt))
                 toast("Keine Verbindung gefunden. Ziehe die Straße selbst.");
             break;
-        case RingItem::Kind::Geologist: s.CallSpecialist(pt, Job::Geologist); break;
-        case RingItem::Kind::Scout: s.CallSpecialist(pt, Job::Scout); break;
+        case RingItem::Kind::Geologist:
+        case RingItem::Kind::Scout:
+        {
+            // The specialist walks along roads from a store; with none in stock one is made from a helper and a tool
+            const bool geo = item.kind == RingItem::Kind::Geologist;
+            const Job job = geo ? Job::Geologist : Job::Scout;
+            const GoodType tool = geo ? GoodType::Hammer : GoodType::Bow;
+            bool hasRoad = false;
+            for(const auto dir : helpers::EnumRange<Direction>{})
+            {
+                // The way into the own building does not count
+                if(dir == Direction::NorthWest && isBuildingObj(world().getNO(world().getNeighbour(pt, dir))))
+                    continue;
+                hasRoad |= world().getPointRoad(pt, dir) != PointRoad::None;
+            }
+            const Inventory& inv = player().getInventory();
+            if(!hasRoad)
+                toast("Die Flagge braucht zuerst eine Straße zum Lager");
+            else if(inv[job] == 0 && inv[tool] == 0)
+                toast(std::string(geo ? "Kein Geologe und kein Hammer" : "Kein Späher und kein Bogen") + " im Lager");
+            else
+            {
+                s.CallSpecialist(pt, job);
+                toast(geo ? "Ein Geologe ist unterwegs" : "Ein Späher ist unterwegs");
+            }
+            break;
+        }
         case RingItem::Kind::DestroyFlag:
             confirm("Flagge und angeschlossene Straßen abreißen?", [&s, pt] { s.DestroyFlag(pt); });
             break;

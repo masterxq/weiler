@@ -30,6 +30,7 @@ shot shots/m_flagring.png
 labels
 tap ui:ring:Geologe
 wait 10
+shot shots/m_geologist.png
 twotap 50% 50%
 wait 5
 longpress hq:2,2
