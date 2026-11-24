@@ -118,6 +118,10 @@ public:
     glArchivItem_Bitmap_Player* getMapPlayerImage(unsigned nr);
     /// Weiler: archive of the map objects (preloading the sprite atlas); nullptr if not loaded
     const libsiedler2::Archiv* getMapArchive() const { return map_gfx; }
+    /// Weiler: building graphics of a nation, nullptr if the nation is not loaded
+    const libsiedler2::Archiv* getNationArchive(Nation nation) const { return nation_gfx[nation]; }
+    /// Weiler: building icons of a nation, nullptr if the nation is not loaded
+    const libsiedler2::Archiv* getNationIconArchive(Nation nation) const { return nationIcons_[nation]; }
 
     bool isWinterGFX() const { return isWinterGFX_; }
 

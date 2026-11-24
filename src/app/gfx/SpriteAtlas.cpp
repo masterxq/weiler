@@ -4,6 +4,8 @@
 
 #include "SpriteAtlas.h"
 #include "Loader.h"
+#include "helpers/EnumRange.h"
+#include "ogl/glArchivItem_Bob.h"
 #include "libsiedler2/Archiv.h"
 #include "libsiedler2/ArchivItem.h"
 #include "Perf.h"
@@ -43,6 +45,11 @@ void visitSprites(T& x, F& f)
         visitSprites(x.building, f);
         visitSprites(x.skeleton, f);
         visitSprites(x.door, f);
+    } else if constexpr(requires { x.numElements(); })
+    {
+        // helpers::MultiArray: begin()/end() cover only the first dimension of the flat storage
+        for(size_t i = 0; i < x.numElements(); ++i)
+            visitSprites(x.data()[i], f);
     } else
     {
         for(auto& e : x)
@@ -290,6 +297,7 @@ void SpriteAtlas::preload(const std::vector<const ISpriteSource*>& sources)
     std::sort(todo.begin(), todo.end(), [](const Decoded& a, const Decoded& b) { return a.src < b.src; });
     todo.erase(std::unique(todo.begin(), todo.end(), [](const Decoded& a, const Decoded& b) { return a.src == b.src; }),
                todo.end());
+    const size_t numNew = todo.size();
     // Decode on all cores (reading the archive data only)
     const unsigned numThreads = std::clamp(std::thread::hardware_concurrency(), 1u, 8u);
     std::atomic<size_t> next{0};
@@ -377,7 +385,7 @@ void SpriteAtlas::preload(const std::vector<const ISpriteSource*>& sources)
 #endif
     const auto end = std::chrono::steady_clock::now();
     auto ms = [](auto a, auto b) { return static_cast<long>(std::chrono::duration<double, std::milli>(b - a).count()); };
-    std::cout << "[time] atlas preload: " << todo.size() << " sprites, decode " << ms(start, decoded) << " ms ("
+    std::cout << "[time] atlas preload: " << numNew << " sprites, decode " << ms(start, decoded) << " ms ("
               << numThreads << " threads), pack+upload " << ms(decoded, end) << " ms, " << describe() << std::endl;
 }
 
@@ -423,6 +431,31 @@ void SpriteAtlas::preloadGameSprites()
     // Work animations of the figures and the ships
     addArchive(&l.getArchive("rom_bobs"));
     addArchive(&l.getArchive("boot_z"));
+    // Figures drawn from the bob files directly (workers leaving their building with a ware)
+    addArchive(l.getBob("jobs"));
+    addArchive(l.getBob("carrier"));
+    // The few images of the nations that are drawn directly (building images of the interface, building site
+    // signs, mill sails, harbor fire) and the building icons, only for the nations in this game
+    for(const auto nation : helpers::enumRange<Nation>())
+    {
+        addArchive(l.getNationIconArchive(nation));
+        const libsiedler2::Archiv* archive = l.getNationArchive(nation);
+        if(!archive)
+            continue;
+        auto addImage = [&](unsigned nr) {
+            if(const auto* src = dynamic_cast<const ISpriteSource*>(archive->get(nr)))
+                sources.push_back(src);
+        };
+        for(unsigned type = 0; type < 50; ++type)
+        {
+            addImage(250 + 5 * type);
+            addImage(250 + 5 * type + 1);
+        }
+        for(unsigned nr : {450u, 451u, 455u, 456u})
+            addImage(nr);
+        for(unsigned i = 0; i < 8; ++i)
+            addImage(500 + 5 * i);
+    }
 
     preload(sources);
 }
