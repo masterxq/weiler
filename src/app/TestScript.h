@@ -19,7 +19,10 @@ class App;
 ///   wait <frames> | sec <seconds> | tap x y | longpress x y | drag x0 y0 x1 y1 [frames] |
 ///   pinch cx cy d0 d1 [frames] | twotap x y | click x y [right] | wheel x y delta | key <name> |
 ///   text <string> | shot <file.png> | resize w h | log <text> | quit
-/// Extra commands: waitfor <point> [frames] | labels | game <screen command> [args]
+/// Extra commands: waitfor <point> [frames] | tapfirst <point>... | tapopt <point>... | labels | perf [frames] |
+///   failshots <dir> | game <screen command> [args]
+/// Game screen commands: ff <gf> | center hq|found|ship|x,y | zoom <z> | findbq <flag|small|medium|large|mine>
+///   [from=hq|found|enemy] [min=<n>] [mil] [near=tree|granite|water|mountain] | findenemy | dump [mine] | node x,y
 /// Instead of "x y" a symbolic point can be given: ui:<label>[#n] (button label, spaces as '_', trailing '*' for a
 /// prefix, icon buttons as ui:icon:Name) or a point the current screen knows (game: node:x,y, hq:dx,dy, ...).
 class TestScript

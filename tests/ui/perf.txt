@@ -1,0 +1,6 @@
+wait 30
+perf 300
+pinch 50% 50% 700 250 20
+wait 10
+perf 300
+quit

@@ -1,0 +1,51 @@
+wait 10
+tap ui:icon:Pause
+wait 5
+game dump
+wait 60
+game dump
+tap ui:icon:Play
+tap ui:icon:Fast
+tap ui:icon:Fast
+wait 5
+shot shots/m_speed.png
+wait 60
+game dump
+key space
+wait 30
+game dump
+key space
+key minus
+key minus
+game findbq small hq 3
+tap found:
+wait 10
+tap ui:ring:Holzfäller
+wait 10
+drag foundflag: hqflag: 40
+wait 10
+tap foundflag:
+wait 15
+shot shots/m_flagring.png
+labels
+tap ui:ring:Geologe
+wait 10
+twotap 50% 50%
+wait 5
+longpress hq:2,2
+wait 10
+shot shots/m_long.png
+tap ui:icon:Map
+wait 10
+tap 30% 12%
+wait 10
+shot shots/m_minimap.png
+tap ui:icon:Home
+wait 10
+shot shots/m_home.png
+twotap 50% 50%
+twotap 50% 50%
+wait 10
+shot shots/m_back.png
+labels
+quit

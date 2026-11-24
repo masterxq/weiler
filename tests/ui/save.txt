@@ -1,0 +1,27 @@
+wait 10
+game ff 600
+tap ui:icon:Menu
+wait 15
+tap ui:Speichern
+wait 15
+tap ui:Platz_2
+wait 10
+shot shots/sv1.png
+game ff 600
+key F5
+wait 5
+game dump
+tap ui:icon:Menu
+wait 15
+tap ui:Laden
+wait 15
+shot shots/sv2.png
+labels
+tap ui:Platz_2
+wait 30
+game dump
+shot shots/sv3.png
+key F9
+wait 30
+game dump
+quit

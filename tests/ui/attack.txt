@@ -1,0 +1,15 @@
+wait 10
+game dump
+game findenemy
+wait 3
+tap found:
+wait 20
+shot shots/a1.png
+labels
+tap ui:Angreifen*
+wait 10
+shot shots/a2.png
+game ff 3000
+game dump
+shot shots/a3.png
+quit

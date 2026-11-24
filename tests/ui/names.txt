@@ -1,0 +1,14 @@
+wait 10
+key p
+wait 5
+shot shots/n1.png
+pinch 50% 50% 600 300 20
+wait 5
+shot shots/n2.png
+tap ui:icon:Menu
+wait 10
+tap ui:Einstellungen
+wait 20
+shot shots/n3.png
+perf 120
+quit

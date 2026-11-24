@@ -1,0 +1,52 @@
+wait 10
+game findbq small hq 3
+tap found:
+wait 15
+shot shots/s_ring.png
+tap ui:ring:Holzfäller
+wait 10
+drag foundflag: hqflag: 40
+wait 5
+game ff 1500
+game center found
+wait 3
+tap bld:Holzfäller
+wait 20
+shot shots/s_bld.png
+labels
+key Escape
+wait 3
+tap ui:icon:Menu
+wait 20
+shot shots/s_menu.png
+tap ui:Wirtschaft
+wait 20
+shot shots/s_eco.png
+labels
+key Escape
+wait 5
+tap ui:Statistik
+wait 20
+shot shots/s_stats.png
+key Escape
+wait 5
+tap ui:Nachrichten
+wait 20
+shot shots/s_msg.png
+key Escape
+wait 5
+tap ui:Einstellungen
+wait 20
+shot shots/s_set.png
+key Escape
+wait 5
+tap ui:Hilfe
+wait 20
+shot shots/s_help.png
+key Escape
+wait 5
+tap ui:Speichern
+wait 20
+shot shots/s_save.png
+labels
+quit

@@ -1,0 +1,35 @@
+waitfor ui:Weiter 600
+wait 10
+shot shots/t0.png
+tap ui:Weiter
+wait 20
+shot shots/t1.png
+drag 50% 60% 30% 50% 30
+drag 30% 50% 50% 60% 30
+wait 10
+shot shots/t2.png
+pinch 50% 60% 300 600 20
+pinch 50% 60% 600 300 20
+wait 10
+shot shots/t3.png
+tap ui:icon:Grid
+wait 20
+shot shots/t4.png
+game findbq small hq 3
+tap found:
+wait 15
+tap ui:ring:Holzfäller
+wait 20
+shot shots/t5.png
+drag foundflag: hqflag: 40
+wait 20
+shot shots/t6.png
+tap ui:icon:Menu
+wait 20
+twotap 50% 30%
+wait 20
+shot shots/t7.png
+tap ui:Los_geht's
+wait 20
+shot shots/t8.png
+quit

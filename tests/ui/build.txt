@@ -1,0 +1,15 @@
+wait 10
+game findbq small hq 3
+wait 2
+tap found:
+wait 15
+tap ui:ring:Holzfäller
+wait 10
+drag foundflag: hqflag: 40
+wait 10
+shot shots/b1.png
+game ff 1500
+wait 2
+shot shots/b2.png
+game dump mine
+quit

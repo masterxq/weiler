@@ -1,0 +1,37 @@
+wait 20
+tap ui:Kampagne
+wait 10
+tap ui:Römische_Kampagne
+wait 20
+shot shots/c1.png
+tap ui:Kapitel_1
+sec 3
+shot shots/c2.png
+labels
+tap ui:OK
+wait 10
+game dump
+game ff 3000
+wait 5
+shot shots/c3.png
+key Escape
+key Escape
+tap ui:icon:Menu
+wait 10
+tap ui:Hauptmenü
+wait 10
+tap ui:OK
+wait 20
+tap ui:Kampagne
+wait 10
+
+wait 10
+tap ui:Welt*
+wait 10
+shot shots/c4.png
+labels
+tap ui:Kapitel_2
+sec 3
+shot shots/c5.png
+game dump
+quit
