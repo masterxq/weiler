@@ -33,6 +33,8 @@ void add(Phase phase, double ms);
 void gameFrame(double ms);
 /// Count a draw call of the current frame
 void drawCall();
+/// Count a rebuild of the cached terrain geometry
+void terrainRebuild();
 
 /// Scoped timer for a phase
 class Scope

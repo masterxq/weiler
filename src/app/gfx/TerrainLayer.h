@@ -45,6 +45,8 @@ public:
     MapPoint toMapPoint(Position p) const;
 
     void draw(const Camera& cam, unsigned timeMs);
+    /// Number of rebuilds of the cached terrain geometry (measurements)
+    unsigned rebuilds() const { return rebuilds_; }
 
     void altitudeChanged(MapPoint pt) override;
     void visibilityChanged(MapPoint pt) override;
@@ -71,8 +73,18 @@ private:
     std::vector<Tex> terrainTex_;
     std::vector<Texture> edgeTex_;
     std::vector<Texture> roadTex_;
-    std::vector<std::vector<Vtx>> buckets_;
-    GLuint program_ = 0, vao_ = 0, vbo_ = 0;
+    void buildStatic(const NodeRange& r);
+    void buildRoads(const NodeRange& r);
+    void setAttribs();
+    bool inCache(MapPoint pt) const;
+
+    std::vector<std::vector<Vtx>> buckets_, roadBuckets_;
+    /// Cached terrain and edge geometry: node range, first vertex and count per bucket in staticVbo_
+    std::vector<std::pair<GLint, GLsizei>> staticRanges_;
+    NodeRange cached_{0, 0, 0, 0};
+    bool hasCache_ = false, dirty_ = true;
+    unsigned rebuilds_ = 0;
+    GLuint program_ = 0, vao_ = 0, vbo_ = 0, staticVbo_ = 0;
     GLint uScreen_ = -1, uCam_ = -1, uOverdraw_ = -1;
     int maxAltitudePx_ = 0;
 };

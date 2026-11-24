@@ -103,6 +103,7 @@ TerrainLayer::~TerrainLayer()
     {
         glDeleteProgram(program_);
         glDeleteBuffers(1, &vbo_);
+        glDeleteBuffers(1, &staticVbo_);
         glDeleteVertexArrays(1, &vao_);
     }
 }
@@ -120,6 +121,7 @@ void TerrainLayer::init(const GameWorldViewer& gwv)
         uOverdraw_ = glGetUniformLocation(program_, "uOverdraw");
         glGenVertexArrays(1, &vao_);
         glGenBuffers(1, &vbo_);
+        glGenBuffers(1, &staticVbo_);
         glBindVertexArray(vao_);
         glBindBuffer(GL_ARRAY_BUFFER, vbo_);
         glEnableVertexAttribArray(0);
@@ -218,6 +220,7 @@ void TerrainLayer::allChanged()
         updateColor(pt);
         maxAltitudePx_ = std::max(maxAltitudePx_, int(gwv_->getNode(pt).altitude) * HEIGHT_FACTOR);
     }
+    dirty_ = true;
 }
 
 void TerrainLayer::altitudeChanged(MapPoint pt)
@@ -226,11 +229,31 @@ void TerrainLayer::altitudeChanged(MapPoint pt)
     for(const auto dir : helpers::EnumRange<Direction>{})
         updateColor(gwv_->getNeighbour(pt, dir));
     maxAltitudePx_ = std::max(maxAltitudePx_, int(gwv_->getNode(pt).altitude) * HEIGHT_FACTOR);
+    if(hasCache_ && inCache(pt))
+        dirty_ = true;
+}
+
+bool TerrainLayer::inCache(MapPoint pt) const
+{
+    // Unwrapped cache range: test the copies of the point left/right and above/below; one node of slack for
+    // the triangles and edges of the neighbours
+    const int w = size_.x, h = size_.y;
+    auto hit = [](int v, int lo, int hi, int period) {
+        for(int k = -1; k <= 1; ++k)
+        {
+            if(v + k * period >= lo - 2 && v + k * period <= hi + 2)
+                return true;
+        }
+        return false;
+    };
+    return hit(pt.x, cached_.x0, cached_.x1, w) && hit(pt.y, cached_.y0, cached_.y1, h);
 }
 
 void TerrainLayer::visibilityChanged(MapPoint pt)
 {
     updateColor(pt);
+    if(hasCache_ && inCache(pt))
+        dirty_ = true;
 }
 
 MapPoint TerrainLayer::toMapPoint(Position p) const
@@ -270,21 +293,15 @@ void TerrainLayer::addTri(std::vector<Vtx>& out, PointF p0, PointF p1, PointF p2
     out.push_back({p2.x, p2.y, t2.x, t2.y, b2});
 }
 
-void TerrainLayer::draw(const Camera& cam, unsigned timeMs)
+void TerrainLayer::buildStatic(const NodeRange& r)
 {
-    if(!gwv_)
-        return;
     const GameWorldBase& world = gwv_->getWorld();
     const WorldDescription& desc = world.getDescription();
     const size_t numTerrain = terrainTex_.size();
     const size_t edgeBase = numTerrain;
-    const size_t roadBase = edgeBase + edgeTex_.size();
-    buckets_.resize(roadBase + roadTex_.size());
+    buckets_.resize(edgeBase + edgeTex_.size());
     for(auto& b : buckets_)
         b.clear();
-
-    perf::Scope timeTerrain(perf::Phase::Terrain);
-    const NodeRange r = visibleRange(cam);
     const PointF uv00(0, 0), uv10(1, 0), uvMid(0.5f, 1), uv01(0, 1), uv11(1, 1);
     for(int y = r.y0; y <= r.y1; ++y)
     {
@@ -355,6 +372,35 @@ void TerrainLayer::draw(const Camera& cam, unsigned timeMs)
             addEdge(edgeType(t1, t4), vSW, vSE, borderSW1, cSW, cSE, bcSW1);
         }
     }
+    // One buffer, bucket after bucket
+    staticRanges_.assign(buckets_.size(), {0, 0});
+    size_t total = 0;
+    for(const auto& b : buckets_)
+        total += b.size();
+    std::vector<Vtx> all;
+    all.reserve(total);
+    for(size_t i = 0; i < buckets_.size(); ++i)
+    {
+        staticRanges_[i] = {static_cast<GLint>(all.size()), static_cast<GLsizei>(buckets_[i].size())};
+        all.insert(all.end(), buckets_[i].begin(), buckets_[i].end());
+    }
+    glBindBuffer(GL_ARRAY_BUFFER, staticVbo_);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(all.size() * sizeof(Vtx)), all.data(), GL_STATIC_DRAW);
+    cached_ = r;
+    hasCache_ = true;
+    dirty_ = false;
+    ++rebuilds_;
+    perf::terrainRebuild();
+}
+
+void TerrainLayer::buildRoads(const NodeRange& r)
+{
+    const GameWorldBase& world = gwv_->getWorld();
+    const WorldDescription& desc = world.getDescription();
+    roadBuckets_.resize(roadTex_.size());
+    for(auto& b : roadBuckets_)
+        b.clear();
+    const PointF uv00(0, 0), uv10(1, 0), uv01(0, 1), uv11(1, 1);
     // Roads
     static constexpr helpers::EnumArray<std::array<Position, 4>, RoadDir> roadCoords = {{
       {{Position(0, -3), Position(0, 3), Position(3, 3), Position(3, -3)}},
@@ -398,43 +444,91 @@ void TerrainLayer::draw(const Camera& cam, unsigned timeMs)
                 const float c1 = color(p), c2 = color(pt2);
                 const auto& rc = roadCoords[dir];
                 const PointF q0(start + rc[0]), q1(start + rc[1]), q2(end + rc[2]), q3(end + rc[3]);
-                auto& bucket = buckets_[roadBase + idx];
+                auto& bucket = roadBuckets_[idx];
                 addTri(bucket, q0, q1, q2, uv00, uv01, uv11, c1, c1, c2);
                 addTri(bucket, q0, q2, q3, uv00, uv11, uv10, c1, c2, c2);
             }
         }
     }
 
+}
+
+void TerrainLayer::draw(const Camera& cam, unsigned timeMs)
+{
+    if(!gwv_)
+        return;
+    const NodeRange r = visibleRange(cam);
+    {
+        perf::Scope timeTerrain(perf::Phase::Terrain);
+        // The terrain and its edges only change with altitude or visibility: their geometry is kept for an area
+        // around the view and rebuilt when the view leaves it or something changed
+        const bool inside = hasCache_ && r.x0 >= cached_.x0 && r.x1 <= cached_.x1 && r.y0 >= cached_.y0
+                            && r.y1 <= cached_.y1;
+        if(dirty_ || !inside)
+        {
+            const int mx = std::max(4, (r.x1 - r.x0) / 4), my = std::max(4, (r.y1 - r.y0) / 4);
+            buildStatic({r.x0 - mx, r.y0 - my, r.x1 + mx, r.y1 + my});
+        }
+        buildRoads(r);
+    }
     glUseProgram(program_);
     glUniform2f(uScreen_, static_cast<float>(cam.screenW), static_cast<float>(cam.screenH));
     glUniform3f(uCam_, cam.x, cam.y, cam.zoom);
     glUniform1f(uOverdraw_, gOverdraw);
     glBindVertexArray(vao_);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo_);
     glActiveTexture(GL_TEXTURE0);
     glEnable(GL_BLEND);
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    for(size_t i = 0; i < buckets_.size(); ++i)
+    const size_t numTerrain = terrainTex_.size();
+    glBindBuffer(GL_ARRAY_BUFFER, staticVbo_);
+    setAttribs();
+    for(size_t i = 0; i < staticRanges_.size(); ++i)
     {
-        const auto& verts = buckets_[i];
-        if(verts.empty())
+        const auto [first, count] = staticRanges_[i];
+        if(!count)
             continue;
         GLuint tex;
-        if(i < edgeBase)
+        if(i < numTerrain)
         {
             const auto& frames = terrainTex_[i].frames;
             tex = frames[(timeMs / 120) % frames.size()].id();
-        } else if(i < roadBase)
-            tex = edgeTex_[i - edgeBase].id();
-        else
-            tex = roadTex_[i - roadBase].id();
+        } else
+            tex = edgeTex_[i - numTerrain].id();
         glBindTexture(GL_TEXTURE_2D, tex);
-        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(verts.size() * sizeof(Vtx)), verts.data(),
-                     GL_STREAM_DRAW);
-        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(verts.size()));
+        glDrawArrays(GL_TRIANGLES, first, count);
         perf::drawCall();
     }
+    // Roads change often (built, upgraded, seen): streamed every frame
+    size_t total = 0;
+    for(const auto& b : roadBuckets_)
+        total += b.size();
+    if(total)
+    {
+        glBindBuffer(GL_ARRAY_BUFFER, vbo_);
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(total * sizeof(Vtx)), nullptr, GL_STREAM_DRAW);
+        setAttribs();
+        GLint offset = 0;
+        for(size_t i = 0; i < roadBuckets_.size(); ++i)
+        {
+            const auto& verts = roadBuckets_[i];
+            if(verts.empty())
+                continue;
+            glBufferSubData(GL_ARRAY_BUFFER, static_cast<GLintptr>(offset * sizeof(Vtx)),
+                            static_cast<GLsizeiptr>(verts.size() * sizeof(Vtx)), verts.data());
+            glBindTexture(GL_TEXTURE_2D, roadTex_[i].id());
+            glDrawArrays(GL_TRIANGLES, offset, static_cast<GLsizei>(verts.size()));
+            perf::drawCall();
+            offset += static_cast<GLint>(verts.size());
+        }
+    }
     glBindVertexArray(0);
+}
+
+void TerrainLayer::setAttribs()
+{
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vtx), reinterpret_cast<void*>(offsetof(Vtx, x)));
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vtx), reinterpret_cast<void*>(offsetof(Vtx, u)));
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, sizeof(Vtx), reinterpret_cast<void*>(offsetof(Vtx, b)));
 }
 
 } // namespace weiler::gfx

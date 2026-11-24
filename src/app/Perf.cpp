@@ -18,7 +18,7 @@ namespace weiler::perf {
 namespace {
 bool gActive = false;
 std::array<double, static_cast<size_t>(Phase::Count)> gPhase{};
-unsigned gDraws = 0;
+unsigned gDraws = 0, gTerrainRebuilds = 0;
 std::vector<double> gGameFrames;
 const auto gStart = std::chrono::steady_clock::now();
 
@@ -57,6 +57,11 @@ void drawCall()
     ++gDraws;
 }
 
+void terrainRebuild()
+{
+    ++gTerrainRebuilds;
+}
+
 double sinceStart()
 {
     return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - gStart).count();
@@ -86,6 +91,7 @@ void Recorder::start(int frames, std::string label)
     gGameFrames.clear();
     gPhase.fill(0);
     gDraws = 0;
+    gTerrainRebuilds = 0;
     gActive = true;
 }
 
@@ -134,7 +140,7 @@ void Recorder::report(int fbW, int fbH)
       << percentile(total, 0.99) << " max " << percentile(total, 1.0) << " ms, outliers(>2x) " << outliers
       << ", >16.7ms " << over16 << " | sim " << mean(sim) << " world " << mean(world) << " (terrain " << mean(terrain) << ", atlas " << mean(atlas) << ") ui "
       << mean(drw) - mean(world) << " update-other " << mean(upd) - mean(sim) << " gpu-wait " << mean(gpu)
-      << " ms | draws " << std::setprecision(0) << draws;
+      << " ms | draws " << std::setprecision(0) << draws << ", terrain rebuilds " << gTerrainRebuilds;
     if(!gGameFrames.empty())
         o << std::setprecision(3) << " | GF " << gGameFrames.size() << " x avg " << mean(gGameFrames) << " p99 "
           << percentile(gGameFrames, 0.99) << " max " << percentile(gGameFrames, 1.0) << " ms";
