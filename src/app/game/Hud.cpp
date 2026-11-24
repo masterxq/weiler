@@ -240,7 +240,10 @@ void Hud::Impl::onTap(float x, float y)
             if(obj && obj->getType() == NodalObjectType::Flag)
                 buildRoad();
         } else
+        {
             toast("Hier kann keine Straße entlang führen");
+            app.audio().playUi(UiSound::Error);
+        }
         return;
     }
 

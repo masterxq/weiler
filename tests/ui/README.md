@@ -18,4 +18,9 @@ Run them offscreen from a working folder that contains a `shots/` directory, wit
 | `perf.txt`, `names.txt` | `--map ... --warmup 36000 --autoplay` | frame time (`[perf]` lines), name labels |
 | `genlong.py` | writes a long game script: `python3 genlong.py long.txt` | economy, military, attack |
 
+Test hooks of the game screen: `game seafaring` places a harbor with wares and a ship next to it (ship and expedition
+sheets without a long game, e.g. on `DATA/MAPS/MISS203.WLD`), `game gameover win|lose` shows the end of game sheet.
+With `WEILER_AUDIO_WAV=<file.wav>` the test mode writes the audio mix (music, effects, interface sounds) into a WAV
+file instead of playing it.
+
 Failures are printed as `[script] FAIL`, the exit code is 4 then. Commands are listed in `src/app/TestScript.h`.
