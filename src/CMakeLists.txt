@@ -30,3 +30,19 @@ target_include_directories(weiler PRIVATE app)
 target_link_libraries(weiler PRIVATE weiler_engine SDL3::SDL3 PkgConfig::FREETYPE PkgConfig::HARFBUZZ PkgConfig::GLES
     Boost::program_options)
 target_compile_definitions(weiler PRIVATE WEILER_FONT_DIR="${PROJECT_SOURCE_DIR}/data/fonts")
+
+# German texts of the core (post messages, mission texts) from the RTTR translation
+find_program(MSGFMT_EXECUTABLE msgfmt)
+if(MSGFMT_EXECUTABLE)
+    set(WEILER_LANG_DIR ${CMAKE_CURRENT_BINARY_DIR}/languages)
+    set(PO_FILE ${PROJECT_SOURCE_DIR}/third_party/rttr/data/RTTR/languages/rttr-de.po)
+    add_custom_command(OUTPUT ${WEILER_LANG_DIR}/rttr-de.mo
+                       COMMAND ${CMAKE_COMMAND} -E make_directory ${WEILER_LANG_DIR}
+                       COMMAND ${MSGFMT_EXECUTABLE} -o ${WEILER_LANG_DIR}/rttr-de.mo ${PO_FILE}
+                       DEPENDS ${PO_FILE})
+    add_custom_target(weiler_languages ALL DEPENDS ${WEILER_LANG_DIR}/rttr-de.mo)
+    add_dependencies(weiler weiler_languages)
+    target_compile_definitions(weiler PRIVATE WEILER_LANG_DIR="${WEILER_LANG_DIR}")
+else()
+    message(WARNING "msgfmt (gettext) not found: messages of the core stay English")
+endif()

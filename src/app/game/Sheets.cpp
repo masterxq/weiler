@@ -206,8 +206,6 @@ void Hud::Impl::sheetGameMenu(const Rect2& r)
     fit(r, g.area.y + static_cast<float>((g.n + 1) / 2) * (g.h + g.gap));
 }
 
-std::vector<BuildingType> fittingBuildings(const Hud::Impl& h, MapPoint pt);
-
 void Hud::Impl::sheetBuild(const Rect2& r)
 {
     const Rect2 c = sheetHeader(r, "Bauen", Icon::Build);
@@ -246,10 +244,29 @@ void Hud::Impl::sheetBuild(const Rect2& r)
             default: return 3;
         }
     };
-    const auto all = fittingBuildings(*this, sheetPt);
+    // Fixed order: by category, then roughly by the order of the production chains
+    static const BuildingType order[] = {
+      BuildingType::Woodcutter,  BuildingType::Forester,      BuildingType::Quarry,       BuildingType::Sawmill,
+      BuildingType::CoalMine,    BuildingType::IronMine,      BuildingType::GoldMine,     BuildingType::GraniteMine,
+      BuildingType::Charburner,  BuildingType::Fishery,       BuildingType::Hunter,       BuildingType::Well,
+      BuildingType::Farm,        BuildingType::Mill,          BuildingType::Bakery,       BuildingType::PigFarm,
+      BuildingType::Slaughterhouse, BuildingType::Brewery,    BuildingType::Vineyard,     BuildingType::Winery,
+      BuildingType::Ironsmelter, BuildingType::Armory,        BuildingType::Metalworks,   BuildingType::Mint,
+      BuildingType::DonkeyBreeder, BuildingType::Storehouse,  BuildingType::Shipyard,     BuildingType::HarborBuilding,
+      BuildingType::Skinner,     BuildingType::Tannery,       BuildingType::LeatherWorks, BuildingType::Temple,
+      BuildingType::Barracks,    BuildingType::Guardhouse,    BuildingType::Watchtower,   BuildingType::Fortress,
+      BuildingType::LookoutTower, BuildingType::Catapult};
+    auto rank = [](BuildingType bt) {
+        const auto* it = std::find(std::begin(order), std::end(order), bt);
+        return static_cast<int>(it - std::begin(order));
+    };
+    auto all = fittingBuildings(*this, sheetPt);
+    std::stable_sort(all.begin(), all.end(), [&](BuildingType a, BuildingType b) {
+        return std::make_pair(category(a), rank(a)) < std::make_pair(category(b), rank(b));
+    });
     const Rect2 view{c.x, c.y + app.dp(50), c.w, c.bottom() - c.y - app.dp(50)};
     float y0 = ui.beginScroll(id("build.scroll"), view);
-    const float cell = app.dp(96);
+    const float cell = app.dp(82);
     const int cols = std::max(1, static_cast<int>(view.w / cell));
     const float cw = view.w / static_cast<float>(cols);
     int n = 0;
@@ -258,25 +275,31 @@ void Hud::Impl::sheetBuild(const Rect2& r)
     {
         if(sheetTab != 0 && category(bt) != sheetTab)
             continue;
-        const Rect2 cr{view.x + static_cast<float>(n % cols) * cw, y0 + static_cast<float>(n / cols) * app.dp(110),
-                       cw, app.dp(104)};
+        const Rect2 cr{view.x + static_cast<float>(n % cols) * cw, y0 + static_cast<float>(n / cols) * app.dp(100),
+                       cw, app.dp(96)};
         ++n;
         if(ui.pressed(id("build", static_cast<uint64_t>(bt)), cr))
             app.batch().roundRect(cr.inset(app.dp(3)), app.dp(14), ui.theme.raised);
-        ui.sprite(LOADER.getNationIcon(nation, bt), {cr.x + app.dp(12), cr.y + app.dp(6), cr.w - app.dp(24), app.dp(62)});
-        ui.textWrapped(cr.x + app.dp(4), cr.y + app.dp(72), cr.w - app.dp(8), buildingName(bt), app.dp(12),
+        ui.sprite(LOADER.getNationIcon(nation, bt), {cr.x + app.dp(8), cr.y + app.dp(6), cr.w - app.dp(16), app.dp(56)});
+        ui.textWrapped(cr.x + app.dp(2), cr.y + app.dp(66), cr.w - app.dp(4), buildingName(bt), app.dp(11.5f),
                        ui.theme.text, gfx::Align::Center);
+        ui.tag(std::string("build:") + buildingName(bt), cr);
         if(ui.area(id("build", static_cast<uint64_t>(bt)), cr))
         {
             game.session().SetBuildingSite(sheetPt, bt);
             noteRecent(bt);
+            if(app.settings().getBool("build.autoconnect", true) && !tutorial)
+            {
+                pendingConnect = world().getNeighbour(sheetPt, Direction::SouthEast);
+                pendingConnectTime = app.time();
+            }
             if(tutorial)
                 tutorial->onBuild(bt);
             closeSheet();
             break;
         }
     }
-    ui.endScroll(static_cast<float>((n + cols - 1) / cols) * app.dp(110));
+    ui.endScroll(static_cast<float>((n + cols - 1) / cols) * app.dp(100));
 }
 
 void Hud::Impl::sheetBuilding(const Rect2& r)
@@ -917,6 +940,10 @@ void Hud::Impl::sheetSettings(const Rect2& r)
         st.setBool("sound.birds", birds);
     }
     y += app.dp(56);
+    bool autoRoad = st.getBool("build.autoconnect", true);
+    if(ui.toggle(id("set.autoroad"), {c.x, y, c.w, app.dp(48)}, autoRoad, "Neue Gebäude anschließen"))
+        st.setBool("build.autoconnect", autoRoad);
+    y += app.dp(56);
     bool fps = st.getBool("show.fps");
     if(ui.toggle(id("set.fps"), {c.x, y, c.w, app.dp(48)}, fps, "Bildrate anzeigen"))
         st.setBool("show.fps", fps);
@@ -962,7 +989,7 @@ void Hud::Impl::sheetAttack(const Rect2& r)
     if(ui.button(id("atk.go"), {c.x, y, c.w, app.dp(56)}, "Angreifen", Icon::Sword, Style::Danger))
     {
         game.session().Attack(sheetPt, attackSoldiers, attackStrong);
-        toast(std::to_string(attackSoldiers) + " Soldaten greifen an");
+        toast(attackSoldiers == 1 ? "1 Soldat greift an" : std::to_string(attackSoldiers) + " Soldaten greifen an");
         closeSheet();
     }
     fit(r, y + app.dp(56));
@@ -982,8 +1009,10 @@ void Hud::Impl::sheetMission(const Rect2& r)
 void Hud::Impl::sheetGameOver(const Rect2& r)
 {
     const Rect2 c = sheetHeader(r, "Spielende", Icon::Trophy);
-    ui.textWrapped(c.x, c.y + app.dp(10), c.w, gameOverText, app.dp(20), ui.theme.text);
-    Grid g{{c.x, c.bottom() - app.dp(124), c.w, app.dp(124)}, 1, app.dp(54), app.dp(12)};
+    const float th = ui.textWrapped(c.x, c.y + app.dp(10), c.w, gameOverText, app.dp(20), ui.theme.text);
+    const float gy = c.y + app.dp(10) + th + app.dp(24);
+    Grid g{{c.x, gy, c.w, app.dp(124)}, 1, app.dp(54), app.dp(12)};
+    fit(r, gy + app.dp(120));
     if(ui.button(id("go.cont"), g.next(), "Weiterspielen", Icon::Play))
         closeSheet();
     if(ui.button(id("go.menu"), g.next(), "Hauptmenü", Icon::Exit, Style::Primary))

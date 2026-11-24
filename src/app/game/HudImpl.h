@@ -66,6 +66,7 @@ struct RingItem
         DestroyFlag,
         DestroyRoad,
         UpgradeRoad,
+        Connect,
         More
     } kind;
     BuildingType bt = BuildingType::Headquarters;
@@ -182,6 +183,11 @@ struct Hud::Impl
     void openRingAt(MapPoint pt);
     void activateRingItem(const RingItem& item);
     bool startRoad(MapPoint flag, bool water);
+    /// Build the shortest road from an own flag to the nearest flag of the road network; false if none found
+    bool autoConnect(MapPoint flag);
+    /// Flag waiting for its building site command (auto connect once it exists)
+    MapPoint pendingConnect = MapPoint::invalid();
+    double pendingConnectTime = 0;
     bool extendRoadTo(MapPoint pt);
     void truncateRoadAt(MapPoint pt);
     void buildRoad();
@@ -218,5 +224,8 @@ struct Hud::Impl
     /// Title row with close button; returns the remaining content rect
     ui::Rect2 sheetHeader(const ui::Rect2& r, const std::string& title, ui::Icon icon = ui::Icon::None);
 };
+
+/// Buildings that the local player can place at pt
+std::vector<BuildingType> fittingBuildings(const Hud::Impl& h, MapPoint pt);
 
 } // namespace weiler

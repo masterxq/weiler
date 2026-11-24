@@ -38,7 +38,7 @@ private:
     /// Resolve a symbolic point; false if it does not exist (yet)
     bool resolve(const std::string& spec, float& x, float& y) const;
     /// Replace symbolic points by "x y"; false on failure
-    bool expand(std::vector<std::string>& args) const;
+    bool expand(std::vector<std::string>& args);
     void finger(Uint32 type, Uint64 fingerId, float x, float y, int delayFrames);
     void schedule(int delayFrames, const SDL_Event& ev);
     bool execute(const std::string& line);
@@ -51,7 +51,9 @@ private:
     std::string pendingShot_;
     int exitCode_ = 0;
     int frame_ = 0;
-    std::string waitFor_;
+    void failShot();
+    std::string waitFor_, failDir_;
+    int failCount_ = 0;
     int waitForFrames_ = 0;
 };
 

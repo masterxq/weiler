@@ -5,3 +5,4 @@ external/libendian      e8a66d90961487cc30d1885d8ead345e14bbd733
 external/libsiedler2    62d848dfcfc9d6be715953377b838ac24f995106
 external/libutil        cfde181c3ec73782cfc8f7c510e721913fb81fae
 external/mygettext      e7ccc955cfa7246da487232d81047dc2dea7f1a6
+external/languages       e6903e5f1046f7ad16a62247df98a5421d1b77c8  (rttr-de.po only, as data/RTTR/languages)

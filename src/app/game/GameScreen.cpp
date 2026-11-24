@@ -8,9 +8,13 @@
 #include "Game.h"
 #include "GamePlayer.h"
 #include "Hud.h"
+#include "postSystem/PostManager.h"
 #include "addons/const_addons.h"
 #include "gameData/MapConsts.h"
+#include "gameData/TerrainDesc.h"
+#include "gameData/WorldDescription.h"
 #include <iostream>
+#include <map>
 #include "gameTypes/BuildingQuality.h"
 #include "gameData/BuildingProperties.h"
 #include "buildings/nobBaseWarehouse.h"
@@ -57,6 +61,9 @@ GameScreen::GameScreen(App& app, std::unique_ptr<Session> session)
         throw std::runtime_error("Could not load the graphics of the game");
     GameWorld& world = session_->world();
     gwv_ = std::make_unique<GameWorldViewer>(session_->getPlayerId(), world);
+    // Post messages of the local player (notifications, missions)
+    if(!world.getPostMgr().getPostBox(session_->getPlayerId()))
+        world.getPostMgr().addPostBox(session_->getPlayerId());
     cheats_ = std::make_unique<Cheats>(world, *session_);
     session_->setGameInterface(this);
     view_.cam.screenW = app.width();
@@ -410,8 +417,57 @@ bool GameScreen::testCommand(const std::string& cmd, const std::vector<std::stri
             if(arg(0) == n.first)
                 want = n.second;
         }
-        const MapPoint from = arg(1) == "found" && testFound_.isValid() ? testFound_ : me.getHQPos();
-        const unsigned minDist = arg(2).empty() ? 2u : static_cast<unsigned>(std::stoul(arg(2)));
+        // Options: from=hq|found|enemy min=<n> mil near=tree|granite|water
+        std::map<std::string, std::string> opt;
+        for(size_t i = 1; i < args.size(); ++i)
+        {
+            const auto eq = args[i].find('=');
+            opt[args[i].substr(0, eq)] = eq == std::string::npos ? "1" : args[i].substr(eq + 1);
+        }
+        MapPoint from = opt["from"] == "found" && testFound_.isValid() ? testFound_ : me.getHQPos();
+        const bool towardEnemy = opt["from"] == "enemy";
+        if(towardEnemy)
+        {
+            // Nearest enemy warehouse: the node closest to it is searched
+            unsigned best = 100000;
+            for(unsigned p = 0; p < world.getNumPlayers(); ++p)
+            {
+                if(p == meId || world.getPlayer(p).isDefeated())
+                    continue;
+                for(const auto* wh : world.getPlayer(p).getBuildingRegister().getStorehouses())
+                {
+                    const unsigned d = world.calcDistance(me.getHQPos(), wh->getPos());
+                    if(d < best)
+                    {
+                        best = d;
+                        from = wh->getPos();
+                    }
+                }
+            }
+        }
+        const unsigned minDist = opt["min"].empty() ? 2u : static_cast<unsigned>(std::stoul(opt["min"]));
+        const bool needMil = !opt["mil"].empty();
+        const std::string near = opt["near"];
+        auto resourcesNear = [&](MapPoint pt) {
+            unsigned n = 0;
+            for(const MapPoint p : world.getPointsInRadius(pt, 4))
+            {
+                const noBase* o = world.getNO(p);
+                if(near == "tree" && o && o->getType() == NodalObjectType::Tree)
+                    ++n;
+                else if(near == "granite" && o && o->getType() == NodalObjectType::Granite)
+                    n += 2;
+                else if(near == "water" && world.isWaterPoint(p))
+                    ++n;
+                else if(near == "mountain")
+                {
+                    const auto& desc = world.getDescription();
+                    if(desc.get(world.getNode(p).t1).kind == TerrainKind::Mountain)
+                        ++n;
+                }
+            }
+            return n;
+        };
         MapPoint best = MapPoint::invalid();
         unsigned bestDist = 1000;
         for(unsigned yy = 0; yy < world.getHeight(); ++yy)
@@ -423,7 +479,11 @@ bool GameScreen::testCommand(const std::string& cmd, const std::vector<std::stri
                 const bool ok = want == BuildingQuality::Mine ? bq == BuildingQuality::Mine :
                                 want == BuildingQuality::Flag ? bq != BuildingQuality::Nothing :
                                                                 (bq != BuildingQuality::Mine && canUseBq(bq, want));
-                if(!ok || gwv_->getVisibility(pt) != Visibility::Visible)
+                if(!ok || gwv_->getVisibility(pt) != Visibility::Visible || world.getNode(pt).owner != meId + 1)
+                    continue;
+                if(needMil && world.isMilitaryBuildingNearNode(pt, static_cast<unsigned char>(meId)))
+                    continue;
+                if(!near.empty() && resourcesNear(pt) < 4)
                     continue;
                 const unsigned d = world.calcDistance(from, pt);
                 if(d >= minDist && d < bestDist)

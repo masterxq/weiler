@@ -10,8 +10,10 @@
 #include "ViewState.h"
 #include "ui/Ui.h"
 #include "s25util/Log.h"
+#include "mygettext/mygettext.h"
 #include <boost/filesystem.hpp>
 #include <chrono>
+#include <clocale>
 #include <iostream>
 #include <cmath>
 #include <stdexcept>
@@ -111,6 +113,13 @@ void App::updateSize()
 
 int App::run()
 {
+#ifdef WEILER_LANG_DIR
+    // Texts of the core (post messages, missions) in German
+    mygettext::setlocale(LC_ALL, "de");
+    mygettext::bind_textdomain_codeset("rttr", "UTF-8");
+    mygettext::bindtextdomain("rttr", WEILER_LANG_DIR);
+    mygettext::textdomain("rttr");
+#endif
     if(!initVideo())
         return 1;
     batch_.init();

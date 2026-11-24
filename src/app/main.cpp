@@ -14,6 +14,7 @@ std::string gQuickMap;
 unsigned gQuickAIs = 2;
 unsigned gQuickSeed = 1;
 unsigned gQuickWarmupGF = 0;
+std::string gQuickLevel = "medium";
 bool gQuickAutoplay = false;
 std::string gQuickLoad;
 } // namespace weiler
@@ -33,6 +34,7 @@ int main(int argc, char** argv)
       "seed", po::value(&weiler::gQuickSeed), "Random seed for --map")(
       "warmup", po::value(&weiler::gQuickWarmupGF), "Simulate this many game frames before showing --map")(
       "load", po::value(&weiler::gQuickLoad), "Load a savegame directly")(
+      "ai-level", po::value(&weiler::gQuickLevel), "AI strength for --map: easy, medium or hard")(
       "autoplay", po::bool_switch(&weiler::gQuickAutoplay), "Let an AI play for the local player during --warmup");
     po::variables_map vm;
     try

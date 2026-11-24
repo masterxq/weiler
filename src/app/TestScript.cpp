@@ -48,6 +48,14 @@ float TestScript::coord(const std::string& s, bool isY) const
     return std::stof(s);
 }
 
+void TestScript::failShot()
+{
+    if(failDir_.empty())
+        return;
+    pendingShot_ = failDir_ + "/fail_" + std::to_string(++failCount_) + ".png";
+    std::cerr << "[script] fail screenshot " << pendingShot_ << std::endl;
+}
+
 bool TestScript::resolve(const std::string& spec, float& x, float& y) const
 {
     if(spec.rfind("ui:", 0) == 0)
@@ -75,7 +83,7 @@ bool TestScript::resolve(const std::string& spec, float& x, float& y) const
     return app_.screen() && app_.screen()->testPoint(spec, x, y);
 }
 
-bool TestScript::expand(std::vector<std::string>& args) const
+bool TestScript::expand(std::vector<std::string>& args)
 {
     std::vector<std::string> out;
     for(const auto& a : args)
@@ -88,6 +96,7 @@ bool TestScript::expand(std::vector<std::string>& args) const
         float x, y;
         if(!resolve(a, x, y))
         {
+            failShot();
             std::cerr << "[script] FAIL: point not found: " << a << std::endl;
             return false;
         }
@@ -133,7 +142,29 @@ bool TestScript::execute(const std::string& line)
     }
     try
     {
-        if(cmd == "waitfor")
+        if(cmd == "failshots")
+            failDir_ = a.at(0);
+        else if(cmd == "tapfirst" || cmd == "tapopt")
+        {
+            // Tap the first symbolic point that exists (tapopt: do nothing if none exists)
+            for(const auto& spec : a)
+            {
+                float x, y;
+                if(resolve(spec, x, y))
+                {
+                    finger(SDL_EVENT_FINGER_DOWN, 1, x, y, 0);
+                    finger(SDL_EVENT_FINGER_UP, 1, x, y, 3);
+                    waitFrames_ = 5;
+                    return true;
+                }
+            }
+            if(cmd == "tapfirst")
+            {
+                failShot();
+                std::cerr << "[script] FAIL: none found: " << line << std::endl;
+                exitCode_ = 4;
+            }
+        } else if(cmd == "waitfor")
         {
             waitFor_ = a.at(0);
             waitForFrames_ = static_cast<int>(num(1, 600));
@@ -152,6 +183,7 @@ bool TestScript::execute(const std::string& line)
             if(a.empty() || !app_.screen()
                || !app_.screen()->testCommand(a[0], std::vector<std::string>(a.begin() + 1, a.end())))
             {
+                failShot();
                 std::cerr << "[script] FAIL: " << line << std::endl;
                 exitCode_ = 4;
             }
@@ -304,6 +336,7 @@ bool TestScript::step()
         {
             if(--waitForFrames_ > 0)
                 return true;
+            failShot();
             std::cerr << "[script] FAIL: timeout waiting for " << waitFor_ << std::endl;
             exitCode_ = 4;
         }

@@ -163,7 +163,12 @@ void Hud::Impl::closeSheet()
 
 void Hud::Impl::toast(const std::string& text, bool hasPos, MapPoint pos)
 {
+    // The same message again (e.g. repeated attacks) replaces the older one instead of stacking up
+    toasts.erase(std::remove_if(toasts.begin(), toasts.end(), [&](const Toast& t) { return t.text == text; }),
+                 toasts.end());
     toasts.push_back({text, app.time(), hasPos, pos});
+    if(app.testMode())
+        std::cout << "[toast] " << text << std::endl;
     while(toasts.size() > 3)
         toasts.pop_front();
 }
@@ -255,7 +260,7 @@ void Hud::Impl::onTap(float x, float y)
         const auto* mil = dynamic_cast<const nobBaseMilitary*>(obj);
         if(mil && mil->isAttackable(me))
         {
-            attackSoldiers = std::max(1u, gwv.getNumSoldiersForAttack(pt) / 2);
+            attackSoldiers = std::max(1u, gwv.getNumSoldiersForAttack(pt));
             openSheet(SheetKind::Attack, pt);
             return;
         }
@@ -316,6 +321,7 @@ void Hud::Impl::openRingAt(MapPoint pt)
         if(static_cast<const noFlag*>(obj)->getPlayer() != me)
             return;
         ring.items.push_back({RingItem::Kind::Road, BuildingType::Headquarters, "Straße"});
+        ring.items.push_back({RingItem::Kind::Connect, BuildingType::Headquarters, "Verbinden"});
         bool nearWater = false;
         for(const auto dir : helpers::EnumRange<Direction>{})
             nearWater |= world().isWaterPoint(world().getNeighbour(pt, dir));
@@ -399,6 +405,11 @@ void Hud::Impl::activateRingItem(const RingItem& item)
         case RingItem::Kind::Building:
             s.SetBuildingSite(pt, item.bt);
             noteRecent(item.bt);
+            if(app.settings().getBool("build.autoconnect", true) && !tutorial)
+            {
+                pendingConnect = world().getNeighbour(pt, Direction::SouthEast);
+                pendingConnectTime = app.time();
+            }
             if(tutorial)
                 tutorial->onBuild(item.bt);
             break;
@@ -408,6 +419,10 @@ void Hud::Impl::activateRingItem(const RingItem& item)
             toast("Ziehe die Straße oder tippe die Wegpunkte an");
             break;
         case RingItem::Kind::WaterRoad: startRoad(pt, true); break;
+        case RingItem::Kind::Connect:
+            if(!autoConnect(pt))
+                toast("Keine Verbindung gefunden. Ziehe die Straße selbst.");
+            break;
         case RingItem::Kind::Geologist: s.CallSpecialist(pt, Job::Geologist); break;
         case RingItem::Kind::Scout: s.CallSpecialist(pt, Job::Scout); break;
         case RingItem::Kind::DestroyFlag:
@@ -518,6 +533,70 @@ void Hud::Impl::buildRoad()
         tutorial->onRoadBuilt();
 }
 
+bool Hud::Impl::autoConnect(MapPoint flag)
+{
+    const noBase* obj = world().getNO(flag);
+    const unsigned me = game.localPlayer();
+    if(!obj || obj->getType() != NodalObjectType::Flag || static_cast<const noFlag*>(obj)->getPlayer() != me)
+        return false;
+    auto& gwv = game.viewer();
+    // Candidates: own flags with a road or a warehouse, nearest first
+    struct Cand
+    {
+        unsigned dist;
+        MapPoint pt;
+    };
+    std::vector<Cand> cands;
+    const int R = 20;
+    for(int dy = -R; dy <= R; ++dy)
+    {
+        for(int dx = -R; dx <= R; ++dx)
+        {
+            const MapPoint pt = world().makeMapPoint(Position(flag.x + dx, flag.y + dy));
+            if(pt == flag)
+                continue;
+            const auto* f = world().getSpecObj<noFlag>(pt);
+            if(!f || f->getPlayer() != me)
+                continue;
+            bool connected = false;
+            for(const auto dir : helpers::EnumRange<Direction>{})
+            {
+                if(dir != Direction::NorthWest && f->getRoute(dir))
+                    connected = true;
+            }
+            const auto* bld = world().getSpecObj<noBaseBuilding>(world().getNeighbour(pt, Direction::NorthWest));
+            if(bld && BuildingProperties::isWareHouse(bld->getBuildingType()))
+                connected = true;
+            if(connected)
+                cands.push_back({world().calcDistance(flag, pt), pt});
+        }
+    }
+    std::sort(cands.begin(), cands.end(), [](const Cand& a, const Cand& b) { return a.dist < b.dist; });
+    std::vector<Direction> best;
+    for(const Cand& c : cands)
+    {
+        if(!best.empty() && c.dist >= best.size())
+            break;
+        const unsigned maxLen = best.empty() ? c.dist * 2 + 6 : static_cast<unsigned>(best.size()) - 1;
+        std::vector<Direction> path = findPathForRoad(gwv, flag, c.pt, false, maxLen);
+        if(!path.empty() && (best.empty() || path.size() < best.size()))
+            best = std::move(path);
+    }
+    if(best.empty())
+        return false;
+    startRoad(flag, false);
+    for(const auto dir : best)
+    {
+        gwv.setVisiblePointRoad(road.point, dir, PointRoad::Normal);
+        gwv.recalcBQForRoad(road.point);
+        road.point = world().getNeighbour(road.point, dir);
+    }
+    gwv.recalcBQForRoad(road.point);
+    road.route = best;
+    buildRoad();
+    return true;
+}
+
 void Hud::Impl::cancelRoad()
 {
     if(!road.active)
@@ -621,6 +700,7 @@ void Hud::Impl::drawRing()
             {
                 case RingItem::Kind::Flag: ic = Icon::Flag; break;
                 case RingItem::Kind::Road: ic = Icon::Road; break;
+                case RingItem::Kind::Connect: ic = Icon::Target; break;
                 case RingItem::Kind::WaterRoad: ic = Icon::Ship; break;
                 case RingItem::Kind::Geologist: ic = Icon::Pick; break;
                 case RingItem::Kind::Scout: ic = Icon::Eye; break;
@@ -903,6 +983,21 @@ void Hud::update(double dt)
         }
     }
     d->checkMessages();
+    if(d->pendingConnect.isValid())
+    {
+        const noBase* obj = d->world().getNO(d->pendingConnect);
+        if(obj && obj->getType() == NodalObjectType::Flag)
+        {
+            const auto* f = static_cast<const noFlag*>(obj);
+            bool hasRoad = false;
+            for(const auto dir : helpers::EnumRange<Direction>{})
+                hasRoad |= dir != Direction::NorthWest && f->getRoute(dir);
+            if(!hasRoad && !d->road.active && !d->autoConnect(d->pendingConnect))
+                d->toast("Keine Straßenverbindung gefunden. Ziehe sie von der Flagge aus.", true, d->pendingConnect);
+            d->pendingConnect = MapPoint::invalid();
+        } else if(d->app.time() - d->pendingConnectTime > 3)
+            d->pendingConnect = MapPoint::invalid();
+    }
     if(d->tutorial)
         d->tutorial->update();
     // Only draw node overlays when needed (saves time)
