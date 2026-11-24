@@ -23,6 +23,7 @@
 class GamePlayer;
 class GameWorldBase;
 class noBase;
+class PostBox;
 
 namespace weiler {
 
@@ -122,6 +123,8 @@ struct Hud::Impl
 
     // ---- Sheets (bottom sheet in portrait, side panel in landscape)
     SheetKind sheet = SheetKind::None;
+    /// Content height requested by the current sheet (portrait: the sheet shrinks to fit), -1 = not known yet
+    float fitReq = 0, fitH = -1;
     std::vector<SheetKind> sheetStack;
     MapPoint sheetPt;
     double sheetTime = 0;
@@ -145,7 +148,7 @@ struct Hud::Impl
         MapPoint pos;
     };
     std::deque<Toast> toasts;
-    unsigned seenMessages = 0;
+    PostBox* observedBox = nullptr;
     MapPoint lastMessagePos;
     bool hasLastMessagePos = false;
     unsigned jumpIndex = 0;
@@ -164,6 +167,8 @@ struct Hud::Impl
     float alpha() const;
     bool landscape() const { return !app.portrait(); }
     ui::Rect2 sheetRect() const;
+    /// Called by a sheet with the bottom of its content (sheets without call use the full height)
+    void fit(const ui::Rect2& r, float bottom) { fitReq = bottom - r.y + app.dp(18); }
     void openSheet(SheetKind k, MapPoint pt = MapPoint::invalid(), bool push = false);
     void closeSheet();
     void toast(const std::string& text, bool hasPos = false, MapPoint pos = MapPoint::invalid());

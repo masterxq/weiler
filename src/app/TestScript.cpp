@@ -4,8 +4,12 @@
 
 #include "TestScript.h"
 #include "App.h"
+#include "Screen.h"
+#include "ui/Ui.h"
 #include <SDL3/SDL.h>
+#include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -44,6 +48,56 @@ float TestScript::coord(const std::string& s, bool isY) const
     return std::stof(s);
 }
 
+bool TestScript::resolve(const std::string& spec, float& x, float& y) const
+{
+    if(spec.rfind("ui:", 0) == 0)
+    {
+        std::string label = spec.substr(3);
+        int nth = 0;
+        const auto hash = label.rfind('#');
+        if(hash != std::string::npos && hash + 1 < label.size())
+        {
+            nth = std::stoi(label.substr(hash + 1));
+            label.resize(hash);
+        }
+        for(char& c : label)
+        {
+            if(c == '_')
+                c = ' ';
+        }
+        gfx::Rect2 r;
+        if(!app_.ui().findTarget(label, r, nth))
+            return false;
+        x = r.x + r.w / 2;
+        y = r.y + r.h / 2;
+        return true;
+    }
+    return app_.screen() && app_.screen()->testPoint(spec, x, y);
+}
+
+bool TestScript::expand(std::vector<std::string>& args) const
+{
+    std::vector<std::string> out;
+    for(const auto& a : args)
+    {
+        if(a.find(':') == std::string::npos || a.back() == '%')
+        {
+            out.push_back(a);
+            continue;
+        }
+        float x, y;
+        if(!resolve(a, x, y))
+        {
+            std::cerr << "[script] FAIL: point not found: " << a << std::endl;
+            return false;
+        }
+        out.push_back(std::to_string(x));
+        out.push_back(std::to_string(y));
+    }
+    args = std::move(out);
+    return true;
+}
+
 void TestScript::schedule(int delayFrames, const SDL_Event& ev)
 {
     scheduled_.emplace_back(frame_ + delayFrames, ev);
@@ -71,9 +125,38 @@ bool TestScript::execute(const std::string& line)
     while(ss >> tok)
         a.push_back(tok);
     auto num = [&](size_t i, float def) { return i < a.size() ? std::stof(a[i]) : def; };
+    static const char* const pointCmds[] = {"tap", "longpress", "drag", "pinch", "twotap", "click", "wheel"};
+    if(std::find(std::begin(pointCmds), std::end(pointCmds), cmd) != std::end(pointCmds) && !expand(a))
+    {
+        exitCode_ = 4;
+        return true;
+    }
     try
     {
-        if(cmd == "wait")
+        if(cmd == "waitfor")
+        {
+            waitFor_ = a.at(0);
+            waitForFrames_ = static_cast<int>(num(1, 600));
+        } else if(cmd == "perf")
+        {
+            app_.startPerf(static_cast<int>(num(0, 120)));
+            waitFrames_ = static_cast<int>(num(0, 120)) + 1;
+        } else if(cmd == "labels")
+        {
+            std::cout << "[script] labels:";
+            for(const auto& l : app_.ui().targetLabels())
+                std::cout << " [" << l << "]";
+            std::cout << std::endl;
+        } else if(cmd == "game")
+        {
+            if(a.empty() || !app_.screen()
+               || !app_.screen()->testCommand(a[0], std::vector<std::string>(a.begin() + 1, a.end())))
+            {
+                std::cerr << "[script] FAIL: " << line << std::endl;
+                exitCode_ = 4;
+            }
+            waitFrames_ = 1;
+        } else if(cmd == "wait")
             waitFrames_ = static_cast<int>(num(0, 1));
         else if(cmd == "sec")
             waitFrames_ = static_cast<int>(num(0, 1) * 60);
@@ -213,6 +296,18 @@ bool TestScript::step()
     {
         --waitFrames_;
         return true;
+    }
+    if(!waitFor_.empty())
+    {
+        float x, y;
+        if(!resolve(waitFor_, x, y))
+        {
+            if(--waitForFrames_ > 0)
+                return true;
+            std::cerr << "[script] FAIL: timeout waiting for " << waitFor_ << std::endl;
+            exitCode_ = 4;
+        }
+        waitFor_.clear();
     }
     while(next_ < lines_.size() && waitFrames_ == 0)
     {

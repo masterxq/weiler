@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "App.h"
+#include "Settings.h"
 #include "Session.h"
 #include "game/GameScreen.h"
 #include "menu/Menus.h"
@@ -29,7 +30,7 @@ NewGameSetup makeSkirmishSetup(const bfs::path& map, unsigned numAIs, unsigned s
     setup.seed = seed;
     PlayerInfo human;
     human.ps = PlayerState::Occupied;
-    human.name = "Player";
+    human.name = "Du";
     human.nation = nation;
     human.color = PLAYER_COLORS[0];
     human.team = Team::None;
@@ -39,7 +40,7 @@ NewGameSetup makeSkirmishSetup(const bfs::path& map, unsigned numAIs, unsigned s
         PlayerInfo pi;
         pi.ps = PlayerState::AI;
         pi.aiInfo = AI::Info(AI::Type::Default, level);
-        pi.name = "AI " + std::to_string(i + 1);
+        pi.name = "KI " + std::to_string(i + 1);
         pi.nation = Nation((i + 1) % 4);
         pi.color = PLAYER_COLORS[(i + 1) % PLAYER_COLORS.size()];
         pi.team = Team::None;
@@ -79,6 +80,9 @@ std::unique_ptr<Screen> createStartScreen(App& app)
     {
         std::cerr << "Could not start game: " << e.what() << std::endl;
     }
+    // First start: the short introduction on a practice map
+    if(gQuickMap.empty() && gQuickLoad.empty() && !app.settings().getBool("tutorial.done"))
+        startTutorialGame(app, true);
     return createMainMenu(app);
 }
 

@@ -31,6 +31,8 @@ public:
     void onKey(SDL_Keycode key, bool down) override;
     bool onBack() override;
     void onSuspend() override;
+    bool testPoint(const std::string& spec, float& x, float& y) override;
+    bool testCommand(const std::string& cmd, const std::vector<std::string>& args) override;
 
     // Access for the HUD
     Session& session() { return *session_; }
@@ -46,7 +48,7 @@ public:
     bool quickSave();
     bool quickLoad();
     bool saveTo(const std::string& path);
-    void startTutorial();
+    void startTutorial(bool firstStart = false);
 
     // GameInterface
     void GI_PlayerDefeated(unsigned playerId) override;
@@ -75,6 +77,7 @@ private:
     unsigned speedFactor_ = 1;
     bool paused_ = false;
     double lastAutosave_ = 0;
+    MapPoint testFound_ = MapPoint::invalid();
     friend class Hud;
 };
 

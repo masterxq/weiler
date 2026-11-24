@@ -58,6 +58,9 @@ enum class Icon
     Count
 };
 
+/// Name of the icon (test scripts)
+const char* iconName(Icon icon);
+
 class IconAtlas
 {
 public:

@@ -82,7 +82,7 @@ public:
     App& app() { return app_; }
 
     // Drawing
-    void block(const Rect2& r) { blocks_.push_back(r); }
+    void block(const Rect2& r, Id owner = 0) { blocks_.push_back({r, owner}); }
     void panel(const Rect2& r, float radius = -1, Color c = {0, 0, 0, -1});
     void text(float x, float y, const std::string& s, float size, Color c, gfx::Align align = gfx::Align::Left,
               bool bold = false);
@@ -115,12 +115,26 @@ public:
 
     /// Time in seconds (animations)
     double time() const;
+
+    /// Test mode: named touch targets of the last frame (buttons by label, icon buttons as "icon:Name")
+    void tag(const std::string& label, const Rect2& r);
+    /// Finds the n-th target whose label equals (or, with a trailing '*', starts with) the pattern
+    bool findTarget(const std::string& pattern, Rect2& r, int nth = 0) const;
+    std::vector<std::string> targetLabels() const;
     /// Ease a 0..1 value
     static float ease(float t) { return 1.f - (1.f - t) * (1.f - t) * (1.f - t); }
 
 private:
     App& app_;
-    std::vector<Rect2> blocks_, lastBlocks_;
+    struct Block
+    {
+        Rect2 r;
+        Id owner;
+    };
+    std::vector<Block> blocks_, lastBlocks_;
+    /// True if no other element covered the press position in the last frame
+    bool onTop(Id i) const;
+    std::vector<std::pair<std::string, Rect2>> targets_, lastTargets_;
     bool captured_ = false, dragging_ = false, released_ = false, longFired_ = false;
     float pressX_ = 0, pressY_ = 0, curX_ = 0, curY_ = 0, relX_ = 0, relY_ = 0;
     double pressTime_ = 0;

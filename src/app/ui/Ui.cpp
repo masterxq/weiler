@@ -29,12 +29,22 @@ double Ui::time() const
 
 bool Ui::hit(float x, float y) const
 {
-    for(const Rect2& r : lastBlocks_)
+    for(const Block& b : lastBlocks_)
     {
-        if(r.contains(x, y))
+        if(b.r.contains(x, y))
             return true;
     }
     return false;
+}
+
+bool Ui::onTop(Id i) const
+{
+    for(auto it = lastBlocks_.rbegin(); it != lastBlocks_.rend(); ++it)
+    {
+        if(it->r.contains(pressX_, pressY_))
+            return it->owner == i;
+    }
+    return true;
 }
 
 bool Ui::pointer(const PointerEvent& ev)
@@ -87,11 +97,50 @@ bool Ui::wheel(float x, float y, float delta)
 void Ui::begin()
 {
     blocks_.clear();
+    targets_.clear();
+}
+
+void Ui::tag(const std::string& label, const Rect2& r)
+{
+    if(!app_.testMode() || label.empty())
+        return;
+    // Only the visible part inside a scroll view counts
+    if(!scrollStack_.empty())
+    {
+        const Rect2& v = scroll_[scrollStack_.back()].view;
+        if(r.y + r.h / 2 < v.y || r.y + r.h / 2 > v.bottom())
+            return;
+    }
+    targets_.emplace_back(label, r);
+}
+
+bool Ui::findTarget(const std::string& pattern, Rect2& r, int nth) const
+{
+    const bool prefix = !pattern.empty() && pattern.back() == '*';
+    const std::string p = prefix ? pattern.substr(0, pattern.size() - 1) : pattern;
+    for(const auto& t : lastTargets_)
+    {
+        if((prefix ? t.first.rfind(p, 0) == 0 : t.first == p) && nth-- == 0)
+        {
+            r = t.second;
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<std::string> Ui::targetLabels() const
+{
+    std::vector<std::string> res;
+    for(const auto& t : lastTargets_)
+        res.push_back(t.first);
+    return res;
 }
 
 void Ui::end()
 {
     lastBlocks_ = blocks_;
+    lastTargets_.swap(targets_);
     released_ = false;
     dragDY_ = 0;
     wheelDelta_ = 0;
@@ -151,15 +200,19 @@ bool Ui::pressed(Id, const Rect2& r) const
 
 bool Ui::area(Id i, const Rect2& r)
 {
-    block(r);
-    (void)i;
     // Inside a scroll view only the visible part is clickable
     if(!scrollStack_.empty())
     {
         const Rect2& v = scroll_[scrollStack_.back()].view;
+        const float y0 = std::max(r.y, v.y), y1 = std::min(r.bottom(), v.bottom());
+        if(y1 > y0)
+            block({r.x, y0, r.w, y1 - y0}, i);
         if(!v.contains(pressX_, pressY_))
             return false;
-    }
+    } else
+        block(r, i);
+    if(released_ && !onTop(i))
+        return false;
     return released_ && !dragging_ && r.contains(pressX_, pressY_) && r.contains(relX_, relY_);
 }
 
@@ -207,6 +260,7 @@ bool Ui::button(Id i, const Rect2& r, const std::string& label, Icon ic, Style s
         text(x0 + is + dp(8), r.y + (r.h - fs * 1.3f) / 2, label, fs, fg, gfx::Align::Left, true);
     } else
         text(r.x + r.w / 2, r.y + (r.h - fs * 1.3f) / 2, label, fs, fg, gfx::Align::Center, true);
+    tag(label.empty() ? std::string("icon:") + iconName(ic) : label, r);
     return enabled && area(i, r);
 }
 
@@ -235,6 +289,7 @@ bool Ui::iconButton(Id i, const Rect2& r, Icon ic, bool active, int badge, Style
         const std::string t = badge > 99 ? "99" : std::to_string(badge);
         text(bx, by - dp(7), t, dp(11), Color::rgb(0xFFFFFF), gfx::Align::Center, true);
     }
+    tag(std::string("icon:") + iconName(ic), r);
     return area(i, r);
 }
 
@@ -277,6 +332,7 @@ bool Ui::toggle(Id i, const Rect2& r, bool& value, const std::string& label)
     const Rect2 sw{r.right() - w, r.y + (r.h - h) / 2, w, h};
     b.roundRect(sw, h / 2, value ? theme.accent : Color::rgb(0xFFFFFF, 0.15f));
     b.circle(value ? sw.right() - h / 2 : sw.x + h / 2, sw.y + h / 2, h / 2 - dp(3), theme.text);
+    tag(label, r);
     if(area(i, r))
     {
         value = !value;
@@ -292,15 +348,23 @@ bool Ui::segmented(Id i, const Rect2& r, const std::vector<std::string>& options
     b.roundRect(r, radius, Color::rgb(0xFFFFFF, 0.06f));
     const float w = r.w / static_cast<float>(std::max<size_t>(1, options.size()));
     bool changed = false;
+    // One font size for all cells, small enough for the widest label
+    float fs = std::min(dp(15), r.h * 0.38f);
+    for(const auto& o : options)
+    {
+        const float tw = textWidth(o, fs, true);
+        if(tw > w - dp(10))
+            fs *= (w - dp(10)) / tw;
+    }
     for(size_t k = 0; k < options.size(); ++k)
     {
         const Rect2 cell{r.x + w * static_cast<float>(k), r.y, w, r.h};
         const bool sel = static_cast<int>(k) == selected;
         if(sel)
             b.roundRect(cell.inset(dp(3)), radius - dp(2), theme.accent);
-        const float fs = std::min(dp(15), r.h * 0.38f);
         text(cell.x + w / 2, r.y + (r.h - fs * 1.3f) / 2, options[k], fs, sel ? theme.accentText : theme.text,
              gfx::Align::Center, true);
+        tag(options[k], cell);
         if(area(i + k + 1, cell) && !sel)
         {
             selected = static_cast<int>(k);

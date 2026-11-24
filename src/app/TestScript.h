@@ -19,6 +19,9 @@ class App;
 ///   wait <frames> | sec <seconds> | tap x y | longpress x y | drag x0 y0 x1 y1 [frames] |
 ///   pinch cx cy d0 d1 [frames] | twotap x y | click x y [right] | wheel x y delta | key <name> |
 ///   text <string> | shot <file.png> | resize w h | log <text> | quit
+/// Extra commands: waitfor <point> [frames] | labels | game <screen command> [args]
+/// Instead of "x y" a symbolic point can be given: ui:<label>[#n] (button label, spaces as '_', trailing '*' for a
+/// prefix, icon buttons as ui:icon:Name) or a point the current screen knows (game: node:x,y, hq:dx,dy, ...).
 class TestScript
 {
 public:
@@ -32,6 +35,10 @@ public:
 
 private:
     float coord(const std::string& s, bool isY) const;
+    /// Resolve a symbolic point; false if it does not exist (yet)
+    bool resolve(const std::string& spec, float& x, float& y) const;
+    /// Replace symbolic points by "x y"; false on failure
+    bool expand(std::vector<std::string>& args) const;
     void finger(Uint32 type, Uint64 fingerId, float x, float y, int delayFrames);
     void schedule(int delayFrames, const SDL_Event& ev);
     bool execute(const std::string& line);
@@ -44,6 +51,8 @@ private:
     std::string pendingShot_;
     int exitCode_ = 0;
     int frame_ = 0;
+    std::string waitFor_;
+    int waitForFrames_ = 0;
 };
 
 } // namespace weiler

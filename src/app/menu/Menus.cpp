@@ -15,6 +15,7 @@
 #include "libsiedler2/ArchivItem_Map.h"
 #include "libsiedler2/ArchivItem_Map_Header.h"
 #include "libsiedler2/prototypen.h"
+#include "s25util/utf8.h"
 #include <boost/filesystem.hpp>
 #include <algorithm>
 #include <cmath>
@@ -145,7 +146,7 @@ std::vector<MapEntry> scanMaps(const DataPaths& paths)
             const auto& h = map->getHeader();
             MapEntry m;
             m.path = f;
-            m.name = h.getName();
+            m.name = s25util::ansiToUTF8(h.getName());
             m.w = h.getWidth();
             m.h = h.getHeight();
             m.players = h.getNumPlayers();
@@ -189,7 +190,7 @@ public:
             optR = {listR.right() + m, app_.dp(70), W - listR.right() - 2 * m, H - app_.dp(84)};
         } else
         {
-            listR = {m, app_.dp(70), W - 2 * m, (H - app_.dp(84)) * 0.42f};
+            listR = {m, app_.dp(70), W - 2 * m, (H - app_.dp(84)) * 0.38f};
             optR = {m, listR.bottom() + m, W - 2 * m, H - listR.bottom() - 2 * m};
         }
         // Map list
@@ -220,7 +221,11 @@ public:
         // Options
         ui_.panel(optR, app_.dp(20));
         const Rect2 c = optR.inset(app_.dp(14));
-        float oy = c.y;
+        // Options scroll when the screen is short (landscape phones), the start button stays visible
+        const Rect2 startR{c.x, c.bottom() - app_.dp(56), c.w, app_.dp(56)};
+        const Rect2 optView{c.x, c.y, c.w, startR.y - app_.dp(10) - c.y};
+        float oy = ui_.beginScroll(id("opts"), optView);
+        const float oy0 = oy;
         const int maxAIs = maps_.empty() ? 0 : static_cast<int>(maps_[selected_].players) - 1;
         ais_ = std::clamp(ais_, 0, std::max(0, maxAIs));
         const float rh = app_.dp(44);
@@ -240,7 +245,7 @@ public:
         ui_.segmented(id("opt.nation"), {c.x, oy + app_.dp(18), c.w, app_.dp(40)}, {"Römer", "Wikinger", "Nubier", "Japaner"},
                       nation_);
         oy += app_.dp(66);
-        const Rect2 startR{c.x, std::max(oy, c.bottom() - app_.dp(56)), c.w, app_.dp(56)};
+        ui_.endScroll(oy - oy0);
         if(ui_.button(id("opt.start"), startR, "Spiel starten", Icon::Play, Style::Primary, !maps_.empty()))
             start();
     }
@@ -405,18 +410,34 @@ public:
     void draw() override
     {
         drawBackground(app_);
-        title("Weiler", "Siedeln, bauen, handeln");
-        const float top = app_.portrait() ? static_cast<float>(app_.height()) * 0.36f : app_.dp(130);
-        const Rect2 col = column(top);
-        const float bh = app_.dp(58), gap = app_.dp(12);
+        const std::string autosave = savePath("autosave");
+        const bool canContinue = bfs::exists(autosave);
+        const float W = static_cast<float>(app_.width()), H = static_cast<float>(app_.height());
+        Rect2 col;
+        float bh = app_.dp(58), gap = app_.dp(12);
+        if(app_.portrait())
+        {
+            title("Weiler", "Siedeln, bauen, handeln");
+            col = column(H * 0.36f);
+        } else
+        {
+            // Title on the left, buttons on the right; buttons shrink on short screens
+            const float tx = W * 0.27f, ty = H / 2 - app_.dp(46);
+            ui_.text(tx, ty, "Weiler", app_.dp(46), ui_.theme.text, gfx::Align::Center, true);
+            ui_.text(tx, ty + app_.dp(62), "Siedeln, bauen, handeln", app_.dp(15), ui_.theme.textDim, gfx::Align::Center);
+            const int n = canContinue ? 6 : 5;
+            gap = app_.dp(10);
+            bh = std::min(bh, (H - app_.dp(40) - gap * static_cast<float>(n - 1)) / static_cast<float>(n));
+            const float w = std::min(W * 0.42f, app_.dp(420));
+            const float total = bh * static_cast<float>(n) + gap * static_cast<float>(n - 1);
+            col = {W * 0.73f - w / 2, (H - total) / 2 - app_.dp(8), w, total};
+        }
         float y = col.y;
         auto btn = [&](const char* key, const std::string& label, Icon ic, Style st = Style::Normal) {
             const bool r = ui_.button(id(key), {col.x, y, col.w, bh}, label, ic, st);
             y += bh + gap;
             return r;
         };
-        const std::string autosave = savePath("autosave");
-        const bool canContinue = bfs::exists(autosave);
         if(canContinue && btn("mm.cont", "Fortsetzen", Icon::Play, Style::Primary))
             startLoaded(app_, autosave);
         if(btn("mm.new", "Neues Spiel", Icon::Flag, canContinue ? Style::Normal : Style::Primary))
@@ -429,7 +450,7 @@ public:
             app_.setScreen(std::make_unique<SettingsScreen>(app_));
         if(btn("mm.quit", "Beenden", Icon::Exit))
             app_.quit();
-        ui_.text(static_cast<float>(app_.width()) / 2, static_cast<float>(app_.height()) - app_.dp(28),
+        ui_.text(app_.portrait() ? W / 2 : W * 0.27f, H - app_.dp(28),
                  "Benötigt die Daten der Gold Edition · GPL", app_.dp(11), ui_.theme.textDim.withAlpha(0.7f),
                  gfx::Align::Center);
     }
@@ -473,7 +494,7 @@ private:
 
 } // namespace
 
-void startTutorialGame(App& app)
+void startTutorialGame(App& app, bool firstStart)
 {
     // Small green map without opponents
     const auto maps = scanMaps(app.paths());
@@ -489,11 +510,11 @@ void startTutorialGame(App& app)
         return;
     NewGameSetup setup = makeSkirmishSetup(best->path, 0, 1, AI::Level::Easy, Nation::Romans);
     setup.title = best->name;
-    app.post([&app, setup] {
+    app.post([&app, setup, firstStart] {
         try
         {
             auto screen = std::make_unique<GameScreen>(app, Session::newGame(setup));
-            screen->startTutorial();
+            screen->startTutorial(firstStart);
             app.setScreen(std::move(screen));
         } catch(const std::exception& e)
         {

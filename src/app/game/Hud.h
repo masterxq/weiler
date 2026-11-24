@@ -34,7 +34,7 @@ public:
     void flagDestroyed(MapPoint pt);
     void startRoad(MapPoint start, bool water);
     void cancelRoad();
-    void startTutorial();
+    void startTutorial(bool firstStart = false);
     void showLuaMessage(const LuaMessage& msg);
 
     struct Impl;

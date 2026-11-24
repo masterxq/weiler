@@ -65,6 +65,10 @@ public:
     double time() const { return time_; }
     bool testMode() const { return testMode_; }
     float fps() const { return fps_; }
+    /// Average work time per frame in milliseconds (update, draw and GPU until the frame is done)
+    float frameMs() const { return frameMs_; }
+    /// Test scripts: measure the next frames (work time incl. glFinish) and print the result
+    void startPerf(int frames) { perfFrames_ = frames, perfLeft_ = frames, perfSum_ = perfMax_ = 0; }
 
     /// Replace the current screen at the end of the frame
     void setScreen(std::unique_ptr<Screen> screen);
@@ -72,6 +76,8 @@ public:
     /// Write a screenshot of the next presented frame
     bool saveScreenshot(const std::string& path);
     void startTextInput(bool on);
+
+    Screen* screen() { return screen_.get(); }
 
     /// Run a function on the main thread at the end of the frame
     void post(std::function<void()> fn) { posted_.push_back(std::move(fn)); }
@@ -102,7 +108,9 @@ private:
     double time_ = 0;
     bool running_ = true;
     bool testMode_ = false;
-    float fps_ = 0;
+    float fps_ = 0, frameMs_ = 0;
+    int perfFrames_ = 0, perfLeft_ = 0;
+    double perfSum_ = 0, perfMax_ = 0;
     // Two finger tap detection
     struct Touch
     {

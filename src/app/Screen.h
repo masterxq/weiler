@@ -6,6 +6,8 @@
 
 #include <SDL3/SDL_keycode.h>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace weiler {
 
@@ -47,6 +49,18 @@ public:
     virtual bool onBack() { return false; }
     /// The app is about to quit or to be suspended (autosave)
     virtual void onSuspend() {}
+    /// Test scripts: resolve a symbolic point like "node:x,y" to framebuffer pixels
+    virtual bool testPoint(const std::string& spec, float& x, float& y)
+    {
+        (void)spec, (void)x, (void)y;
+        return false;
+    }
+    /// Test scripts: screen specific command. Returns false if the command is unknown or failed.
+    virtual bool testCommand(const std::string& cmd, const std::vector<std::string>& args)
+    {
+        (void)cmd, (void)args;
+        return false;
+    }
 
 protected:
     App& app_;

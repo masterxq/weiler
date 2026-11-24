@@ -8,6 +8,16 @@
 #include "Game.h"
 #include "GamePlayer.h"
 #include "Hud.h"
+#include "addons/const_addons.h"
+#include "gameData/MapConsts.h"
+#include <iostream>
+#include "gameTypes/BuildingQuality.h"
+#include "gameData/BuildingProperties.h"
+#include "buildings/nobBaseWarehouse.h"
+#include "buildings/nobMilitary.h"
+#include "buildings/nobUsual.h"
+#include "buildings/noBuildingSite.h"
+#include "Names.h"
 #include "Loader.h"
 #include "RttrConfig.h"
 #include "ViewState.h"
@@ -51,7 +61,7 @@ GameScreen::GameScreen(App& app, std::unique_ptr<Session> session)
     session_->setGameInterface(this);
     view_.cam.screenW = app.width();
     view_.cam.screenH = app.height();
-    view_.cam.zoom = std::clamp(app.uiScale() * 1.5f, 1.f, 6.f);
+    view_.cam.zoom = std::clamp(app.uiScale(), 1.f, 6.f);
     view_.setViewer(gwv_.get());
     minimap_.init(*gwv_);
     const MapPoint hq = world.getPlayer(session_->getPlayerId()).getHQPos();
@@ -174,9 +184,9 @@ bool GameScreen::saveTo(const std::string& path)
     return session_->save(path);
 }
 
-void GameScreen::startTutorial()
+void GameScreen::startTutorial(bool firstStart)
 {
-    hud_->startTutorial();
+    hud_->startTutorial(firstStart);
 }
 
 bool GameScreen::quickSave()
@@ -243,6 +253,290 @@ Cheats& GameScreen::GI_GetCheats()
 std::unique_ptr<Screen> createGameScreen(App& app, std::unique_ptr<Session> session)
 {
     return std::make_unique<GameScreen>(app, std::move(session));
+}
+
+
+// ---------------------------------------------------------------------------------------------------------------
+// Test scripts
+
+namespace {
+bool parsePair(const std::string& s, int& a, int& b)
+{
+    const auto c = s.find(',');
+    if(c == std::string::npos)
+        return false;
+    a = std::stoi(s.substr(0, c));
+    b = std::stoi(s.substr(c + 1));
+    return true;
+}
+std::string underscored(std::string s)
+{
+    std::replace(s.begin(), s.end(), ' ', '_');
+    return s;
+}
+} // namespace
+
+bool GameScreen::testPoint(const std::string& spec, float& x, float& y)
+{
+    const auto colon = spec.find(':');
+    const std::string kind = spec.substr(0, colon), arg = spec.substr(colon + 1);
+    const GameWorld& world = session_->world();
+    const GamePlayer& me = world.getPlayer(localPlayer());
+    MapPoint pt = MapPoint::invalid();
+    int dx = 0, dy = 0;
+    if(kind == "node")
+    {
+        int px, py;
+        if(!parsePair(arg, px, py))
+            return false;
+        pt = MapPoint(static_cast<MapCoord>(px), static_cast<MapCoord>(py));
+    } else if(kind == "hq" || kind == "found")
+    {
+        pt = kind == "hq" ? me.getHQPos() : testFound_;
+        if(!arg.empty() && !parsePair(arg, dx, dy))
+            return false;
+    } else if(kind == "hqflag" || kind == "foundflag")
+    {
+        const MapPoint base = kind == "hqflag" ? me.getHQPos() : testFound_;
+        if(!base.isValid())
+            return false;
+        pt = world.getNeighbour(base, Direction::SouthEast);
+    } else if(kind == "bld")
+    {
+        // bld:<German name, spaces as _>[#n]
+        std::string name = arg;
+        int nth = 0;
+        const auto hash = name.rfind('#');
+        if(hash != std::string::npos)
+        {
+            nth = std::stoi(name.substr(hash + 1));
+            name.resize(hash);
+        }
+        const auto& reg = me.getBuildingRegister();
+        std::vector<MapPoint> pts;
+        for(const auto* site : reg.getBuildingSites())
+        {
+            if(underscored(buildingName(site->getBuildingType())) == name)
+                pts.push_back(site->getPos());
+        }
+        for(unsigned i = 0; i < helpers::NumEnumValues_v<BuildingType>; ++i)
+        {
+            const auto bt = static_cast<BuildingType>(i);
+            if(underscored(buildingName(bt)) != name)
+                continue;
+            if(BuildingProperties::isMilitary(bt))
+            {
+                for(const auto* b : reg.getMilitaryBuildings())
+                {
+                    if(b->getBuildingType() == bt)
+                        pts.push_back(b->getPos());
+                }
+            } else if(BuildingProperties::isWareHouse(bt))
+            {
+                for(const auto* b : reg.getStorehouses())
+                {
+                    if(b->getBuildingType() == bt)
+                        pts.push_back(b->getPos());
+                }
+            } else
+            {
+                for(const auto* b : reg.getBuildings(bt))
+                    pts.push_back(b->getPos());
+            }
+        }
+        if(nth >= static_cast<int>(pts.size()))
+            return false;
+        pt = pts[static_cast<size_t>(nth)];
+    } else
+        return false;
+    if(!pt.isValid())
+        return false;
+    PointF p = view_.worldToScreen(view_.worldPosNear(pt));
+    // Offsets in nodes (approximate, screen space)
+    p.x += static_cast<float>(dx) * TR_W * view_.cam.zoom;
+    p.y += static_cast<float>(dy) * TR_H * view_.cam.zoom;
+    x = p.x;
+    y = p.y;
+    return x >= 0 && y >= 0 && x < static_cast<float>(app_.width()) && y < static_cast<float>(app_.height());
+}
+
+bool GameScreen::testCommand(const std::string& cmd, const std::vector<std::string>& args)
+{
+    GameWorld& world = session_->world();
+    const unsigned meId = localPlayer();
+    const GamePlayer& me = world.getPlayer(meId);
+    auto arg = [&](size_t i) { return i < args.size() ? args[i] : std::string(); };
+    if(cmd == "ff")
+    {
+        // Simulate game frames as fast as possible
+        const unsigned n = static_cast<unsigned>(std::stoul(arg(0)));
+        for(unsigned i = 0; i < n && !session_->isFinished(); ++i)
+            session_->runGF();
+        VIEWSTATE.currentGF = session_->getGF();
+        return true;
+    }
+    if(cmd == "center")
+    {
+        if(arg(0) == "hq")
+            jumpTo(me.getHQPos());
+        else if(arg(0) == "found" && testFound_.isValid())
+            jumpTo(testFound_);
+        else
+        {
+            int px, py;
+            if(!parsePair(arg(0), px, py))
+                return false;
+            jumpTo(MapPoint(static_cast<MapCoord>(px), static_cast<MapCoord>(py)));
+        }
+        return true;
+    }
+    if(cmd == "zoom")
+    {
+        view_.zoomAt(app_.width() / 2.f, app_.height() / 2.f, std::stof(arg(0)));
+        return true;
+    }
+    if(cmd == "findbq")
+    {
+        // Nearest visible own node (from the HQ or "found") with at least the given building quality
+        static const std::pair<const char*, BuildingQuality> names[] = {{"flag", BuildingQuality::Flag},
+                                                                        {"small", BuildingQuality::Hut},
+                                                                        {"medium", BuildingQuality::House},
+                                                                        {"large", BuildingQuality::Castle},
+                                                                        {"mine", BuildingQuality::Mine},
+                                                                        {"harbor", BuildingQuality::Harbor}};
+        BuildingQuality want = BuildingQuality::Hut;
+        for(const auto& n : names)
+        {
+            if(arg(0) == n.first)
+                want = n.second;
+        }
+        const MapPoint from = arg(1) == "found" && testFound_.isValid() ? testFound_ : me.getHQPos();
+        const unsigned minDist = arg(2).empty() ? 2u : static_cast<unsigned>(std::stoul(arg(2)));
+        MapPoint best = MapPoint::invalid();
+        unsigned bestDist = 1000;
+        for(unsigned yy = 0; yy < world.getHeight(); ++yy)
+        {
+            for(unsigned xx = 0; xx < world.getWidth(); ++xx)
+            {
+                const MapPoint pt(static_cast<MapCoord>(xx), static_cast<MapCoord>(yy));
+                const BuildingQuality bq = gwv_->getBQ(pt);
+                const bool ok = want == BuildingQuality::Mine ? bq == BuildingQuality::Mine :
+                                want == BuildingQuality::Flag ? bq != BuildingQuality::Nothing :
+                                                                (bq != BuildingQuality::Mine && canUseBq(bq, want));
+                if(!ok || gwv_->getVisibility(pt) != Visibility::Visible)
+                    continue;
+                const unsigned d = world.calcDistance(from, pt);
+                if(d >= minDist && d < bestDist)
+                {
+                    best = pt;
+                    bestDist = d;
+                }
+            }
+        }
+        if(!best.isValid())
+            return false;
+        testFound_ = best;
+        jumpTo(best);
+        std::cout << "[script] found " << best.x << "," << best.y << " dist " << bestDist << std::endl;
+        return true;
+    }
+    if(cmd == "findenemy")
+    {
+        // Nearest attackable enemy military building
+        MapPoint best = MapPoint::invalid();
+        unsigned bestDist = 100000;
+        for(unsigned p = 0; p < world.getNumPlayers(); ++p)
+        {
+            if(p == meId || world.getPlayer(p).isDefeated())
+                continue;
+            for(const auto* b : world.getPlayer(p).getBuildingRegister().getMilitaryBuildings())
+            {
+                const unsigned d = world.calcDistance(me.getHQPos(), b->getPos());
+                if(d < bestDist && b->isAttackable(meId))
+                {
+                    best = b->getPos();
+                    bestDist = d;
+                }
+            }
+            for(const auto* b : world.getPlayer(p).getBuildingRegister().getStorehouses())
+            {
+                const unsigned d = world.calcDistance(me.getHQPos(), b->getPos());
+                if(d < bestDist && b->isAttackable(meId))
+                {
+                    best = b->getPos();
+                    bestDist = d;
+                }
+            }
+        }
+        if(!best.isValid())
+        {
+            std::cout << "[script] no attackable enemy; peaceful " << world.getGGS().getSelection(AddonId::PEACEFULMODE);
+            for(unsigned p = 0; p < world.getNumPlayers(); ++p)
+                std::cout << " p" << p << " attackable " << world.getPlayer(p).isAttackable(meId);
+            std::cout << std::endl;
+            return false;
+        }
+        testFound_ = best;
+        jumpTo(best);
+        std::cout << "[script] enemy " << best.x << "," << best.y << " soldiers "
+                  << gwv_->getNumSoldiersForAttack(best) << std::endl;
+        return true;
+    }
+    if(cmd == "node")
+    {
+        int px, py;
+        if(!parsePair(arg(0), px, py))
+            return false;
+        const MapPoint pt(static_cast<MapCoord>(px), static_cast<MapCoord>(py));
+        const noBase* obj = world.getNO(pt);
+        std::cout << "[script] node " << px << "," << py << " obj " << (obj ? static_cast<int>(obj->getType()) : -1)
+                  << " bq " << static_cast<int>(gwv_->getBQ(pt)) << " owner " << int(world.getNode(pt).owner)
+                  << " roads";
+        for(const auto dir : helpers::EnumRange<Direction>{})
+            std::cout << " " << static_cast<int>(world.getPointRoad(pt, dir));
+        std::cout << std::endl;
+        return true;
+    }
+    if(cmd == "dump")
+    {
+        std::cout << "[script] GF " << session_->getGF() << " time " << session_->formatGFTime(session_->getGF())
+                  << std::endl;
+        for(unsigned p = 0; p < world.getNumPlayers(); ++p)
+        {
+            const GamePlayer& pl = world.getPlayer(p);
+            const auto& reg = pl.getBuildingRegister();
+            unsigned numBld = 0;
+            for(unsigned i = 0; i < helpers::NumEnumValues_v<BuildingType>; ++i)
+            {
+                const auto bt = static_cast<BuildingType>(i);
+                if(!BuildingProperties::isMilitary(bt) && !BuildingProperties::isWareHouse(bt))
+                    numBld += static_cast<unsigned>(reg.getBuildings(bt).size());
+            }
+            std::cout << "[script] player " << p << (p == meId ? " (me)" : "") << (pl.isDefeated() ? " defeated" : "")
+                      << ": military " << reg.getMilitaryBuildings().size() << ", buildings " << numBld
+                      << ", sites " << reg.getBuildingSites().size() << ", stores " << reg.getStorehouses().size()
+                      << ", soldiers " << pl.getInventory().people[Job::Private] << std::endl;
+        }
+        if(arg(0) == "mine")
+        {
+            const auto& reg = me.getBuildingRegister();
+            for(unsigned i = 0; i < helpers::NumEnumValues_v<BuildingType>; ++i)
+            {
+                const auto bt = static_cast<BuildingType>(i);
+                const size_t n = reg.getBuildings(bt).size();
+                if(n)
+                    std::cout << "[script]   " << buildingName(bt) << " " << n << std::endl;
+            }
+            const auto& inv = me.getInventory();
+            std::cout << "[script]   wood " << inv.goods[GoodType::Wood] << " boards " << inv.goods[GoodType::Boards]
+                      << " stones " << inv.goods[GoodType::Stones] << " food "
+                      << inv.goods[GoodType::Fish] + inv.goods[GoodType::Bread] + inv.goods[GoodType::Meat]
+                      << " coal " << inv.goods[GoodType::Coal] << " iron " << inv.goods[GoodType::Iron]
+                      << " swords " << inv.goods[GoodType::Sword] << std::endl;
+        }
+        return true;
+    }
+    return false;
 }
 
 } // namespace weiler

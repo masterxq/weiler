@@ -104,6 +104,8 @@ void Hud::Impl::drawSheet()
         if(!landscape())
             app.batch().roundRect({r.x + r.w / 2 - app.dp(20), r.y + app.dp(6), app.dp(40), app.dp(4)}, app.dp(2),
                                   Color::rgb(0xFFFFFF, 0.25f));
+        const SheetKind drawn = sheet;
+        fitReq = 0;
         switch(sheet)
         {
             case SheetKind::GameMenu: sheetGameMenu(r); break;
@@ -127,6 +129,8 @@ void Hud::Impl::drawSheet()
             case SheetKind::Help: sheetHelp(r); break;
             case SheetKind::None: break;
         }
+        if(sheet == drawn)
+            fitH = fitReq <= 0 ? 0 : fitH <= 0 ? fitReq : fitH + (fitReq - fitH) * 0.3f;
     }
     if(confirmAction)
     {
@@ -199,6 +203,7 @@ void Hud::Impl::sheetGameMenu(const Rect2& r)
             a.post([&a] { a.setScreen(createMainMenu(a)); });
         });
     }
+    fit(r, g.area.y + static_cast<float>((g.n + 1) / 2) * (g.h + g.gap));
 }
 
 std::vector<BuildingType> fittingBuildings(const Hud::Impl& h, MapPoint pt);
@@ -437,12 +442,15 @@ void Hud::Impl::sheetBuilding(const Rect2& r)
                 closeSheet();
             });
         }
+        if(!dynamic_cast<const nobBaseWarehouse*>(obj))
+            fit(r, dr.bottom());
     }
 }
 
 void Hud::Impl::sheetFlag(const Rect2& r)
 {
-    sheetHeader(r, "Flagge", Icon::Flag);
+    const Rect2 c = sheetHeader(r, "Flagge", Icon::Flag);
+    fit(r, c.y);
 }
 
 void Hud::Impl::sheetMessages(const Rect2& r)
@@ -502,14 +510,19 @@ void Hud::Impl::sheetStats(const Rect2& r)
     auto& b = app.batch();
     if(sheetTab == 0)
     {
-        static const std::vector<std::string> types = {"Land", "Gebäude", "Leute", "Militär", "Gold", "Produktiv"};
+        static const std::vector<std::string> types1 = {"Land", "Gebäude", "Einwohner"};
+        static const std::vector<std::string> types2 = {"Militär", "Gold", "Produktivität"};
         static const StatisticType typeIds[] = {StatisticType::Country,  StatisticType::Buildings,
                                                 StatisticType::Inhabitants, StatisticType::Military,
                                                 StatisticType::Gold,     StatisticType::Productivity};
         static const std::vector<std::string> times = {"15 min", "1 h", "4 h", "16 h"};
-        ui.segmented(id("stats.type"), {body.x, body.y, body.w, app.dp(38)}, types, statsType);
-        ui.segmented(id("stats.time"), {body.x, body.y + app.dp(46), body.w, app.dp(34)}, times, statsTime);
-        const Rect2 chart{body.x, body.y + app.dp(92), body.w, body.h - app.dp(130)};
+        int sel1 = statsType < 3 ? statsType : -1, sel2 = statsType >= 3 ? statsType - 3 : -1;
+        if(ui.segmented(id("stats.type1"), {body.x, body.y, body.w, app.dp(36)}, types1, sel1))
+            statsType = sel1;
+        if(ui.segmented(id("stats.type2"), {body.x, body.y + app.dp(40), body.w, app.dp(36)}, types2, sel2))
+            statsType = sel2 + 3;
+        ui.segmented(id("stats.time"), {body.x, body.y + app.dp(86), body.w, app.dp(34)}, times, statsTime);
+        const Rect2 chart{body.x, body.y + app.dp(130), body.w, body.h - app.dp(168)};
         b.roundRect(chart, app.dp(10), Color::rgb(0xFFFFFF, 0.04f));
         const StatisticType type = typeIds[std::clamp(statsType, 0, 5)];
         const auto time = static_cast<StatisticTime>(std::clamp(statsTime, 0, 3));
@@ -624,6 +637,7 @@ void Hud::Impl::sheetEconomy(const Rect2& r)
         openSheet(SheetKind::Military, MapPoint::invalid(), true);
     if(ui.button(id("eco.inv"), g.next(), "Inventar", Icon::Boxes))
         openSheet(SheetKind::Inventory, MapPoint::invalid(), true);
+    fit(r, g.area.y + static_cast<float>(g.n) * (g.h + g.gap));
 }
 
 namespace {
@@ -842,12 +856,14 @@ void Hud::Impl::sheetSaveLoad(const Rect2& r, bool save)
         ui.icon(save ? Icon::Save : Icon::Folder, row.x + app.dp(26), row.y + row.h / 2, app.dp(22), ui.theme.accent);
         ui.text(row.x + app.dp(50), row.y + app.dp(8), slots[i].second, app.dp(16), ui.theme.text, gfx::Align::Left, true);
         ui.text(row.x + app.dp(50), row.y + app.dp(29), exists ? fileTime(path) : "leer", app.dp(13), ui.theme.textDim);
+        ui.tag(slots[i].second, row);
         if(ui.area(id("slot", i), row))
         {
             if(save)
             {
                 auto doSave = [this, path] {
                     toast(game.saveTo(path) ? "Gespeichert" : "Speichern fehlgeschlagen");
+                    sheetStack.clear();
                     closeSheet();
                 };
                 if(exists)
@@ -857,12 +873,14 @@ void Hud::Impl::sheetSaveLoad(const Rect2& r, bool save)
             } else
             {
                 App& a = app;
-                a.post([&a, path] {
+                a.post([this, &a, path] {
                     try
                     {
                         a.setScreen(createGameScreen(a, Session::loadGame(path, 1)));
-                    } catch(const std::exception&)
-                    {}
+                    } catch(const std::exception& e)
+                    {
+                        toast(std::string("Laden fehlgeschlagen: ") + e.what());
+                    }
                 });
             }
         }
@@ -899,11 +917,16 @@ void Hud::Impl::sheetSettings(const Rect2& r)
         st.setBool("sound.birds", birds);
     }
     y += app.dp(56);
+    bool fps = st.getBool("show.fps");
+    if(ui.toggle(id("set.fps"), {c.x, y, c.w, app.dp(48)}, fps, "Bildrate anzeigen"))
+        st.setBool("show.fps", fps);
+    y += app.dp(56);
     if(ui.button(id("set.tut"), {c.x, y, c.w, app.dp(52)}, "Einführung starten", Icon::Help))
     {
         closeSheet();
         tutorial = std::make_unique<Tutorial>(*this);
     }
+    fit(r, y + app.dp(52));
 }
 
 void Hud::Impl::sheetAttack(const Rect2& r)
@@ -924,6 +947,7 @@ void Hud::Impl::sheetAttack(const Rect2& r)
     if(avail == 0)
     {
         ui.textWrapped(c.x, y, c.w, "Keine Soldaten in Reichweite verfügbar.", app.dp(15), ui.theme.textDim);
+        fit(r, y + app.dp(30));
         return;
     }
     int n = static_cast<int>(std::clamp<unsigned>(attackSoldiers, 1, avail));
@@ -941,6 +965,7 @@ void Hud::Impl::sheetAttack(const Rect2& r)
         toast(std::to_string(attackSoldiers) + " Soldaten greifen an");
         closeSheet();
     }
+    fit(r, y + app.dp(56));
 }
 
 void Hud::Impl::sheetMission(const Rect2& r)

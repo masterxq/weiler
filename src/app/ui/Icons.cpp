@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "Icons.h"
+#include <iterator>
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -287,6 +288,14 @@ Shape design(Icon icon)
     return s;
 }
 } // namespace
+
+const char* iconName(Icon icon)
+{
+    static const char* const names[] = {"None", "Menu", "Close", "Back", "Pause", "Play", "Fast", "Road", "Flag", "Build", "House", "Grid", "Map", "Home", "Store", "Mail", "Chart", "Gear", "Save", "Folder", "Sword", "Shield", "Tools", "Sliders", "List", "Boxes", "Pick", "Eye", "Ship", "Trash", "Up", "Down", "Check", "Plus", "Minus", "Info", "Help", "People", "Power", "Target", "Coin", "Hand", "Trophy", "Exit"};
+    static_assert(std::size(names) == static_cast<size_t>(Icon::Count));
+    const auto i = static_cast<size_t>(icon);
+    return i < std::size(names) ? names[i] : "?";
+}
 
 void IconAtlas::init(int cellPx)
 {

@@ -12,6 +12,7 @@
 #include "s25util/Log.h"
 #include <boost/filesystem.hpp>
 #include <chrono>
+#include <iostream>
 #include <cmath>
 #include <stdexcept>
 #include <vector>
@@ -88,6 +89,8 @@ bool App::initVideo()
     }
     SDL_GL_MakeCurrent(window_, gl_);
     SDL_GL_SetSwapInterval(testMode_ ? 0 : 1);
+    std::cout << "GL: " << reinterpret_cast<const char*>(glGetString(GL_RENDERER)) << " / "
+              << reinterpret_cast<const char*>(glGetString(GL_VERSION)) << std::endl;
     updateSize();
     return true;
 }
@@ -184,6 +187,7 @@ int App::run()
 
 void App::frame(double dt)
 {
+    const auto workStart = std::chrono::steady_clock::now();
     time_ += dt;
     if(nextScreen_)
     {
@@ -199,6 +203,20 @@ void App::frame(double dt)
         screen_->draw();
     ui_->end();
     batch_.flush();
+    // Work time of this frame; the GPU part is only included when measuring (glFinish stalls the pipeline)
+    if(perfLeft_ > 0)
+        glFinish();
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - workStart).count();
+    frameMs_ = static_cast<float>(frameMs_ * 0.9 + ms * 0.1);
+    if(perfLeft_ > 0)
+    {
+        perfSum_ += ms;
+        perfMax_ = std::max(perfMax_, ms);
+        if(--perfLeft_ == 0)
+            std::cout << "[perf] " << perfFrames_ << " frames, " << fbW_ << "x" << fbH_ << ": avg "
+                      << perfSum_ / perfFrames_ << " ms, max " << perfMax_ << " ms (" << 1000.0 / (perfSum_ / perfFrames_)
+                      << " fps possible)" << std::endl;
+    }
     if(script_)
         script_->afterDraw();
     SDL_GL_SwapWindow(window_);
@@ -269,13 +287,16 @@ void App::pointer(PointerEvent ev)
             }
         }
     }
+    // Releasing a multi finger gesture never clicks anything
+    const bool released = ev.type == PointerEvent::Type::Up;
+    if(!ev.isMouse && ev.type == PointerEvent::Type::Up && maxTouches_ >= 2)
+        ev.type = PointerEvent::Type::Cancel;
     if(screen_)
         screen_->onPointer(ev);
     if(!ev.isMouse && (ev.type == PointerEvent::Type::Up || ev.type == PointerEvent::Type::Cancel))
     {
         touches_.erase(ev.id);
-        if(touches_.empty() && maxTouches_ == 2 && !multiMoved_ && time_ - multiStart_ < 0.4
-           && ev.type == PointerEvent::Type::Up)
+        if(touches_.empty() && maxTouches_ == 2 && !multiMoved_ && time_ - multiStart_ < 0.4 && released)
         {
             if(screen_)
                 screen_->onBack();

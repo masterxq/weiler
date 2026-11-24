@@ -26,6 +26,7 @@
 #include "gameData/BuildingProperties.h"
 #include "gameData/MapConsts.h"
 #include <algorithm>
+#include <iostream>
 #include <cmath>
 
 namespace weiler {
@@ -84,12 +85,13 @@ std::vector<BuildingType> fittingBuildings(const Hud::Impl& h, MapPoint pt)
 Hud::Impl::Impl(GameScreen& g, App& a) : game(g), app(a), ui(a.ui())
 {
     lastInput = app.time();
-    seenMessages = 0;
-    if(PostBox* box = world().getPostMgr().getPostBox(game.localPlayer()))
-        seenMessages = box->getNumMsgs();
 }
 
-Hud::Impl::~Impl() = default;
+Hud::Impl::~Impl()
+{
+    if(observedBox)
+        observedBox->observeNewMsg(nullptr);
+}
 
 const GameWorldBase& Hud::Impl::world() const
 {
@@ -118,7 +120,9 @@ Rect2 Hud::Impl::sheetRect() const
         const float w = std::min(std::max(W * 0.42f, app.dp(360)), W - 2 * m);
         return {W - w - m, m, w, H - 2 * m};
     }
-    const float h = std::min(H * 0.58f, std::max(app.dp(420), H * 0.5f));
+    float h = std::min(H * 0.58f, std::max(app.dp(420), H * 0.5f));
+    if(fitH > 0)
+        h = std::min(h, std::max(app.dp(150), fitH));
     return {m, H - h - m, W - 2 * m, h};
 }
 
@@ -130,6 +134,8 @@ void Hud::Impl::openSheet(SheetKind k, MapPoint pt, bool push)
         sheetStack.clear();
     if(sheet == SheetKind::None)
         sheetTime = app.time();
+    if(sheet != k)
+        fitH = -1;
     sheet = k;
     sheetPt = pt;
     sheetTab = 0;
@@ -144,6 +150,7 @@ void Hud::Impl::closeSheet()
     {
         sheet = sheetStack.back();
         sheetStack.pop_back();
+        fitH = -1;
         return;
     }
     if(sheet == SheetKind::Mission && missionPaused)
@@ -252,8 +259,8 @@ void Hud::Impl::onTap(float x, float y)
             openSheet(SheetKind::Attack, pt);
             return;
         }
-        toast(std::string(buildingName(bld->getBuildingType())) + " von "
-              + world().getPlayer(bld->getPlayer()).name);
+        toast(std::string(buildingName(bld->getBuildingType())) + " von " + world().getPlayer(bld->getPlayer()).name
+              + (mil ? " · zurzeit nicht angreifbar" : ""));
         return;
     }
     openRingAt(pt);
@@ -386,6 +393,7 @@ void Hud::Impl::activateRingItem(const RingItem& item)
     Session& s = game.session();
     const MapPoint pt = ring.pt;
     ring.open = false;
+    hasSelection = false;
     switch(item.kind)
     {
         case RingItem::Kind::Building:
@@ -442,6 +450,19 @@ bool Hud::Impl::extendRoadTo(MapPoint pt)
 {
     auto& gwv = game.viewer();
     if(!gwv.isPlayerTerritory(pt) && !road.water)
+        return false;
+    // A road ends at the first flag it reaches
+    if(road.point != road.start)
+    {
+        const noBase* endObj = world().getNO(road.point);
+        if(endObj && endObj->getType() == NodalObjectType::Flag)
+            return false;
+    }
+    // The path finder does not check the goal node itself
+    const noBase* obj = world().getNO(pt);
+    const bool ownFlag = obj && obj->getType() == NodalObjectType::Flag
+                         && static_cast<const noFlag*>(obj)->getPlayer() == game.localPlayer();
+    if(!ownFlag && !gwv.isRoadAvailable(road.water, pt))
         return false;
     std::vector<Direction> path = findPathForRoad(gwv, road.point, pt, road.water, 100);
     if(path.empty())
@@ -564,7 +585,7 @@ void Hud::Impl::drawWorldOverlay(MapPoint pt, PointF pos)
             }
         }
     }
-    if(hasSelection && pt == selected && !road.active)
+    if(hasSelection && pt == selected && !road.active && sheet != SheetKind::None)
         b.circle(pos.x, pos.y, 6, Color::rgb(0xFFFFFF, 0.9f), 1.5f);
     if(ring.open && pt == ring.pt)
         b.circle(pos.x, pos.y, 6, ui.theme.accent, 2.f);
@@ -617,6 +638,7 @@ void Hud::Impl::drawRing()
         b.roundRect({cx - tw / 2 - app.dp(5), cy + btn / 2 + app.dp(2), tw + app.dp(10), fs * 1.45f}, app.dp(6),
                     Color::rgb(0x000000, 0.55f * t));
         ui.text(cx, cy + btn / 2 + app.dp(2), item.label, fs, ui.theme.text.withAlpha(t), gfx::Align::Center, true);
+        ui.tag("ring:" + item.label, r);
         if(ui.area(id("ring", i), r))
         {
             activateRingItem(item);
@@ -642,7 +664,8 @@ void Hud::Impl::drawTopBar()
     // Clock / speed pill
     const std::string clock = game.session().formatGFTime(game.session().getGF());
     const std::string speed = game.paused() ? "Pause" : std::to_string(game.speedFactor()) + "×";
-    const float W = static_cast<float>(app.width());
+    // In landscape the side panel takes the right edge
+    const float W = landscape() && sheet != SheetKind::None ? sheetRect().x : static_cast<float>(app.width());
     const float pillW = app.dp(116) + s * 3;
     const Rect2 pill{W - m - pillW, top, pillW, s};
     ui.panel(pill, s / 2, ui.theme.panel.withAlpha(0.86f * a));
@@ -650,9 +673,6 @@ void Hud::Impl::drawTopBar()
             true);
     ui.text(pill.x + app.dp(18), pill.y + app.dp(26), speed, app.dp(12), ui.theme.textDim.withAlpha(a));
     float bx = pill.right() - s * 3;
-    PostBox* box = world().getPostMgr().getPostBox(game.localPlayer());
-    const int unread = box ? static_cast<int>(box->getNumMsgs()) - static_cast<int>(seenMessages) : 0;
-    (void)unread;
     if(ui.iconButton(id("speed"), {bx, top, s, s}, Icon::Fast, game.speedFactor() > 1, 0, Style::Flat))
         game.setSpeedFactor(game.speedFactor() >= 8 ? 1 : game.speedFactor() * 2);
     bx += s;
@@ -674,9 +694,16 @@ void Hud::Impl::drawTools()
     const float W = static_cast<float>(app.width()), H = static_cast<float>(app.height());
     float x = W - m - s;
     float y = landscape() ? H / 2 - s * 2 - app.dp(12) : H * 0.30f;
+    const float gap = app.dp(10);
     if(landscape() && sheet != SheetKind::None)
         x = sheetRect().x - m - s;
-    const float gap = app.dp(10);
+    else if(!landscape() && sheet != SheetKind::None)
+    {
+        // Keep the column above the bottom sheet
+        y = std::min(y, sheetRect().y - m - 4 * s - 3 * gap);
+        if(y < app.dp(68))
+            return;
+    }
     if(ui.iconButton(id("tool.bq"), {x, y, s, s}, Icon::Grid, showBQ))
     {
         showBQ = !showBQ;
@@ -742,8 +769,11 @@ void Hud::Impl::drawMinimapPanel()
         return;
     const float m = app.dp(10);
     const float W = static_cast<float>(app.width());
-    const float w = std::min(W - 2 * m, app.dp(landscape() ? 300 : 340));
-    const Rect2 panelR{W - w - m, m + app.dp(58), w, w * 0.62f};
+    // Left of the tool column, below the top bar
+    const float right = (landscape() && sheet != SheetKind::None ? sheetRect().x : W) - m - app.dp(52) - m;
+    const float w = std::min(right - m, app.dp(landscape() ? 300 : 340));
+    const float h = std::min(w * 0.62f, static_cast<float>(app.height()) - app.dp(86));
+    const Rect2 panelR{right - w, m + app.dp(58), w, h};
     ui.panel(panelR, app.dp(16));
     const Rect2 inner = panelR.inset(app.dp(8));
     auto& b = app.batch();
@@ -811,27 +841,19 @@ void Hud::Impl::drawToasts()
 void Hud::Impl::checkMessages()
 {
     PostBox* box = world().getPostMgr().getPostBox(game.localPlayer());
-    if(!box)
+    if(!box || observedBox == box)
         return;
-    const unsigned n = box->getNumMsgs();
-    if(n > seenMessages)
-    {
-        for(unsigned i = seenMessages; i < n; ++i)
+    observedBox = box;
+    box->observeNewMsg([this](const PostMsg& msg, unsigned) {
+        const bool hasPos = msg.getPos().isValid();
+        toast(msg.getText(), hasPos, msg.getPos());
+        if(hasPos)
         {
-            const PostMsg* msg = box->getMsg(i);
-            if(!msg)
-                continue;
-            const bool hasPos = msg->getPos().isValid();
-            toast(msg->getText(), hasPos, msg->getPos());
-            if(hasPos)
-            {
-                lastMessagePos = msg->getPos();
-                hasLastMessagePos = true;
-            }
-            ++msgBadge;
+            lastMessagePos = msg.getPos();
+            hasLastMessagePos = true;
         }
-    }
-    seenMessages = n;
+        ++msgBadge;
+    });
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -844,9 +866,10 @@ Hud::Hud(GameScreen& game, App& app) : d(std::make_unique<Impl>(game, app))
 
 Hud::~Hud() = default;
 
-void Hud::startTutorial()
+void Hud::startTutorial(bool firstStart)
 {
     d->tutorial = std::make_unique<Tutorial>(*d);
+    d->tutorial->setFirstStart(firstStart);
 }
 
 void Hud::showLuaMessage(const LuaMessage& msg)
@@ -883,7 +906,7 @@ void Hud::update(double dt)
     if(d->tutorial)
         d->tutorial->update();
     // Only draw node overlays when needed (saves time)
-    const bool needOverlay = d->showBQ || d->road.active || d->hasSelection || d->ring.open;
+    const bool needOverlay = d->showBQ || d->road.active || (d->hasSelection && d->sheet != SheetKind::None) || d->ring.open;
     if(needOverlay && !view.nodeOverlay)
         view.nodeOverlay = [this](MapPoint pt, PointF pos) { d->drawWorldOverlay(pt, pos); };
     else if(!needOverlay && view.nodeOverlay)
@@ -903,8 +926,13 @@ void Hud::draw()
     if(s.tutorial)
         s.tutorial->draw();
     // FPS counter
-    const std::string fps = std::to_string(static_cast<int>(std::lround(s.app.fps()))) + " fps";
-    s.ui.text(s.app.dp(68), s.app.dp(24), fps, s.app.dp(12), s.ui.theme.textDim.withAlpha(0.8f));
+    if(s.app.settings().getBool("show.fps"))
+    {
+        char buf[48];
+        std::snprintf(buf, sizeof(buf), "%d fps · %.1f ms", static_cast<int>(std::lround(s.app.fps())),
+                      static_cast<double>(s.app.frameMs()));
+        s.ui.text(s.app.dp(12), s.app.dp(64), buf, s.app.dp(11), s.ui.theme.textDim.withAlpha(0.9f));
+    }
 }
 
 void Hud::onPointer(const PointerEvent& ev)

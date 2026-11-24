@@ -30,6 +30,12 @@ private:
     void next();
     void finish();
     Hud::Impl& hud_;
+    bool firstStart_ = false;
+
+public:
+    void setFirstStart(bool on) { firstStart_ = on; }
+
+private:
     unsigned step_ = 0;
     float panAmount_ = 0;
     float zoomAmount_ = 0;

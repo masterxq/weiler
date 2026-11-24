@@ -4,6 +4,7 @@
 
 #include "Tutorial.h"
 #include "Settings.h"
+#include "menu/Menus.h"
 #include <array>
 
 namespace weiler {
@@ -135,7 +136,12 @@ void Tutorial::draw()
     if(step_ + 1 < STEPS.size())
     {
         if(ui.button(id("tut.skip"), {r.x + app.dp(12), by, app.dp(140), bh}, "Überspringen", Icon::None, Style::Flat))
+        {
             finish();
+            // Skipping right at the first start leads to the main menu instead of the practice map
+            if(firstStart_ && step_ == 0)
+                app.post([&app] { app.setScreen(createMainMenu(app)); });
+        }
     }
 }
 
