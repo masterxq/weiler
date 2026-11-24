@@ -81,6 +81,8 @@ private:
 
 /// Resident memory of the process in MiB (current and peak)
 void memoryMiB(double& rss, double& peak);
+/// Heap memory in use (glibc), 0 elsewhere
+double heapMiB();
 
 /// Extra text for the measurement report (atlas sizes etc.)
 extern std::function<std::string()> extraInfo;

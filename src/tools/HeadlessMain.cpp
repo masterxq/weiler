@@ -14,11 +14,16 @@
 #include "s25util/Log.h"
 #include "s25util/colors.h"
 #include <boost/filesystem.hpp>
+#include <boost/filesystem/fstream.hpp>
 #include <boost/program_options.hpp>
 #include <chrono>
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
+#include <optional>
+#include <random>
+#include <vector>
 
 namespace bfs = boost::filesystem;
 namespace po = boost::program_options;
@@ -38,6 +43,57 @@ uint64_t stateHash(const Session& session)
         h *= 1099511628211ull;
     }
     return h;
+}
+
+/// Load damaged copies of a savegame or map: every copy has to be rejected with an error or play a few game frames
+template<typename StartFn>
+int runDamageTests(const std::string& file, bool isSave, unsigned count, const DataPaths& paths, StartFn start)
+{
+    bfs::path src(file);
+    if(!isSave && !src.is_absolute() && !bfs::exists(src))
+        src = paths.gameData / src;
+    bfs::ifstream in(src, std::ios::binary);
+    const std::vector<char> original((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if(original.empty())
+    {
+        std::cerr << "Cannot read " << src << std::endl;
+        return 2;
+    }
+    const bfs::path damaged = bfs::path(paths.userData) / ("damaged" + src.extension().string());
+    unsigned rejected = 0, played = 0;
+    for(unsigned i = 0; i < count; ++i)
+    {
+        std::minstd_rand rng(i + 1);
+        std::vector<char> data = original;
+        if(i % 5 == 4)
+            data.resize(rng() % data.size()); // truncated
+        else
+        {
+            // Some bytes changed, mostly in the header and the first blocks
+            const unsigned n = 1 + rng() % 4;
+            const size_t range = i % 2 ? data.size() : std::min<size_t>(data.size(), 4096);
+            for(unsigned j = 0; j < n; ++j)
+                data[rng() % range] = static_cast<char>(rng());
+        }
+        {
+            bfs::ofstream out(damaged, std::ios::binary | std::ios::trunc);
+            out.write(data.data(), static_cast<std::streamsize>(data.size()));
+        }
+        try
+        {
+            auto session = isSave ? start(damaged.string(), std::string()) : start(std::string(), damaged.string());
+            for(unsigned gf = 0; gf < 100 && !session->isFinished(); ++gf)
+                session->runGF();
+            ++played;
+        } catch(const std::exception&)
+        {
+            ++rejected;
+        }
+    }
+    bfs::remove(damaged);
+    std::cout << "damage test " << src.filename().string() << ": " << count << " copies, " << rejected
+              << " rejected, " << played << " played" << std::endl;
+    return 0;
 }
 
 void printStatus(const Session& s)
@@ -61,7 +117,7 @@ void printStatus(const Session& s)
 int main(int argc, char** argv)
 {
     std::string dataDir, map, loadPath, savePath;
-    unsigned numAIs = 2, seed = 1, minutes = 30, extraGFs = 0, reportEvery = 0;
+    unsigned numAIs = 2, seed = 1, minutes = 30, extraGFs = 0, reportEvery = 0, damageTests = 0;
     bool printHash = false;
     po::options_description desc("weiler-headless options");
     desc.add_options()("help,h", "Show help")("data", po::value(&dataDir), "Folder with the original game data")(
@@ -73,7 +129,9 @@ int main(int argc, char** argv)
       "load", po::value(&loadPath), "Load a savegame instead of starting a new game")(
       "save", po::value(&savePath), "Write a savegame at the end")(
       "report", po::value(&reportEvery)->default_value(0), "Print status every N game minutes")(
-      "hash", po::bool_switch(&printHash), "Print a hash of the complete game state at the end");
+      "hash", po::bool_switch(&printHash), "Print a hash of the complete game state at the end")(
+      "damage-test", po::value(&damageTests),
+      "Robustness test: load N damaged copies of the --load or --map file (must fail or play, never crash)");
     po::variables_map vm;
     try
     {
@@ -98,35 +156,39 @@ int main(int argc, char** argv)
     }
     paths.apply();
 
+    const std::optional<unsigned> loadSeed =
+      vm.count("seed") && !vm["seed"].defaulted() ? std::optional<unsigned>(seed) : std::nullopt;
+    auto startSession = [&](const std::string& load, const std::string& mapFile) {
+        if(!load.empty())
+            return Session::loadGame(load, loadSeed);
+        NewGameSetup setup;
+        bfs::path mapPath(mapFile);
+        if(!mapPath.is_absolute() && !bfs::exists(mapPath))
+            mapPath = paths.gameData / mapPath;
+        setup.map = mapPath;
+        setup.seed = seed;
+        setup.ggs.objective = GameObjective::TotalDomination;
+        for(unsigned i = 0; i < numAIs && i < MAX_PLAYERS; ++i)
+        {
+            PlayerInfo pi;
+            pi.ps = PlayerState::AI;
+            pi.aiInfo = AI::Info(AI::Type::Default, AI::Level::Hard);
+            pi.name = "AI " + std::to_string(i + 1);
+            pi.nation = Nation(i % 4);
+            pi.color = PLAYER_COLORS[i % PLAYER_COLORS.size()];
+            pi.team = Team::None;
+            setup.players.push_back(pi);
+        }
+        return Session::newGame(setup);
+    };
+
+    if(damageTests)
+        return runDamageTests(loadPath.empty() ? map : loadPath, !loadPath.empty(), damageTests, paths, startSession);
+
     std::unique_ptr<Session> session;
     try
     {
-        if(!loadPath.empty())
-            session = Session::loadGame(loadPath, vm.count("seed") && !vm["seed"].defaulted() ?
-                                                    std::optional<unsigned>(seed) :
-                                                    std::nullopt);
-        else
-        {
-            NewGameSetup setup;
-            bfs::path mapPath(map);
-            if(!mapPath.is_absolute() && !bfs::exists(mapPath))
-                mapPath = paths.gameData / mapPath;
-            setup.map = mapPath;
-            setup.seed = seed;
-            setup.ggs.objective = GameObjective::TotalDomination;
-            for(unsigned i = 0; i < numAIs && i < MAX_PLAYERS; ++i)
-            {
-                PlayerInfo pi;
-                pi.ps = PlayerState::AI;
-                pi.aiInfo = AI::Info(AI::Type::Default, AI::Level::Hard);
-                pi.name = "AI " + std::to_string(i + 1);
-                pi.nation = Nation(i % 4);
-                pi.color = PLAYER_COLORS[i % PLAYER_COLORS.size()];
-                pi.team = Team::None;
-                setup.players.push_back(pi);
-            }
-            session = Session::newGame(setup);
-        }
+        session = startSession(loadPath, map);
     } catch(const std::exception& e)
     {
         std::cerr << "Could not start game: " << e.what() << std::endl;

@@ -5,6 +5,9 @@
 #include "Perf.h"
 #include "gfx/Gl.h"
 #include <algorithm>
+#if defined(__GLIBC__)
+#include <malloc.h>
+#endif
 #include <array>
 #include <cstdio>
 #include <fstream>
@@ -65,6 +68,15 @@ void terrainRebuild()
 double sinceStart()
 {
     return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - gStart).count();
+}
+
+double heapMiB()
+{
+#if defined(__GLIBC__)
+    return static_cast<double>(mallinfo2().uordblks) / (1024.0 * 1024.0);
+#else
+    return 0;
+#endif
 }
 
 void memoryMiB(double& rss, double& peak)
@@ -154,7 +166,7 @@ void Recorder::report(int fbW, int fbH)
     if(!gGameFrames.empty())
         o << std::setprecision(3) << " | GF " << gGameFrames.size() << " x avg " << mean(gGameFrames) << " p99 "
           << percentile(gGameFrames, 0.99) << " max " << percentile(gGameFrames, 1.0) << " ms";
-    o << std::setprecision(1) << " | rss " << rss << " MiB (peak " << peak << "), textures "
+    o << std::setprecision(1) << " | rss " << rss << " MiB (peak " << peak << ", heap " << heapMiB() << "), textures "
       << static_cast<double>(gfx::Texture::totalBytes()) / (1024.0 * 1024.0) << " MiB";
     if(extraInfo)
         o << ", " << extraInfo();

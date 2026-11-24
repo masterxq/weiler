@@ -6,6 +6,14 @@ add_test(NAME headless_determinism
     COMMAND ${CMAKE_COMMAND} -DHEADLESS=$<TARGET_FILE:weiler-headless> -DDATA=${WEILER_TEST_DATA}
             -DWORK=${CMAKE_CURRENT_BINARY_DIR}/headless -DMAP=DATA/MAPS4/KARTE01.WLD -DMINUTES=30
             -P ${CMAKE_CURRENT_SOURCE_DIR}/HeadlessDeterminism.cmake)
+set_tests_properties(headless_determinism PROPERTIES FIXTURES_SETUP savegame)
+
+# Damaged savegames and maps must be rejected with an error (or play), never crash
+add_test(NAME damaged_files
+    COMMAND ${CMAKE_COMMAND} -DHEADLESS=$<TARGET_FILE:weiler-headless> -DDATA=${WEILER_TEST_DATA}
+            -DWORK=${CMAKE_CURRENT_BINARY_DIR}/damaged -DSAVE=${CMAKE_CURRENT_BINARY_DIR}/headless/a.sav
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/DamagedFiles.cmake)
+set_tests_properties(damaged_files PROPERTIES FIXTURES_REQUIRED savegame)
 
 # Interface scripts in the offscreen test mode (label "ui")
 function(add_ui_test name size)

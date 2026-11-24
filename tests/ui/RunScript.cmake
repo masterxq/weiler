@@ -20,7 +20,7 @@ execute_process(COMMAND "${WEILER}" --data "${DATA}" --size ${SIZE} --scale 3 --
                 WORKING_DIRECTORY "${WORK}" RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err
                 TIMEOUT 900)
 file(WRITE "${WORK}/output.log" "${out}\n${err}")
-string(REGEX MATCHALL "\\[script\\] FAIL[^\n]*" fails "${out}\n${err}")
+string(REGEX MATCHALL "(\\[script\\] FAIL|Error during saving|Could not start the game)[^\n]*" fails "${out}\n${err}")
 if(NOT rc EQUAL 0 OR fails)
     string(REPLACE ";" "\n" fails "${fails}")
     message(FATAL_ERROR "${SCRIPT} failed (exit code ${rc}):\n${fails}\nLog: ${WORK}/output.log")
