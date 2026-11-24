@@ -1,0 +1,10 @@
+wait 10
+tap ui:icon:Mail
+wait 20
+shot shots/g1.png
+key Escape
+wait 5
+game gameover team 2
+wait 30
+shot shots/g2.png
+quit

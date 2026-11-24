@@ -609,7 +609,25 @@ void Hud::Impl::sheetMessages(const Rect2& r)
 {
     const Rect2 c = sheetHeader(r, "Nachrichten", Icon::Mail);
     PostBox* box = world().getPostMgr().getPostBox(game.localPlayer());
-    const std::string goal = box ? box->getCurrentMissionGoal() : std::string();
+    std::string goal = box ? box->getCurrentMissionGoal() : std::string();
+    if(goal.empty())
+    {
+        // Free game: the victory condition and how far the player is (share of the settled land, as the core checks)
+        const GameObjective obj = world().getGGS().objective;
+        if(obj == GameObjective::Conquer3_4 || obj == GameObjective::TotalDomination)
+        {
+            unsigned total = 0;
+            for(unsigned p = 0; p < world().getNumPlayers(); ++p)
+            {
+                if(!world().getPlayer(p).isDefeated())
+                    total += world().getPlayer(p).getStatisticCurrentValue(StatisticType::Country);
+            }
+            const unsigned mine = player().getStatisticCurrentValue(StatisticType::Country);
+            goal = std::string(obj == GameObjective::Conquer3_4 ? "drei Viertel des besiedelten Landes erobern" :
+                                                                  "alle Gegner besiegen")
+                   + " (du hast " + std::to_string(total ? mine * 100 / total : 0) + " %)";
+        }
+    }
     float top = c.y;
     if(!goal.empty())
     {

@@ -30,7 +30,8 @@ public:
     bool onBack();
 
     void notifyDefeated(unsigned playerId);
-    void notifyWinner(unsigned playerId, bool team);
+    /// Winner announced by the core: a player index, or with team = true a bit mask of the team's players
+    void notifyWinner(unsigned playerOrMask, bool team);
     void flagDestroyed(MapPoint pt);
     /// Short message at the bottom
     void toast(const std::string& text);

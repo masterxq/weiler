@@ -1479,11 +1479,28 @@ void Hud::notifyDefeated(unsigned playerId)
         d->toast(d->world().getPlayer(playerId).name + " wurde besiegt");
 }
 
-void Hud::notifyWinner(unsigned playerId, bool team)
+void Hud::notifyWinner(unsigned playerOrMask, bool team)
 {
-    const bool me = playerId == d->game.localPlayer()
-                    || (team && d->world().getPlayer(playerId).isAlly(d->game.localPlayer()));
-    d->gameOverText = me ? "Das Land gehört dir." : d->world().getPlayer(playerId).name + " hat gewonnen.";
+    // team: bit mask of the winning players
+    const unsigned meId = d->game.localPlayer();
+    const bool me = team ? (playerOrMask & (1u << meId)) != 0 : playerOrMask == meId;
+    std::string winner;
+    if(!me && !team)
+        winner = d->world().getPlayer(playerOrMask).name + " hat gewonnen.";
+    else if(!me)
+    {
+        unsigned n = 0;
+        for(unsigned p = 0; p < d->world().getNumPlayers(); ++p)
+        {
+            if(playerOrMask & (1u << p))
+            {
+                winner += (winner.empty() ? "" : ", ") + d->world().getPlayer(p).name;
+                ++n;
+            }
+        }
+        winner += n > 1 ? " haben gewonnen." : " hat gewonnen.";
+    }
+    d->gameOverText = me ? "Das Land gehört dir." : winner;
     d->gameOverWin = me;
     d->openSheet(SheetKind::GameOver);
 }

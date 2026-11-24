@@ -16,11 +16,12 @@ working folder that contains a `shots/` directory, with a separate user data fol
 | `camp.txt` | main menu | campaign missions |
 | `land.txt` | main menu, `--size 2400x1080` or `1920x1080` | landscape layout |
 | `attack.txt` | `--map DATA/MAPS3/AKARTE01.WLD --ais 1 --warmup 60000 --autoplay` | attack sheet, garrison (troop limits, exchange) |
+| `goal.txt` | `--map DATA/MAPS3/AKARTE01.WLD --ais 1 --warmup 60000 --autoplay --objective conquer` | victory condition in the post office, team victory |
 | `perf.txt`, `names.txt` | `--map ... --warmup 36000 --autoplay` | frame time (`[perf]` lines), name labels |
 | `genlong.py` | writes a long game script: `python3 genlong.py long.txt` | economy, military, attack |
 
 Test hooks of the game screen: `game seafaring` places a harbor with wares and a ship next to it (ship and expedition
-sheets without a long game, e.g. on `DATA/MAPS/MISS203.WLD`), `game gameover win|lose` shows the end of game sheet.
+sheets without a long game, e.g. on `DATA/MAPS/MISS203.WLD`), `game gameover win|lose|team <mask>` shows the end of game sheet (team: bit mask of the winning players).
 With `WEILER_AUDIO_WAV=<file.wav>` the test mode writes the audio mix (music, effects, interface sounds) into a WAV
 file instead of playing it.
 

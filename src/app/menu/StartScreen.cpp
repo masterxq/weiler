@@ -22,6 +22,7 @@ extern unsigned gQuickWarmupGF;
 extern bool gQuickAutoplay;
 extern std::string gQuickLoad;
 extern std::string gQuickLevel;
+extern std::string gQuickObjective;
 
 NewGameSetup makeSkirmishSetup(const bfs::path& map, unsigned numAIs, unsigned seed, AI::Level level, Nation nation)
 {
@@ -71,12 +72,15 @@ std::unique_ptr<Screen> createStartScreen(App& app)
             bfs::path map(gQuickMap);
             if(!map.is_absolute() && !bfs::exists(map))
                 map = app.paths().gameData / map;
-            auto session =
-              Session::newGame(makeSkirmishSetup(map, gQuickAIs, gQuickSeed,
-                                                 gQuickLevel == "easy" ? AI::Level::Easy :
-                                                 gQuickLevel == "hard" ? AI::Level::Hard :
-                                                                         AI::Level::Medium,
-                                                 Nation::Romans));
+            NewGameSetup setup = makeSkirmishSetup(map, gQuickAIs, gQuickSeed,
+                                                   gQuickLevel == "easy" ? AI::Level::Easy :
+                                                   gQuickLevel == "hard" ? AI::Level::Hard :
+                                                                           AI::Level::Medium,
+                                                   Nation::Romans);
+            setup.ggs.objective = gQuickObjective == "conquer" ? GameObjective::Conquer3_4 :
+                                  gQuickObjective == "all"     ? GameObjective::TotalDomination :
+                                                                 GameObjective::None;
+            auto session = Session::newGame(setup);
             if(gQuickAutoplay)
                 session->toggleLocalAI();
             for(unsigned i = 0; i < gQuickWarmupGF; ++i)

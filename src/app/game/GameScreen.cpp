@@ -294,11 +294,12 @@ void GameScreen::GI_Winner(unsigned playerId)
         campaignMissionWon();
     hud_->notifyWinner(playerId, false);
 }
-void GameScreen::GI_TeamWinner(unsigned playerId)
+void GameScreen::GI_TeamWinner(unsigned playerMask)
 {
-    if(session_->world().getPlayer(playerId).isAlly(localPlayer()) || playerId == localPlayer())
+    // The core passes a bit mask of the winning team's players
+    if(playerMask & (1u << localPlayer()))
         campaignMissionWon();
-    hud_->notifyWinner(playerId, true);
+    hud_->notifyWinner(playerMask, true);
 }
 
 void GameScreen::completeMission(const std::string& campaignId, size_t mission)
@@ -713,6 +714,8 @@ bool GameScreen::testCommand(const std::string& cmd, const std::vector<std::stri
         // Test: show the end of game sheet (win or lose)
         if(arg(0) == "lose")
             hud_->notifyDefeated(localPlayer());
+        else if(arg(0) == "team")
+            GI_TeamWinner(static_cast<unsigned>(std::stoul(arg(1))));
         else
             GI_Winner(localPlayer());
         return true;
