@@ -162,6 +162,17 @@ void Hud::Impl::drawSheet()
         if(sheet == drawn)
             fitH = fitReq <= 0 ? 0 : fitH <= 0 ? fitReq : fitH + (fitReq - fitH) * 0.3f;
     }
+    else if(app.time() - sheetCloseTime < ui.theme.motion.normal)
+    {
+        // Closing: the empty panel slides out (its content may refer to objects that are gone)
+        const float t = Ui::ease(static_cast<float>((app.time() - sheetCloseTime) / ui.theme.motion.normal));
+        Rect2 r = sheetCloseRect;
+        if(landscape())
+            r.x += t * (r.w + app.dp(24));
+        else
+            r.y += t * (r.h + app.dp(24));
+        ui.panel(r, app.dp(ui.theme.radius.xl), ui.theme.glassStrong, 1.f - 0.5f * t);
+    }
     if(confirmAction)
     {
         const float W = static_cast<float>(app.width()), H = static_cast<float>(app.height());

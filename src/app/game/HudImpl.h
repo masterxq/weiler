@@ -140,6 +140,9 @@ struct Hud::Impl
     std::vector<SheetKind> sheetStack;
     MapPoint sheetPt;
     double sheetTime = 0;
+    /// Closing animation: the panel of the closed sheet slides out
+    double sheetCloseTime = -100;
+    ui::Rect2 sheetCloseRect;
     int sheetTab = 0;
     int statsType = 0, statsTime = 0;
     std::string missionTitle, missionText;

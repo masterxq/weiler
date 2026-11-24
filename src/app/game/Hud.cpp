@@ -169,7 +169,11 @@ void Hud::Impl::closeSheet()
         missionPaused = false;
     }
     if(sheet != SheetKind::None)
+    {
         app.audio().playUi(UiSound::Close);
+        sheetCloseRect = sheetRect();
+        sheetCloseTime = app.time();
+    }
     sheet = SheetKind::None;
 }
 
@@ -896,6 +900,9 @@ void Hud::Impl::drawTopBar()
 
 void Hud::Impl::drawTools()
 {
+    // The open ring is modal (a tap outside closes it): the column would only collide with it at the right edge
+    if(ring.open)
+        return;
     const float s = app.dp(52);
     const float m = app.dp(10);
     const float W = static_cast<float>(app.width()), H = static_cast<float>(app.height());
