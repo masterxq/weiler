@@ -14,6 +14,16 @@ game dump
 shot shots/a3.png
 key Escape
 wait 5
+tap ui:icon:Mail
+wait 20
+tap ui:Militär
+wait 10
+shot shots/a_msg_military.png
+tap ui:icon:Trash
+wait 5
+tap ui:Nachricht
+wait 20
+shot shots/a_msg_jump.png
 game center mil
 wait 3
 tap mil:

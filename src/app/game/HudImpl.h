@@ -167,6 +167,7 @@ struct Hud::Impl
     float fitReq = 0, fitH = -1;
     /// The current sheet holds a long list (stores): taller in portrait
     bool tallSheet = false;
+    bool wideSheet = false; // landscape: wider side panel (charts)
     std::vector<SheetKind> sheetStack;
     MapPoint sheetPt;
     double sheetTime = 0;
@@ -174,6 +175,7 @@ struct Hud::Impl
     double sheetCloseTime = -100;
     ui::Rect2 sheetCloseRect;
     int sheetTab = 0;
+    int msgFilter = 0; // messages sheet: all, military, economy, geologist
     int statsType = 0, statsTime = 0;
     std::string missionTitle, missionText;
     /// Portrait or picture of the mission message from the game data (file, index; empty = none)

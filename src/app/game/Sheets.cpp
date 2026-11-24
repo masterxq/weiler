@@ -106,9 +106,14 @@ Rect2 Hud::Impl::sheetHeader(const Rect2& r, const std::string& title, Icon ic)
         ui.icon(ic, cx, cy, app.dp(20), th.accent);
         tx += d + app.dp(12);
     }
-    const float fs = app.dp(th.type.title);
-    ui.heading(tx, r.y + top + (h - fs * 1.3f) / 2, title, fs, th.text);
     const float bs = app.dp(44);
+    // Long titles shrink instead of running into the close button
+    float fs = app.dp(th.type.title);
+    const float avail = r.right() - bs - app.dp(18) - tx;
+    const float tw = ui.headingWidth(title, fs);
+    if(tw > avail)
+        fs = std::max(app.dp(15), fs * avail / tw);
+    ui.heading(tx, r.y + top + (h - fs * 1.3f) / 2, title, fs, th.text);
     const Icon closeIcon = sheetStack.empty() ? Icon::Close : Icon::Back;
     if(ui.iconButton(id("sheet.close"), {r.right() - bs - app.dp(10), r.y + top + (h - bs) / 2, bs, bs}, closeIcon,
                      false, 0, Style::Flat))
@@ -355,7 +360,8 @@ void Hud::Impl::sheetBuilding(const Rect2& r)
         c.h = 1e5f;
     }
     // Picture
-    const float picW = std::min(app.dp(120), c.w * 0.32f);
+    // Stores in landscape: the list needs the height, the picture stays small
+    const float picW = isStore && landscape() ? app.dp(48) : std::min(app.dp(120), c.w * 0.32f);
     buildingIcon(bld->getNation(), bt, {c.x, c.y, picW, picW * 0.9f});
     const float tx = c.x + picW + app.dp(16);
     const float tw = c.right() - tx;
@@ -609,22 +615,38 @@ void Hud::Impl::sheetMessages(const Rect2& r)
     {
         top += ui.textWrapped(c.x, c.y, c.w, "Ziel: " + goal, app.dp(14), ui.theme.accent) + app.dp(8);
     }
+    // Filter by category as in the original post office
+    ui.segmented(id("msg.filter"), {c.x, top, c.w, app.dp(40)}, {"Alle", "Militär", "Wirtschaft", "Geologe"},
+                 msgFilter);
+    top += app.dp(50);
+    auto shown = [this](const PostMsg& m) {
+        switch(msgFilter)
+        {
+            case 1: return m.getCategory() == PostCategory::Military;
+            case 2: return m.getCategory() == PostCategory::Economy;
+            case 3: return m.getCategory() == PostCategory::Geologist;
+            default: return true;
+        }
+    };
     const Rect2 view{c.x, top, c.w, c.bottom() - top};
-    float y = ui.beginScroll(id("msg.scroll"), view);
+    float y = ui.beginScroll(id("msg.scroll", static_cast<uint64_t>(msgFilter)), view);
     const float y0 = y;
     const unsigned n = box ? box->getNumMsgs() : 0;
-    if(n == 0)
-        ui.text(c.x, y, "Keine Nachrichten", app.dp(15), ui.theme.textDim);
+    unsigned listed = 0;
     for(unsigned k = 0; k < n; ++k)
     {
         const PostMsg* msg = box->getMsg(n - 1 - k);
-        if(!msg)
+        if(!msg || !shown(*msg))
             continue;
+        ++listed;
         const float fs = app.dp(14);
-        const auto lines = app.font().wrap(msg->getText(), fs, view.w - app.dp(70));
-        const float h = std::max(app.dp(56), static_cast<float>(lines.size()) * fs * 1.3f + app.dp(30));
-        const Rect2 row{view.x, y, view.w, h - app.dp(6)};
-        const bool rowHit = ui.row(id("msg", k), row);
+        const float bs = app.dp(44);
+        const bool hasPos = msg->getPos().isValid();
+        const auto lines = app.font().wrap(msg->getText(), fs, view.w - app.dp(hasPos ? 108 : 76));
+        const float h = std::max(app.dp(60), static_cast<float>(lines.size()) * fs * 1.3f + app.dp(30));
+        const Rect2 row{view.x, y, view.w - app.dp(6), h - app.dp(6)};
+        const bool rowHit = ui.row(id("msg", reinterpret_cast<uintptr_t>(msg)), row);
+        ui.tag("Nachricht", {row.x, row.y, row.w * 0.5f, row.h});
         float ty = row.y + app.dp(8);
         for(const auto& l : lines)
         {
@@ -632,18 +654,29 @@ void Hud::Impl::sheetMessages(const Rect2& r)
             ty += fs * 1.3f;
         }
         ui.text(row.x + app.dp(12), ty, game.session().formatGFTime(msg->getSendFrame()), app.dp(11), ui.theme.textDim);
-        if(msg->getPos().isValid())
+        // Delete (as in the original); the rest of the row jumps to the place
+        const Rect2 del{row.right() - bs - app.dp(4), row.y + (row.h - bs) / 2, bs, bs};
+        if(ui.iconButton(id("msg.del", reinterpret_cast<uintptr_t>(msg)), del, Icon::Trash, false, 0, Style::Flat))
         {
-            ui.icon(Icon::Target, row.right() - app.dp(28), row.y + row.h / 2, app.dp(22), ui.theme.accent);
-            if(rowHit)
+            box->deleteMsg(msg);
+            break;
+        }
+        if(hasPos)
+        {
+            ui.icon(Icon::Target, del.x - app.dp(18), row.y + row.h / 2, app.dp(22), ui.theme.accent);
+            if(rowHit && !del.contains(ui.pressX(), ui.pressY()))
             {
                 game.jumpTo(msg->getPos());
                 closeSheet();
+                ui.endScroll(y + h - y0);
                 return;
             }
         }
         y += h;
     }
+    if(listed == 0)
+        ui.text(c.x, y, msgFilter == 0 ? "Keine Nachrichten" : "Keine Nachrichten dieser Art", app.dp(15),
+                ui.theme.textDim);
     ui.endScroll(y - y0);
 }
 
@@ -700,6 +733,12 @@ void Hud::Impl::sheetSaveLoad(const Rect2& r, bool save)
             }
         }
         y += rowH;
+    }
+    if(y == y0)
+    {
+        ui.textWrapped(c.x, y, c.w, "Noch keine Spielstände. Speichern geht über Menü > Speichern.",
+                       app.dp(15), ui.theme.textDim);
+        y += app.dp(60);
     }
     ui.endScroll(y - y0);
 }

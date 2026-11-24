@@ -418,13 +418,21 @@ bool Ui::button(Id i, const Rect2& rIn, const std::string& label, Icon ic, Style
         icon(ic, r.x + r.w / 2, r.y + r.h / 2, is, fg);
     else if(ic != Icon::None)
     {
-        const float tw = textWidth(label, fs, true);
+        // Narrow buttons: the label shrinks (down to 75 %)
+        const float room = r.w - dp(28) - is - dp(10);
+        const float tw0 = textWidth(label, fs, true);
+        const float lfs = tw0 > room ? fs * std::max(0.75f, room / tw0) : fs;
+        const float tw = tw0 * lfs / fs;
         const float total = is + dp(10) + tw;
-        const float x0 = r.x + std::max(dp(14), (r.w - total) / 2);
+        const float x0 = r.x + std::max(dp(8), (r.w - total) / 2);
         icon(ic, x0 + is / 2, r.y + r.h / 2, is, iconColor);
-        text(x0 + is + dp(10), r.y + (r.h - fs * 1.3f) / 2, label, fs, fg, gfx::Align::Left, true);
+        text(x0 + is + dp(10), r.y + (r.h - lfs * 1.3f) / 2, label, lfs, fg, gfx::Align::Left, true);
     } else
-        text(r.x + r.w / 2, r.y + (r.h - fs * 1.3f) / 2, label, fs, fg, gfx::Align::Center, true);
+    {
+        const float tw = textWidth(label, fs, true);
+        const float lfs = tw > r.w - dp(20) ? fs * std::max(0.75f, (r.w - dp(20)) / tw) : fs;
+        text(r.x + r.w / 2, r.y + (r.h - lfs * 1.3f) / 2, label, lfs, fg, gfx::Align::Center, true);
+    }
     // Disabled buttons are no touch targets for test scripts
     if(enabled)
         tag(label.empty() ? std::string("icon:") + iconName(ic) : label, rIn);

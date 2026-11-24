@@ -62,6 +62,9 @@ public:
     /// True if a UI element was drawn at that point in the last frame
     bool hit(float x, float y) const;
     bool hasCapture() const { return captured_; }
+    /// Where the current or last press started
+    float pressX() const { return pressX_; }
+    float pressY() const { return pressY_; }
     void begin();
     void end();
 

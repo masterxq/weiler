@@ -123,7 +123,7 @@ Rect2 Hud::Impl::sheetRect() const
     const float m = app.dp(10);
     if(landscape())
     {
-        const float w = std::min(std::max(W * 0.42f, app.dp(360)), W - 2 * m);
+        const float w = std::min(std::max(W * (wideSheet ? 0.6f : 0.42f), app.dp(360)), W - 2 * m);
         return {W - w - m, m, w, H - 2 * m};
     }
     float h = std::min(H * 0.58f, std::max(app.dp(420), H * 0.5f));
@@ -150,6 +150,7 @@ void Hud::Impl::openSheet(SheetKind k, MapPoint pt, bool push)
     {
         fitH = -1;
         tallSheet = false;
+        wideSheet = false;
     }
     sheet = k;
     sheetPt = pt;
@@ -167,6 +168,7 @@ void Hud::Impl::closeSheet()
         sheetStack.pop_back();
         fitH = -1;
         tallSheet = false;
+        wideSheet = false;
         return;
     }
     if(sheet == SheetKind::Mission && missionPaused)
@@ -260,8 +262,10 @@ void Hud::Impl::onTap(float x, float y)
     // A ship next to a building (docked at a harbor) only wins when the building itself was not tapped
     if(!isBuildingObj(world().getNO(pt)) && tapShip(pt))
         return;
-    // Buildings are tall: if the tapped node has no building, look at the nodes below for one
-    if(!isBuildingObj(world().getNO(pt)))
+    // Buildings are tall: if the tapped node has no building, look at the nodes below for one. A flag tapped
+    // exactly wins over the roof of the building below it.
+    const noBase* tapped = world().getNO(pt);
+    if(!isBuildingObj(tapped) && !(tapped && tapped->getType() == NodalObjectType::Flag))
     {
         for(Direction d1 : {Direction::SouthWest, Direction::SouthEast})
         {
@@ -444,11 +448,12 @@ void Hud::Impl::openRingAt(MapPoint pt)
     ring.pt = pt;
     ring.openTime = app.time();
     const PointF sp = game.view().worldToScreen(game.view().worldPosNear(pt));
-    const float R = app.dp(104);
+    // Same radius as drawRing; buttons are 60 dp with the label below them
+    const float R = app.dp(ring.items.size() > 6 ? 112 : 100);
     // Keep the ring on screen (on very short screens it is simply centered)
     auto keepIn = [](float v, float lo, float hi) { return lo > hi ? (lo + hi) / 2 : std::clamp(v, lo, hi); };
-    ring.sx = keepIn(sp.x, R + app.dp(40), static_cast<float>(app.width()) - R - app.dp(40));
-    ring.sy = keepIn(sp.y, R + app.dp(70), static_cast<float>(app.height()) - R - app.dp(50));
+    ring.sx = keepIn(sp.x, R + app.dp(44), static_cast<float>(app.width()) - R - app.dp(44));
+    ring.sy = keepIn(sp.y, R + app.dp(70), static_cast<float>(app.height()) - R - app.dp(56));
     if(tutorial)
         tutorial->onRingOpened(isFlag);
 }
@@ -597,6 +602,8 @@ void Hud::Impl::buildingIcon(Nation nation, BuildingType bt, const Rect2& r, flo
 {
     if(const auto* icon = LOADER.getNationIcon(nation, bt))
         ui.sprite(icon, r, 0, alpha);
+    else if(const auto* pic = src(LOADER.getBuildingTex(nation, bt))) // headquarters: no build menu icon
+        ui.sprite(pic, r, 0, alpha);
     else
         ui.icon(Icon::House, r.x + r.w / 2, r.y + r.h / 2, std::min(r.w, r.h) * 0.7f, ui.theme.text.withAlpha(alpha));
 }
@@ -1032,15 +1039,25 @@ void Hud::Impl::drawToasts()
     const double now = app.time();
     while(!toasts.empty() && now - toasts.front().time > 5)
         toasts.pop_front();
+    // The ring menu is modal and would be covered
+    if(ring.open)
+        return;
     const float W = static_cast<float>(app.width());
     float y = (sheet != SheetKind::None && !landscape()) ? sheetRect().y - app.dp(12) :
                                                            static_cast<float>(app.height()) - app.dp(road.active ? 96 : 24);
     const float fs = app.dp(14);
+    // Free band left of the tool column (and of the side panel in landscape); in portrait the column is only in the
+    // way when the toasts sit on top of a sheet
+    const float m = app.dp(10);
+    const bool besideTools = landscape() || sheet != SheetKind::None;
+    const float edge = landscape() && sheet != SheetKind::None ? sheetRect().x : W;
+    const float right = besideTools ? edge - 2 * m - app.dp(52) : W - m;
+    const float bandX = m, bandW = right - m;
     for(auto it = toasts.rbegin(); it != toasts.rend(); ++it)
     {
         const float age = static_cast<float>(now - it->time);
         const float a = std::min(1.f, age / 0.15f) * std::min(1.f, (5.f - age) / 0.5f);
-        const float maxW = std::min(W - app.dp(40), app.dp(520));
+        const float maxW = std::min(bandW, app.dp(520));
         const auto lines = app.font().wrap(it->text, fs, maxW - app.dp(28));
         const float h = static_cast<float>(lines.size()) * fs * 1.3f + app.dp(18);
         float w = 0;
@@ -1048,7 +1065,7 @@ void Hud::Impl::drawToasts()
             w = std::max(w, ui.textWidth(l, fs));
         w += app.dp(28);
         y -= h;
-        const Rect2 r{(W - w) / 2, y, w, h};
+        const Rect2 r{bandX + (bandW - w) / 2, y, w, h};
         ui.panel(r, app.dp(ui.theme.radius.lg), ui.theme.glassStrong, a);
         float ty = r.y + app.dp(9);
         for(const auto& l : lines)

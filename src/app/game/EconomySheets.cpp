@@ -50,6 +50,8 @@ using namespace ui;
 
 void Hud::Impl::sheetStats(const Rect2& r)
 {
+    tallSheet = true;
+    wideSheet = true;
     const Rect2 c = sheetHeader(r, "Statistik", Icon::Chart);
     static const std::vector<std::string> tabs = {"Vergleich", "Waren", "Gebäude", "Militär"};
     ui.segmented(id("stats.tab"), {c.x, c.y, c.w, app.dp(40)}, tabs, sheetTab);
@@ -57,20 +59,33 @@ void Hud::Impl::sheetStats(const Rect2& r)
     auto& b = app.batch();
     if(sheetTab == 0)
     {
-        static const std::vector<std::string> types1 = {"Land", "Gebäude", "Einwohner"};
-        static const std::vector<std::string> types2 = {"Militär", "Gold", "Produktivität"};
+        static const std::vector<std::string> types = {"Land", "Gebäude", "Einwohner", "Militär", "Gold", "Produktivität"};
+        static const std::vector<std::string> types1(types.begin(), types.begin() + 3), types2(types.begin() + 3, types.end());
         static const StatisticType typeIds[] = {StatisticType::Country,  StatisticType::Buildings,
                                                 StatisticType::Inhabitants, StatisticType::Military,
                                                 StatisticType::Gold,     StatisticType::Productivity};
         static const std::vector<std::string> times = {"15 min", "1 h", "4 h", "16 h"};
-        int sel1 = statsType < 3 ? statsType : -1, sel2 = statsType >= 3 ? statsType - 3 : -1;
-        if(ui.segmented(id("stats.type1"), {body.x, body.y, body.w, app.dp(36)}, types1, sel1))
-            statsType = sel1;
-        if(ui.segmented(id("stats.type2"), {body.x, body.y + app.dp(40), body.w, app.dp(36)}, types2, sel2))
-            statsType = sel2 + 3;
-        ui.segmented(id("stats.time"), {body.x, body.y + app.dp(86), body.w, app.dp(34)}, times, statsTime);
-        const Rect2 chart{body.x, body.y + app.dp(130), body.w, body.h - app.dp(168)};
+        float y = body.y;
+        if(landscape())
+        {
+            // Wide side panel: all kinds in one row, the chart gets the height
+            ui.segmented(id("stats.type"), {body.x, y, body.w, app.dp(36)}, types, statsType);
+            y += app.dp(42);
+        } else
+        {
+            int sel1 = statsType < 3 ? statsType : -1, sel2 = statsType >= 3 ? statsType - 3 : -1;
+            if(ui.segmented(id("stats.type1"), {body.x, y, body.w, app.dp(36)}, types1, sel1))
+                statsType = sel1;
+            if(ui.segmented(id("stats.type2"), {body.x, y + app.dp(40), body.w, app.dp(36)}, types2, sel2))
+                statsType = sel2 + 3;
+            y += app.dp(86);
+        }
+        ui.segmented(id("stats.time"), {body.x, y, body.w, app.dp(34)}, times, statsTime);
+        y += app.dp(42);
+        const Rect2 chart{body.x, y, body.w, std::max(app.dp(60), body.bottom() - y)};
         b.roundRect(chart, app.dp(10), Color::rgb(0xFFFFFF, 0.04f));
+        // Top strip: largest value left, legend right; the curves below it
+        const Rect2 plot{chart.x + app.dp(10), chart.y + app.dp(30), chart.w - app.dp(20), chart.h - app.dp(40)};
         const StatisticType type = typeIds[std::clamp(statsType, 0, 5)];
         const auto time = static_cast<StatisticTime>(std::clamp(statsTime, 0, 3));
         uint32_t maxV = 1;
@@ -82,8 +97,10 @@ void Hud::Impl::sheetStats(const Rect2& r)
             for(uint32_t v : pl.getStatistic(time).data[type])
                 maxV = std::max(maxV, v);
         }
-        float legendX = chart.x;
-        for(unsigned p = 0; p < world().getNumPlayers(); ++p)
+        b.roundRect({plot.x, plot.y, plot.w, 1}, 0, Color::rgb(0xFFFFFF, 0.08f));
+        b.roundRect({plot.x, plot.bottom(), plot.w, 1}, 0, Color::rgb(0xFFFFFF, 0.08f));
+        float legendX = chart.right() - app.dp(10);
+        for(unsigned p = world().getNumPlayers(); p-- > 0;)
         {
             const GamePlayer& pl = world().getPlayer(p);
             if(!pl.isUsed())
@@ -94,19 +111,20 @@ void Hud::Impl::sheetStats(const Rect2& r)
             for(unsigned i = 0; i < NUM_STAT_STEPS; ++i)
             {
                 const unsigned idx = (st.currentIndex + 1 + i) % NUM_STAT_STEPS;
-                const float x = chart.x + app.dp(8) + (chart.w - app.dp(16)) * static_cast<float>(i) / (NUM_STAT_STEPS - 1);
-                const float y = chart.bottom() - app.dp(8)
-                                - (chart.h - app.dp(16)) * static_cast<float>(st.data[type][idx]) / static_cast<float>(maxV);
+                const float x = plot.x + plot.w * static_cast<float>(i) / (NUM_STAT_STEPS - 1);
+                const float y = plot.bottom() - plot.h * static_cast<float>(st.data[type][idx]) / static_cast<float>(maxV);
                 if(i > 0)
                     b.line(px, py, x, y, app.dp(2.5f), col);
                 px = x;
                 py = y;
             }
-            b.circle(legendX + app.dp(6), chart.bottom() + app.dp(18), app.dp(5), col);
-            ui.text(legendX + app.dp(16), chart.bottom() + app.dp(9), pl.name, app.dp(13), ui.theme.text);
-            legendX += ui.textWidth(pl.name, app.dp(13)) + app.dp(32);
+            const float nw = ui.textWidth(pl.name, app.dp(13));
+            legendX -= nw;
+            ui.text(legendX, chart.y + app.dp(7), pl.name, app.dp(13), ui.theme.text);
+            b.circle(legendX - app.dp(10), chart.y + app.dp(16), app.dp(5), col);
+            legendX -= app.dp(28);
         }
-        ui.text(chart.x + app.dp(8), chart.y + app.dp(6), std::to_string(maxV), app.dp(12), ui.theme.textDim);
+        ui.text(chart.x + app.dp(10), chart.y + app.dp(7), std::to_string(maxV), app.dp(12), ui.theme.textDim);
     } else if(sheetTab == 1 || sheetTab == 2 || sheetTab == 3)
     {
         float y = ui.beginScroll(id("stats.scroll", static_cast<uint64_t>(sheetTab)), body);
