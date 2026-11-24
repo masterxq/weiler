@@ -288,10 +288,16 @@ void Hud::Impl::sheetTransport(const Rect2& r)
             ui.sprite(src(LOADER.getWareTex(first)), {c.x + app.dp(26), y + app.dp(8), app.dp(34), app.dp(34)});
         const float bs = app.dp(44);
         const float textW = c.w - app.dp(70) - bs * 2 - app.dp(8);
-        std::string shown = names;
-        while(shown.size() > 4 && ui.textWidth(shown, app.dp(14)) > textW)
-            shown = shown.substr(0, shown.size() - 4) + "…";
-        ui.text(c.x + app.dp(68), y + app.dp(14), shown, app.dp(14), ui.theme.text);
+        // Long groups ("Schwert, Schild, Rüstung") take two smaller lines instead of being cut
+        if(ui.textWidth(names, app.dp(14)) <= textW)
+            ui.text(c.x + app.dp(68), y + app.dp(14), names, app.dp(14), ui.theme.text);
+        else
+        {
+            const auto lines = app.font().wrap(names, app.dp(12), textW);
+            float ly = y + app.dp(lines.size() > 1 ? 7 : 15);
+            for(size_t k = 0; k < lines.size() && k < 2; ++k, ly += app.dp(16))
+                ui.text(c.x + app.dp(68), ly, lines[k], app.dp(12), ui.theme.text);
+        }
         if(ui.button(id("trans.up", i), {c.right() - bs * 2 - app.dp(6), y + app.dp(4), bs, bs}, "", Icon::Up,
                      Style::Normal, i > 0))
         {

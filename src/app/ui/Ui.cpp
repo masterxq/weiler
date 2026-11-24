@@ -405,10 +405,10 @@ bool Ui::button(Id i, const Rect2& rIn, const std::string& label, Icon ic, Style
             icon(ic, x + is / 2, r.y + r.h / 2, is, iconColor);
             x += is + dp(14);
         }
-        // Narrow buttons (landscape menu grid): the label shrinks instead of running into the arrow; if that is not
-        // enough the arrow goes (it is only a hint)
+        // Narrow buttons (landscape menu grid): the label shrinks instead of running into the arrow; on narrow grids
+        // the arrow goes for all buttons alike (it is only a hint)
         const float tw = textWidth(label, fs, true);
-        const bool arrow = tw * 0.75f <= r.right() - x - dp(38);
+        const bool arrow = r.w >= dp(160) && tw * 0.75f <= r.right() - x - dp(38);
         const float room = r.right() - x - dp(arrow ? 38 : 12);
         const float lfs = tw > room ? fs * std::max(0.6f, room / tw) : fs;
         text(x, r.y + (r.h - lfs * 1.3f) / 2, label, lfs, fg, gfx::Align::Left, true);
