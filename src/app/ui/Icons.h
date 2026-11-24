@@ -56,6 +56,9 @@ enum class Icon
     Trophy,
     Exit,
     Next,
+    Music,
+    Sound,
+    Touch,
     Count
 };
 

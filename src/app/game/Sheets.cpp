@@ -925,22 +925,7 @@ void Hud::Impl::sheetSettings(const Rect2& r)
     float y = ui.beginScroll(id("set.scroll"), c);
     const float y0 = y;
     auto& st = app.settings();
-    ui.text(c.x, y, "Geräusche", app.dp(15), ui.theme.text);
-    float ev = app.audio().effectVolume();
-    if(ui.slider(id("set.fx"), {c.x, y + app.dp(22), c.w, app.dp(40)}, ev))
-    {
-        app.audio().setEffectVolume(ev);
-        st.setFloat("volume.effects", ev);
-    }
-    y += app.dp(72);
-    ui.text(c.x, y, "Musik", app.dp(15), ui.theme.text);
-    float mv = app.audio().musicVolume();
-    if(ui.slider(id("set.music"), {c.x, y + app.dp(22), c.w, app.dp(40)}, mv))
-    {
-        app.audio().setMusicVolume(mv);
-        st.setFloat("volume.music", mv);
-    }
-    y += app.dp(72);
+    y += drawAudioSettings(app, c.x, y, c.w - app.dp(8));
     bool birds = AUDIODRIVER.birdsEnabled;
     if(ui.toggle(id("set.birds"), {c.x, y, c.w, app.dp(48)}, birds, "Vogelgezwitscher"))
     {

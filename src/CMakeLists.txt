@@ -24,13 +24,15 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(FREETYPE REQUIRED IMPORTED_TARGET freetype2)
 pkg_check_modules(HARFBUZZ REQUIRED IMPORTED_TARGET harfbuzz)
 pkg_check_modules(GLES REQUIRED IMPORTED_TARGET glesv2)
+pkg_check_modules(VORBIS REQUIRED IMPORTED_TARGET vorbisfile vorbisenc)
 
 file(GLOB_RECURSE APP_SRC CONFIGURE_DEPENDS app/*.cpp app/*.h)
 add_executable(weiler ${APP_SRC})
 target_include_directories(weiler PRIVATE app)
 target_link_libraries(weiler PRIVATE weiler_engine SDL3::SDL3 PkgConfig::FREETYPE PkgConfig::HARFBUZZ PkgConfig::GLES
-    Boost::program_options)
-target_compile_definitions(weiler PRIVATE WEILER_FONT_DIR="${PROJECT_SOURCE_DIR}/data/fonts")
+    PkgConfig::VORBIS Boost::program_options)
+target_compile_definitions(weiler PRIVATE WEILER_FONT_DIR="${PROJECT_SOURCE_DIR}/data/fonts"
+    WEILER_MUSIC_DIR="${PROJECT_SOURCE_DIR}/data/music")
 
 # German texts of the core (post messages, mission texts) from the RTTR translation
 find_program(MSGFMT_EXECUTABLE msgfmt)

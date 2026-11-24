@@ -4,6 +4,7 @@
 
 #include "App.h"
 #include "menu/MenuBackdrop.h"
+#include "Music.h"
 #include "Audio.h"
 #include "Loader.h"
 #include "Settings.h"
@@ -16,6 +17,7 @@
 #include <boost/filesystem.hpp>
 #include <chrono>
 #include <clocale>
+#include <cstdlib>
 #include <iostream>
 #include <cmath>
 #include <stdexcept>
@@ -40,6 +42,7 @@ App::~App()
     nextScreen_.reset();
     backdrop_.reset();
     ui_.reset();
+    music_.reset();
     audio_.reset();
     atlas_.reset();
     font_.reset();
@@ -149,11 +152,18 @@ int App::run()
         font_->draw(batch_, x, y - 8, text, 9, c, gfx::Align::Center);
     };
     audio_ = std::make_unique<Audio>();
+    // Test mode: no device; the mix can be written into a file for analysis
     if(!testMode_)
         audio_->init();
+    else if(const char* wav = std::getenv("WEILER_AUDIO_WAV"))
+        audio_->initFile(wav);
     settings_ = std::make_unique<Settings>(paths_.userData / "settings.ini");
-    audio_->setEffectVolume(settings_->getFloat("volume.effects", 0.8f));
-    audio_->setMusicVolume(settings_->getFloat("volume.music", 0.6f));
+    audio_->setVolume(Bus::Effects, settings_->getFloat("volume.effects", 0.8f));
+    audio_->setVolume(Bus::Music, settings_->getFloat("volume.music", 0.6f));
+    audio_->setVolume(Bus::Ui, settings_->getFloat("volume.ui", 0.6f));
+    music_ = std::make_unique<Music>(*audio_);
+    scanMusic();
+    ui_->onActivate = [this](int kind) { audio_->playUi(kind == 1 ? UiSound::Toggle : UiSound::Tap); };
 
     if(testMode_)
     {
@@ -210,6 +220,8 @@ void App::frame(double dt)
     }
     if(screen_)
         screen_->update(dt);
+    music_->update(dt);
+    audio_->pump(dt);
     batch_.begin(fbW_, fbH_);
     glClearColor(0.07f, 0.075f, 0.08f, 1.f);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -241,6 +253,40 @@ void App::frame(double dt)
         posted_.pop_front();
         fn();
     }
+}
+
+void App::scanMusic()
+{
+    auto collect = [](const bfs::path& dir, const std::string& prefix) {
+        std::vector<std::string> files;
+        boost::system::error_code ec;
+        if(!bfs::is_directory(dir, ec))
+            return files;
+        for(const auto& e : bfs::directory_iterator(dir, ec))
+        {
+            const std::string name = e.path().filename().string();
+            if(e.path().extension() == ".ogg" && name.rfind(prefix, 0) == 0)
+                files.push_back(e.path().string());
+        }
+        return files;
+    };
+    bfs::path dir = paths_.appData / "music";
+    if(!bfs::exists(dir))
+        dir = WEILER_MUSIC_DIR;
+    music_->setTracks(Music::Context::Menu, collect(dir, "menu"));
+    // Source: 0 = own pieces, 1 = own and CD, 2 = CD only (imported tracks of the original CD)
+    const int source = settings_->getInt("music.source", 0);
+    std::vector<std::string> game;
+    if(source != 2)
+        game = collect(dir, "game");
+    if(source != 0)
+    {
+        auto cd = collect(paths_.userData / "music" / "cd", "track");
+        game.insert(game.end(), cd.begin(), cd.end());
+    }
+    if(game.empty())
+        game = collect(dir, "game");
+    music_->setTracks(Music::Context::Game, std::move(game));
 }
 
 MenuBackdrop& App::menuBackdrop()

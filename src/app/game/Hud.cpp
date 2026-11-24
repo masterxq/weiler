@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "HudImpl.h"
+#include "Audio.h"
 #include "GamePlayer.h"
 #include "GlobalGameSettings.h"
 #include "Loader.h"
@@ -138,7 +139,11 @@ void Hud::Impl::openSheet(SheetKind k, MapPoint pt, bool push)
     else if(!push)
         sheetStack.clear();
     if(sheet == SheetKind::None)
+    {
         sheetTime = app.time();
+        if(k != SheetKind::None)
+            app.audio().playUi(UiSound::Open);
+    }
     if(sheet != k)
         fitH = -1;
     sheet = k;
@@ -163,6 +168,8 @@ void Hud::Impl::closeSheet()
         game.setPaused(false);
         missionPaused = false;
     }
+    if(sheet != SheetKind::None)
+        app.audio().playUi(UiSound::Close);
     sheet = SheetKind::None;
 }
 
@@ -442,6 +449,7 @@ void Hud::Impl::activateRingItem(const RingItem& item)
     {
         case RingItem::Kind::Building:
             s.SetBuildingSite(pt, item.bt);
+            app.audio().playUi(UiSound::Build);
             noteRecent(item.bt);
             if(app.settings().getBool("build.autoconnect", true) && !tutorial)
             {
@@ -1042,6 +1050,7 @@ void Hud::Impl::checkMessages()
     box->observeNewMsg([this](const PostMsg& msg, unsigned) {
         const bool hasPos = msg.getPos().isValid();
         toast(msg.getText(), hasPos, msg.getPos());
+        app.audio().playUi(UiSound::Notify, 0.8f);
         if(hasPos)
         {
             lastMessagePos = msg.getPos();

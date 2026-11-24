@@ -6,6 +6,7 @@
 #include "App.h"
 #include "MenuBackdrop.h"
 #include "Audio.h"
+#include "Music.h"
 #include "RttrConfig.h"
 #include "Campaign.h"
 #include "Screen.h"
@@ -42,7 +43,7 @@ void drawBackground(App& app)
 class MenuScreen : public Screen
 {
 public:
-    explicit MenuScreen(App& app) : Screen(app), ui_(app.ui()) {}
+    explicit MenuScreen(App& app) : Screen(app), ui_(app.ui()) { app.music().play(Music::Context::Menu); }
     void update(double dt) override { app_.menuBackdrop().update(dt); }
     void onPointer(const PointerEvent& ev) override { ui_.pointer(ev); }
     void onWheel(float x, float y, float d) override { ui_.wheel(x, y, d); }
@@ -464,27 +465,11 @@ public:
         }
         screenTitle("Einstellungen");
         const Rect2 col = column(app_.dp(76));
-        const Rect2 p{col.x, col.y, col.w, app_.dp(300)};
+        const Rect2 p{col.x, col.y, col.w, app_.dp(372)};
         ui_.panel(p, app_.dp(20));
         const Rect2 c = p.inset(app_.dp(18));
-        auto& st = app_.settings();
         float y = c.y;
-        ui_.text(c.x, y, "Geräusche", app_.dp(15), ui_.theme.text);
-        float ev = app_.audio().effectVolume();
-        if(ui_.slider(id("s.fx"), {c.x, y + app_.dp(22), c.w, app_.dp(40)}, ev))
-        {
-            app_.audio().setEffectVolume(ev);
-            st.setFloat("volume.effects", ev);
-        }
-        y += app_.dp(76);
-        ui_.text(c.x, y, "Musik", app_.dp(15), ui_.theme.text);
-        float mv = app_.audio().musicVolume();
-        if(ui_.slider(id("s.mu"), {c.x, y + app_.dp(22), c.w, app_.dp(40)}, mv))
-        {
-            app_.audio().setMusicVolume(mv);
-            st.setFloat("volume.music", mv);
-        }
-        y += app_.dp(76);
+        y += drawAudioSettings(app_, c.x, y, c.w);
         ui_.textWrapped(c.x, y, c.w, "Spieldaten: " + app_.paths().gameData.string(), app_.dp(12), ui_.theme.textDim);
     }
     bool onBack() override
@@ -752,6 +737,52 @@ std::string saveDescription(const bfs::path& path)
         entry = {t, info.empty() ? std::string(buf) : std::string(buf) + " · " + info};
     }
     return entry.second;
+}
+
+float drawAudioSettings(App& app, float x, float y, float w)
+{
+    auto& ui = app.ui();
+    const auto& th = ui.theme;
+    auto& st = app.settings();
+    const float y0 = y;
+    struct Row
+    {
+        Bus bus;
+        const char* label;
+        const char* key;
+        Icon icon;
+    };
+    static const Row rows[] = {{Bus::Music, "Musik", "volume.music", Icon::Music},
+                               {Bus::Effects, "Geräusche im Spiel", "volume.effects", Icon::Sound},
+                               {Bus::Ui, "Klänge der Bedienung", "volume.ui", Icon::Touch}};
+    for(const Row& r : rows)
+    {
+        float v = app.audio().volume(r.bus);
+        ui.icon(r.icon, x + app.dp(11), y + app.dp(11), app.dp(20), th.accent);
+        ui.text(x + app.dp(32), y, r.label, app.dp(th.type.body), th.text);
+        ui.text(x + w, y, std::to_string(static_cast<int>(std::lround(v * 100))) + " %", app.dp(th.type.small),
+                th.textDim, gfx::Align::Right);
+        if(ui.slider(id(r.key), {x, y + app.dp(24), w, app.dp(40)}, v, 0, 1, 0.05f))
+        {
+            app.audio().setVolume(r.bus, v);
+            st.setFloat(r.key, v);
+            if(r.bus == Bus::Ui)
+                app.audio().playUi(UiSound::Tap);
+        }
+        y += app.dp(74);
+    }
+    // Music source; the CD tracks have to be imported once from the user's CD image
+    ui.text(x, y, "Musikauswahl", app.dp(th.type.small), th.textDim);
+    int source = st.getInt("music.source", 0);
+    if(ui.segmented(id("music.source"), {x, y + app.dp(20), w, app.dp(42)}, {"Weiler", "Beides", "Original-CD"},
+                    source))
+    {
+        st.setInt("music.source", source);
+        app.scanMusic();
+        app.music().skip();
+    }
+    y += app.dp(72);
+    return y - y0;
 }
 
 std::unique_ptr<Screen> createMainMenu(App& app)

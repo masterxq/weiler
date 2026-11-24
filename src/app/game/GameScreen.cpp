@@ -4,6 +4,7 @@
 
 #include "GameScreen.h"
 #include "App.h"
+#include "Music.h"
 #include "Cheats.h"
 #include "Game.h"
 #include "GamePlayer.h"
@@ -80,6 +81,7 @@ GameScreen::GameScreen(App& app, std::unique_ptr<Session> session)
     hud_ = std::make_unique<Hud>(*this, app_);
     session_->setLuaMessageHandler([this](const LuaMessage& msg) { hud_->showLuaMessage(msg); });
     lastAutosave_ = app.time();
+    app.music().play(Music::Context::Game);
 }
 
 GameScreen::~GameScreen()

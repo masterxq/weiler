@@ -21,6 +21,7 @@ namespace weiler {
 
 class Audio;
 class MenuBackdrop;
+class Music;
 class Settings;
 class TestScript;
 namespace ui {
@@ -53,6 +54,9 @@ public:
     /// Serif display font (titles, word mark)
     gfx::Font& fontDisplay() { return *fontDisplay_; }
     Audio& audio() { return *audio_; }
+    Music& music() { return *music_; }
+    /// Collect the music files (own pieces, imported CD tracks) according to the settings
+    void scanMusic();
     ui::IconAtlas& icons() { return icons_; }
     ui::Ui& ui() { return *ui_; }
     Settings& settings() { return *settings_; }
@@ -104,6 +108,7 @@ private:
     std::unique_ptr<gfx::SpriteAtlas> atlas_;
     std::unique_ptr<gfx::Font> font_, fontBold_, fontDisplay_;
     std::unique_ptr<Audio> audio_;
+    std::unique_ptr<Music> music_;
     ui::IconAtlas icons_;
     std::unique_ptr<ui::Ui> ui_;
     std::unique_ptr<Settings> settings_;

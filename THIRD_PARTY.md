@@ -47,3 +47,29 @@ File: `data/fonts/NotoSerifDisplay-SemiBold.ttf`, taken unchanged from the Debia
 
 Copyright 2010, 2012-2020 Google Inc. / Google LLC (as stated by Debian). License: SIL Open Font License 1.1
 (OFL-1.1), full text in `data/fonts/OFL-Noto.txt`.
+
+## Music and FluidR3_GM (soundfont)
+
+The pieces in `data/music/*.ogg` are own compositions of this project (GPL-2.0-or-later like the code). Their score
+is `tools/music/pieces.py` (notation helpers in `tools/music/score.py`); `tools/music/render.sh` renders them with
+fluidsynth and the General MIDI soundfont FluidR3_GM (Debian package `fluid-soundfont-gm`, file
+`/usr/share/sounds/sf2/FluidR3_GM.sf2`) and encodes them as Ogg Vorbis. The soundfont itself is not part of this
+repository; the rendered audio contains its instrument samples.
+
+FluidR3_GM: Copyright 2000-2002, 2008 Frank Wen, 2008 Toby Smithe. License: MIT (as stated by Debian):
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+    documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and
+    to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+    the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+    THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+The interface sounds are synthesized at runtime (`src/app/Audio.cpp`), no sample files.

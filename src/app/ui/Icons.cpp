@@ -304,6 +304,18 @@ Shape design(Icon icon)
               .path({{7, 5.5f}, {4.5f, 6}, {4.5f, 8.5f}, {7.3f, 10.2f}}, W)
               .path({{17, 5.5f}, {19.5f, 6}, {19.5f, 8.5f}, {16.7f, 10.2f}}, W);
             break;
+        case Icon::Music:
+            s.ring(7.5f, 17.5f, 2.6f, W).ring(17, 15.5f, 2.6f, W).path({{10.1f, 17.5f}, {10.1f, 5.5f}, {19.6f, 3.5f}, {19.6f, 15.5f}}, W)
+              .seg(10.1f, 9, 19.6f, 7, W);
+            break;
+        case Icon::Sound:
+            s.loop({{3.5f, 9.5f}, {7, 9.5f}, {12, 5}, {12, 19}, {7, 14.5f}, {3.5f, 14.5f}}, W)
+              .arc(13, 12, 3.6f, -50, 50, W)
+              .arc(13, 12, 7.2f, -50, 50, W);
+            break;
+        case Icon::Touch:
+            s.disk(12, 12, 2.4f).ring(12, 12, 5.8f, W).arc(12, 12, 9.4f, 200, 340, W).arc(12, 12, 9.4f, 20, 160, W);
+            break;
         case Icon::Exit:
             s.path({{13, 4}, {5, 4}, {5, 20}, {13, 20}}, W)
               .seg(10, 12, 20, 12, W)
@@ -316,7 +328,7 @@ Shape design(Icon icon)
 
 const char* iconName(Icon icon)
 {
-    static const char* const names[] = {"None", "Menu", "Close", "Back", "Pause", "Play", "Fast", "Road", "Flag", "Build", "House", "Grid", "Map", "Home", "Store", "Mail", "Chart", "Gear", "Save", "Folder", "Sword", "Shield", "Tools", "Sliders", "List", "Boxes", "Pick", "Eye", "Ship", "Trash", "Up", "Down", "Check", "Plus", "Minus", "Info", "Help", "People", "Power", "Target", "Coin", "Hand", "Trophy", "Exit", "Next"};
+    static const char* const names[] = {"None", "Menu", "Close", "Back", "Pause", "Play", "Fast", "Road", "Flag", "Build", "House", "Grid", "Map", "Home", "Store", "Mail", "Chart", "Gear", "Save", "Folder", "Sword", "Shield", "Tools", "Sliders", "List", "Boxes", "Pick", "Eye", "Ship", "Trash", "Up", "Down", "Check", "Plus", "Minus", "Info", "Help", "People", "Power", "Target", "Coin", "Hand", "Trophy", "Exit", "Next", "Music", "Sound", "Touch"};
     static_assert(std::size(names) == static_cast<size_t>(Icon::Count));
     const auto i = static_cast<size_t>(icon);
     return i < std::size(names) ? names[i] : "?";
