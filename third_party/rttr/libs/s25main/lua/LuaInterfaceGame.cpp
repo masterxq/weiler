@@ -210,6 +210,8 @@ void LuaInterfaceGame::registerClasses(kaguya::State& state)
                                  .addFunction("GetGameFrame", &LuaInterfaceGame::getGF)
                                  .addFunction("GetNumPlayers", &LuaInterfaceGame::getNumPlayers)
                                  .addFunction("Chat", &LuaInterfaceGame::chat)
+                                 .addFunction("SetCampaignChapterCompleted",
+                                              &LuaInterfaceGame::setCampaignChapterCompleted)
                                  .addOverloadedFunctions("MissionStatement", &LuaInterfaceGame::missionStatement,
                                                          &LuaInterfaceGame::missionStatement2,
                                                          &LuaInterfaceGame::missionStatement3)
@@ -276,6 +278,11 @@ std::string LuaInterfaceGame::formatNumGFs(unsigned numGFs) const
 unsigned LuaInterfaceGame::getNumPlayers() const
 {
     return gw.getNumPlayers();
+}
+
+void LuaInterfaceGame::setCampaignChapterCompleted(const std::string& campaignUid, unsigned chapter)
+{
+    localGameState.campaignChapterCompleted(campaignUid, chapter);
 }
 
 void LuaInterfaceGame::chat(int playerIdx, const std::string& msg)

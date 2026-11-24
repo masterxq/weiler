@@ -12,6 +12,7 @@ namespace weiler {
 
 class App;
 class Screen;
+class Settings;
 
 std::unique_ptr<Screen> createMissingDataScreen(App& app);
 std::unique_ptr<Screen> createMainMenu(App& app);
@@ -26,6 +27,10 @@ float drawAudioSettings(App& app, float x, float y, float w);
 float drawGraphicsSettings(App& app, float x, float y, float w);
 /// Second line of a savegame entry: date, map and played time (cached per file version)
 std::string saveDescription(const boost::filesystem::path& path);
+/// Campaign progress (missions counted from 0): a mission is open when it is the first one or its predecessor is done
+void markMissionDone(Settings& settings, const std::string& campaignId, size_t mission);
+bool missionDone(const Settings& settings, const std::string& campaignId, size_t mission);
+bool missionOpen(const Settings& settings, const std::string& campaignId, size_t mission);
 NewGameSetup makeSkirmishSetup(const boost::filesystem::path& map, unsigned numAIs, unsigned seed, AI::Level level,
                                Nation nation);
 

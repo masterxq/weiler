@@ -81,10 +81,14 @@ public:
     GameWorld& world();
     const GameWorld& world() const;
     const std::string& title() const { return title_; }
+    /// Missions run a Lua script, free games do not
+    bool hasScript() const;
 
     /// Frontend callbacks
     void setGameInterface(GameInterface* gi);
     std::function<void(const std::string&)> onSystemChat;
+    /// A campaign script reports a completed chapter (1 = first mission)
+    std::function<void(const std::string& campaignId, unsigned chapter)> onChapterCompleted;
     /// Receiver of Lua message boxes; messages sent before (e.g. at mission start) are delivered now
     void setLuaMessageHandler(std::function<void(const LuaMessage&)> handler);
 
@@ -97,6 +101,7 @@ public:
     std::string formatGFTime(unsigned numGFs) const override;
     void systemChat(const std::string& text) override;
     void showLuaMessage(const LuaMessage& msg) const override;
+    void campaignChapterCompleted(const std::string& campaignUid, unsigned chapter) override;
 
 protected:
     // GameCommandFactory: commands of the local player, executed before the next GF

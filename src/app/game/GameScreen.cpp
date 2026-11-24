@@ -34,6 +34,7 @@
 #include "files.h"
 #include "Savegame.h"
 #include "menu/Menus.h"
+#include "Campaign.h"
 #include "gameData/GameLoader.h"
 #include "ogl/glAllocator.h"
 #include "libsiedler2/libsiedler2.h"
@@ -87,6 +88,10 @@ GameScreen::GameScreen(App& app, std::unique_ptr<Session> session)
     VIEWSTATE.onToggleHumanAIPlayer = [this] { session_->toggleLocalAI(); };
     hud_ = std::make_unique<Hud>(*this, app_);
     session_->setLuaMessageHandler([this](const LuaMessage& msg) { hud_->showLuaMessage(msg); });
+    session_->onChapterCompleted = [this](const std::string& campaignId, unsigned chapter) {
+        if(chapter > 0)
+            completeMission(campaignId, chapter - 1);
+    };
     lastAutosave_ = app.time();
     app.music().play(Music::Context::Game);
 }
@@ -285,11 +290,39 @@ void GameScreen::GI_UpdateMapVisibility()
 }
 void GameScreen::GI_Winner(unsigned playerId)
 {
+    if(playerId == localPlayer())
+        campaignMissionWon();
     hud_->notifyWinner(playerId, false);
 }
 void GameScreen::GI_TeamWinner(unsigned playerId)
 {
+    if(session_->world().getPlayer(playerId).isAlly(localPlayer()) || playerId == localPlayer())
+        campaignMissionWon();
     hud_->notifyWinner(playerId, true);
+}
+
+void GameScreen::completeMission(const std::string& campaignId, size_t mission)
+{
+    if(missionDone(app_.settings(), campaignId, mission))
+        return;
+    markMissionDone(app_.settings(), campaignId, mission);
+    hud_->toast("Kapitel " + std::to_string(mission + 1) + " geschafft. Das nächste Kapitel ist offen.");
+}
+
+void GameScreen::campaignMissionWon()
+{
+    // Missions won by conquest: the mission is found by its title (also after loading a savegame); missions always
+    // have a script, a free game on the same map does not count
+    if(!session_->hasScript())
+        return;
+    for(const Campaign& c : loadCampaigns())
+    {
+        for(size_t i = 0; i < c.missionTitles.size(); ++i)
+        {
+            if(c.missionTitles[i] == session_->title())
+                completeMission(c.id, i);
+        }
+    }
 }
 void GameScreen::GI_StartRoadBuilding(MapPoint startPt, bool waterRoad)
 {
@@ -651,7 +684,7 @@ bool GameScreen::testCommand(const std::string& cmd, const std::vector<std::stri
         if(arg(0) == "lose")
             hud_->notifyDefeated(localPlayer());
         else
-            hud_->notifyWinner(localPlayer(), false);
+            GI_Winner(localPlayer());
         return true;
     }
     if(cmd == "seafaring")

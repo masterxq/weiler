@@ -154,6 +154,11 @@ const GameWorld& Session::world() const
     return game_->world_;
 }
 
+bool Session::hasScript() const
+{
+    return game_->world_.hasLua();
+}
+
 unsigned Session::getGF() const
 {
     return game_->em_->getCurrentGF();
@@ -338,6 +343,12 @@ void Session::showLuaMessage(const LuaMessage& msg) const
         onLuaMessage_(msg);
     else
         pendingLuaMessages_.push_back(msg);
+}
+
+void Session::campaignChapterCompleted(const std::string& campaignUid, unsigned chapter)
+{
+    if(onChapterCompleted)
+        onChapterCompleted(campaignUid, chapter);
 }
 
 void Session::setLuaMessageHandler(std::function<void(const LuaMessage&)> handler)

@@ -4,6 +4,9 @@ wait 10
 tap ui:Römische_Kampagne
 wait 20
 shot shots/c1.png
+tap ui:Kapitel_2
+wait 5
+shot shots/c1b.png
 tap ui:Kapitel_1
 sec 3
 shot shots/c2.png
@@ -14,8 +17,19 @@ game dump
 game ff 3000
 wait 5
 shot shots/c3.png
-key Escape
-key Escape
+game gameover win
+wait 30
+shot shots/c3b.png
+tap ui:Hauptmenü
+wait 20
+tap ui:Kampagne
+wait 10
+shot shots/c3c.png
+tap ui:Kapitel_2
+sec 3
+game dump
+tap ui:OK
+wait 10
 tap ui:icon:Menu
 wait 10
 tap ui:Hauptmenü
@@ -24,13 +38,11 @@ tap ui:OK
 wait 20
 tap ui:Kampagne
 wait 10
-
-wait 10
 tap ui:Welt*
 wait 10
 shot shots/c4.png
 labels
-tap ui:Kapitel_2
+tap ui:Kapitel_1
 sec 3
 shot shots/c5.png
 game dump

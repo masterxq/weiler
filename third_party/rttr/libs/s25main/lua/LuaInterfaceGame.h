@@ -51,6 +51,8 @@ public:
     std::string formatNumGFs(unsigned numGFs) const;
     unsigned getNumPlayers() const;
     void chat(int playerIdx, const std::string& msg);
+    /// Weiler: mark a campaign chapter as completed (name as in later RTTR versions)
+    void setCampaignChapterCompleted(const std::string& campaignUid, unsigned chapter);
     void missionStatement(int playerIdx, const std::string& title, const std::string& msg);
     void missionStatement2(int playerIdx, const std::string& title, const std::string& msg, unsigned imgIdx);
     void missionStatement3(int playerIdx, const std::string& title, const std::string& msg, unsigned imgIdx,

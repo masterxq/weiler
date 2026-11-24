@@ -316,6 +316,11 @@ Shape design(Icon icon)
         case Icon::Touch:
             s.disk(12, 12, 2.4f).ring(12, 12, 5.8f, W).arc(12, 12, 9.4f, 200, 340, W).arc(12, 12, 9.4f, 20, 160, W);
             break;
+        case Icon::Lock:
+            s.rrectLine(5, 10.5f, 14, 10, 2, W).arc(12, 10.5f, 4.2f, 180, 360, W).seg(7.8f, 10.5f, 7.8f, 9.5f, W)
+              .seg(16.2f, 10.5f, 16.2f, 9.5f, W)
+              .disk(12, 15.5f, 1.4f);
+            break;
         case Icon::Exit:
             s.path({{13, 4}, {5, 4}, {5, 20}, {13, 20}}, W)
               .seg(10, 12, 20, 12, W)
@@ -328,7 +333,7 @@ Shape design(Icon icon)
 
 const char* iconName(Icon icon)
 {
-    static const char* const names[] = {"None", "Menu", "Close", "Back", "Pause", "Play", "Fast", "Road", "Flag", "Build", "House", "Grid", "Map", "Home", "Store", "Mail", "Chart", "Gear", "Save", "Folder", "Sword", "Shield", "Tools", "Sliders", "List", "Boxes", "Pick", "Eye", "Ship", "Trash", "Up", "Down", "Check", "Plus", "Minus", "Info", "Help", "People", "Power", "Target", "Coin", "Hand", "Trophy", "Exit", "Next", "Music", "Sound", "Touch"};
+    static const char* const names[] = {"None", "Menu", "Close", "Back", "Pause", "Play", "Fast", "Road", "Flag", "Build", "House", "Grid", "Map", "Home", "Store", "Mail", "Chart", "Gear", "Save", "Folder", "Sword", "Shield", "Tools", "Sliders", "List", "Boxes", "Pick", "Eye", "Ship", "Trash", "Up", "Down", "Check", "Plus", "Minus", "Info", "Help", "People", "Power", "Target", "Coin", "Hand", "Trophy", "Exit", "Next", "Music", "Sound", "Touch", "Lock"};
     static_assert(std::size(names) == static_cast<size_t>(Icon::Count));
     const auto i = static_cast<size_t>(icon);
     return i < std::size(names) ? names[i] : "?";

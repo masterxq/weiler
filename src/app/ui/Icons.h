@@ -59,6 +59,7 @@ enum class Icon
     Music,
     Sound,
     Touch,
+    Lock,
     Count
 };
 

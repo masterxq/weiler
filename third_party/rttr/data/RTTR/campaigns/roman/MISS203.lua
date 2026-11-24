@@ -514,7 +514,8 @@ function MissionEvent(e, onLoad)
         rttr:GetPlayer(0):EnableBuilding(BLD_SHIPYARD, not onLoad)
 
     elseif(e == 99) then
-        -- TODO: EnableNextMissions()
+        -- Weiler: report the completed chapter
+        rttr:SetCampaignChapterCompleted("roman", 4)
         -- Show opened arc
         rttr:GetWorld():AddStaticObject(97, 68, 561, 0xFFFF, 2)
     end

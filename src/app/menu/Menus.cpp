@@ -324,22 +324,35 @@ public:
         const Rect2 lv = listR.inset(app_.dp(8));
         y = ui_.beginScroll(id("camp.list", static_cast<uint64_t>(sel_)), lv);
         const float y0 = y;
-        const int last = app_.settings().getInt("campaign." + c.id + ".last", 0);
+        const auto& st = app_.settings();
+        // Highlighted: the next chapter to play
+        size_t next = 0;
+        while(next + 1 < c.missionTitles.size() && missionDone(st, c.id, next))
+            ++next;
         const float rowH = app_.dp(60);
         for(size_t i = 0; i < c.missionTitles.size(); ++i)
         {
             const Rect2 row{lv.x, y, lv.w - app_.dp(6), rowH - app_.dp(6)};
-            const bool hl = static_cast<int>(i) == last;
+            const bool open = missionOpen(st, c.id, i), done = missionDone(st, c.id, i);
+            const bool hl = i == next;
             const bool rowHit = ui_.row(id("camp.m", i), row, hl);
-            ui_.text(row.x + app_.dp(18), row.y + app_.dp(7), "Kapitel " + std::to_string(i + 1), app_.dp(12.5f),
-                     hl ? ui_.theme.accent : ui_.theme.textDim);
-            ui_.text(row.x + app_.dp(18), row.y + app_.dp(24), c.missionTitles[i], app_.dp(16), ui_.theme.text,
-                     gfx::Align::Left, true);
-            ui_.icon(Icon::Play, row.right() - app_.dp(26), row.y + row.h / 2, app_.dp(18),
-                     hl ? ui_.theme.accent : ui_.theme.textFaint);
+            const auto& th = ui_.theme;
+            ui_.text(row.x + app_.dp(18), row.y + app_.dp(7),
+                     "Kapitel " + std::to_string(i + 1) + (done ? " · geschafft" : open ? "" : " · gesperrt"),
+                     app_.dp(12.5f), hl ? th.accent : th.textDim);
+            ui_.text(row.x + app_.dp(18), row.y + app_.dp(24), c.missionTitles[i], app_.dp(16),
+                     open ? th.text : th.textFaint, gfx::Align::Left, true);
+            ui_.icon(done ? Icon::Check : open ? Icon::Play : Icon::Lock, row.right() - app_.dp(26),
+                     row.y + row.h / 2, app_.dp(18), hl || done ? th.accent : th.textFaint);
             ui_.tag("Kapitel " + std::to_string(i + 1), row);
             if(rowHit)
-                start(c, i);
+            {
+                if(open)
+                    start(c, i);
+                else
+                    app_.notify("Kapitel " + std::to_string(i + 1) + " öffnet sich, wenn du Kapitel "
+                                + std::to_string(i) + " geschafft hast.");
+            }
             y += rowH;
         }
         ui_.endScroll(y - y0);
@@ -353,8 +366,6 @@ public:
 private:
     void start(const Campaign& c, size_t mission)
     {
-        app_.settings().setInt("campaign." + c.id + ".last", static_cast<int>(mission));
-        app_.settings().save();
         const Campaign campaign = c;
         startGame(app_, [campaign, mission] {
             return Session::newGame(
@@ -659,6 +670,35 @@ private:
 };
 
 } // namespace
+
+namespace {
+std::string doneKey(const std::string& campaignId)
+{
+    return "campaign." + campaignId + ".done";
+}
+} // namespace
+
+void markMissionDone(Settings& settings, const std::string& campaignId, size_t mission)
+{
+    std::vector<int> done = settings.getList(doneKey(campaignId));
+    if(std::find(done.begin(), done.end(), static_cast<int>(mission)) != done.end())
+        return;
+    done.push_back(static_cast<int>(mission));
+    std::sort(done.begin(), done.end());
+    settings.setList(doneKey(campaignId), done);
+    settings.save();
+}
+
+bool missionDone(const Settings& settings, const std::string& campaignId, size_t mission)
+{
+    const std::vector<int> done = settings.getList(doneKey(campaignId));
+    return std::find(done.begin(), done.end(), static_cast<int>(mission)) != done.end();
+}
+
+bool missionOpen(const Settings& settings, const std::string& campaignId, size_t mission)
+{
+    return mission == 0 || missionDone(settings, campaignId, mission) || missionDone(settings, campaignId, mission - 1);
+}
 
 void startTutorialGame(App& app, bool firstStart)
 {

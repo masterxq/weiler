@@ -71,6 +71,9 @@ public:
 
 private:
     void runGame(double dt);
+    /// Campaign progress: a chapter reported by the mission script, or a mission won by conquest
+    void completeMission(const std::string& campaignId, size_t mission);
+    void campaignMissionWon();
     void updateViewState();
 
     std::unique_ptr<Session> session_;

@@ -452,8 +452,9 @@ void App::setScreen(std::unique_ptr<Screen> screen)
 
 void App::closeScreen()
 {
-    // Functions posted by the old screen may refer to it
+    // Functions posted by the old screen may refer to it; its message is over
     posted_.clear();
+    notice_.clear();
     screen_.reset();
     nextScreen_.reset();
 }

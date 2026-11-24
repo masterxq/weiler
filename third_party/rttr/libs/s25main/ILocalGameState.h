@@ -56,6 +56,8 @@ public:
     virtual void systemChat(const std::string& text) = 0;
     /// Show a message requested by a Lua script (default: ignore)
     virtual void showLuaMessage(const LuaMessage& /*msg*/) const {}
+    /// Weiler: a campaign script reports a completed chapter (1 = first mission of the campaign)
+    virtual void campaignChapterCompleted(const std::string& /*campaignUid*/, unsigned /*chapter*/) {}
 };
 
 /// For headless contexts: acts as the host playing as player 0 and discards all output.
