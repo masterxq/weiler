@@ -1,0 +1,110 @@
+# Weiler: German texts in the informal address ("du") of the Weiler interface.
+# Overrides entries of the RTTR translation (rttr-de.po) and the German mission texts of the RTTR campaign scripts
+# (msgid = the original German text of the script). Merged before rttr-de.po at build time (msgcat --use-first).
+# SPDX-License-Identifier: GPL-2.0-or-later
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: de\n"
+
+# ---- Core messages
+msgid "Lost land by this building"
+msgstr "Durch dieses Gebäude hast du Land verloren"
+
+msgid "The player '%s' offers you a %s."
+msgstr "Der Spieler '%s' bietet dir einen %s an."
+
+msgid "You win"
+msgstr "Du hast gewonnen."
+
+# ---- Roman campaign: hints
+msgid "Bauen Sie Unterkünfte für einen Holzfäller,\nSchreiner und Steinmetz."
+msgstr "Baue Unterkünfte für einen Holzfäller, Schreiner und Steinmetz."
+
+msgid "Bauen Sie ein Forsthaus."
+msgstr "Baue ein Forsthaus."
+
+msgid "Bauen Sie eine Baracke an der nördlichen Grenze\nIhrer Siedlung."
+msgstr "Baue eine Baracke an der nördlichen Grenze deiner Siedlung."
+
+msgid "Bauen Sie einen Weg auf den Berg und schicken Sie\nIhren Gelehrten dorthin."
+msgstr "Baue einen Weg auf den Berg und schicke deinen Gelehrten dorthin."
+
+msgid "Bauen Sie ein Eisenbergwerk, eine Eisenschmelze und\neine Waffenschmiede."
+msgstr "Baue ein Eisenbergwerk, eine Eisenschmelze und eine Waffenschmiede."
+
+msgid "Erreichen Sie die nördliche Ebene, indem Sie an der\nNordgrenze weitere Baracken bauen."
+msgstr "Erreiche die nördliche Ebene, indem du an der Nordgrenze weitere Baracken baust."
+
+msgid "Suchen Sie nach neuen Rohstoffen und sichern Sie die\nNahrungsversorgung. Erkunden Sie die Insel\nvollständig."
+msgstr "Suche nach neuen Rohstoffen und sichere die Nahrungsversorgung. Erkunde die Insel vollständig."
+
+msgid "Errichten Sie eine Schlosserei und dringen Sie ins\nInnere der Insel vor. Denken Sie an die Versorgung\nmit Nahrungsmitteln und Rohstoffen."
+msgstr "Errichte eine Schlosserei und dringe ins Innere der Insel vor. Denk an die Versorgung mit Nahrungsmitteln und Rohstoffen."
+
+msgid "Dringen Sie ins Innere der Insel vor. Denken Sie an\ndie Versorgung mit Nahrungsmitteln und Rohstoffen."
+msgstr "Dringe ins Innere der Insel vor. Denk an die Versorgung mit Nahrungsmitteln und Rohstoffen."
+
+msgid "Greifen Sie die Nubier an und suchen sie nach deren\nTor."
+msgstr "Greife die Nubier an und suche nach ihrem Tor."
+
+msgid "Erobern Sie das Katapult und suchen Sie dann weiter\nnach dem Tor."
+msgstr "Erobere das Katapult und suche dann weiter nach dem Tor."
+
+msgid "Rücken Sie weiter nach Osten vor."
+msgstr "Rücke weiter nach Osten vor."
+
+msgid "Suchen Sie nach dem Tor."
+msgstr "Suche nach dem Tor."
+
+msgid "Suchen Sie nach dem Tor im Norden."
+msgstr "Suche nach dem Tor im Norden."
+
+msgid "Erkunden Sie die Umgebung."
+msgstr "Erkunde die Umgebung."
+
+msgid "Bauen Sie einen Hafen und eine Werft. Bauen Sie in\nder Werft ein großes Handelsschiff und starten im\nHafen eine Expedition."
+msgstr "Baue einen Hafen und eine Werft. Baue in der Werft ein großes Handelsschiff und starte im Hafen eine Expedition."
+
+msgid "Erkunden Sie weitere Inseln. Suchen Sie nach dem\nnächsten Tor."
+msgstr "Erkunde weitere Inseln. Suche nach dem nächsten Tor."
+
+msgid "Halten Sie Ausschau nach dem Tor. Der\nPlatz zum Bauen ist begrenzt; überlegen Sie gut, wie\nSie Ihre Resourcen ausnutzen."
+msgstr "Halte Ausschau nach dem Tor. Der Platz zum Bauen ist begrenzt; überlege gut, wie du deine Rohstoffe nutzt."
+
+msgid "Finden und besetzen sie das Tor! Achten Sie auf\nMöglichkeiten zum Hafenbau."
+msgstr "Finde und besetze das Tor! Achte auf Möglichkeiten zum Hafenbau."
+
+msgid "Suchen Sie nach einem Tor."
+msgstr "Suche nach einem Tor."
+
+msgid "Suchen Sie nach einem Tor. Achten Sie auf eventuell\nvorhandene Möglichkeiten zum Hafenbau."
+msgstr "Suche nach einem Tor. Achte auf Möglichkeiten zum Hafenbau."
+
+msgid "Seien Sie vorsichtig. Sie sollten den Feind erst\nangreifen, wenn sie es mit beiden Gegnern aufnehmen\nkönnen."
+msgstr "Sei vorsichtig. Greife den Feind erst an, wenn du es mit beiden Gegnern aufnehmen kannst."
+
+msgid "Sammeln Sie Ihre Kräfte um durchzubrechen! Suchen\nSie nach dem Tor!"
+msgstr "Sammle deine Kräfte, um durchzubrechen! Suche nach dem Tor!"
+
+# ---- Roman campaign: mission accomplished
+msgid "Sie haben diese Mission erfüllt. Das zweite Kapitel\nwartet schon auf Sie...\n\nWann immer Sie wollen, können Sie im Hauptmenü die\nnächste Mission starten."
+msgstr "Du hast diese Mission erfüllt. Das zweite Kapitel wartet schon auf dich …\n\nDu kannst es jederzeit im Hauptmenü unter „Kampagne“ starten."
+
+msgid "Sie haben diese Mission erfüllt. Das dritte Kapitel\nwartet schon auf Sie..."
+msgstr "Du hast diese Mission erfüllt. Das dritte Kapitel wartet schon auf dich …"
+
+msgid "Sie haben diese Mission erfüllt. Das nächste Kapitel\nwartet schon auf Sie..."
+msgstr "Du hast diese Mission erfüllt. Das nächste Kapitel wartet schon auf dich …"
+
+msgid "Sie haben diese Mission erfüllt. Das nächste Kapitel\nwartet schon auf Sie... "
+msgstr "Du hast diese Mission erfüllt. Das nächste Kapitel wartet schon auf dich …"
+
+msgid "Sie haben diese Mission erfüllt. Das nächste Kapitel\nwartet auf Sie..."
+msgstr "Du hast diese Mission erfüllt. Das nächste Kapitel wartet auf dich …"
+
+msgid "Sie haben diese Mission erfüllt. Das letzte Kapitel\nwartet jetzt auf Sie..."
+msgstr "Du hast diese Mission erfüllt. Das letzte Kapitel wartet jetzt auf dich …"
+
+msgid "Sie haben es geschafft!"
+msgstr "Du hast es geschafft!"

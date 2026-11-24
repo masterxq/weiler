@@ -20,6 +20,7 @@
 namespace weiler {
 
 class Audio;
+class CdImport;
 class MenuBackdrop;
 class Music;
 class Settings;
@@ -55,6 +56,8 @@ public:
     gfx::Font& fontDisplay() { return *fontDisplay_; }
     Audio& audio() { return *audio_; }
     Music& music() { return *music_; }
+    /// Import of the original CD music (created on first use)
+    CdImport& cdImport();
     /// Collect the music files (own pieces, imported CD tracks) according to the settings
     void scanMusic();
     ui::IconAtlas& icons() { return icons_; }
@@ -109,6 +112,7 @@ private:
     std::unique_ptr<gfx::Font> font_, fontBold_, fontDisplay_;
     std::unique_ptr<Audio> audio_;
     std::unique_ptr<Music> music_;
+    std::unique_ptr<CdImport> cdImport_;
     ui::IconAtlas icons_;
     std::unique_ptr<ui::Ui> ui_;
     std::unique_ptr<Settings> settings_;

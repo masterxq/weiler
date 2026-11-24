@@ -7,6 +7,7 @@
 #include "MenuBackdrop.h"
 #include "Audio.h"
 #include "Music.h"
+#include "CdImport.h"
 #include "RttrConfig.h"
 #include "Campaign.h"
 #include "Screen.h"
@@ -465,12 +466,18 @@ public:
         }
         screenTitle("Einstellungen");
         const Rect2 col = column(app_.dp(76));
-        const Rect2 p{col.x, col.y, col.w, app_.dp(372)};
-        ui_.panel(p, app_.dp(20));
+        // The panel takes the content height of the last frame; scrolls on short screens
+        const float maxH = static_cast<float>(app_.height()) - col.y - app_.dp(16);
+        const Rect2 p{col.x, col.y, col.w, std::min(maxH, contentH_ > 0 ? contentH_ + app_.dp(36) : maxH)};
+        ui_.panel(p, app_.dp(ui_.theme.radius.xl));
         const Rect2 c = p.inset(app_.dp(18));
-        float y = c.y;
-        y += drawAudioSettings(app_, c.x, y, c.w);
-        ui_.textWrapped(c.x, y, c.w, "Spieldaten: " + app_.paths().gameData.string(), app_.dp(12), ui_.theme.textDim);
+        float y = ui_.beginScroll(id("set.menu"), c);
+        const float y0 = y;
+        y += drawAudioSettings(app_, c.x, y, c.w - app_.dp(6));
+        y += ui_.textWrapped(c.x, y, c.w - app_.dp(6), "Spieldaten: " + app_.paths().gameData.string(), app_.dp(12),
+                             ui_.theme.textFaint);
+        contentH_ = y - y0;
+        ui_.endScroll(contentH_);
     }
     bool onBack() override
     {
@@ -478,6 +485,9 @@ public:
         app_.setScreen(createMainMenu(app_));
         return true;
     }
+
+private:
+    float contentH_ = 0;
 };
 
 // ------------------------------------------------------------------------------------------------------------------
@@ -782,6 +792,45 @@ float drawAudioSettings(App& app, float x, float y, float w)
         app.music().skip();
     }
     y += app.dp(72);
+    // Import of the CD tracks (stays on this device, never part of Weiler)
+    auto& cd = app.cdImport();
+    const bfs::path cdDir = app.paths().userData / "music" / "cd";
+    static std::string cdNote;
+    if(cd.running())
+    {
+        ui.text(x, y, "CD wird eingelesen …", app.dp(th.type.small), th.textDim);
+        const Rect2 bar{x, y + app.dp(24), w, app.dp(6)};
+        app.batch().roundRect(bar, bar.h / 2, th.text.withAlpha(0.1f));
+        app.batch().roundRectV({bar.x, bar.y, bar.w * cd.progress(), bar.h}, bar.h / 2, th.accent, th.accentDeep);
+        y += app.dp(44);
+    } else
+    {
+        size_t have = 0;
+        boost::system::error_code ec;
+        for(const auto& e : bfs::directory_iterator(cdDir, ec))
+            have += e.path().extension() == ".ogg";
+        if(const int n = cd.takeWritten())
+        {
+            app.scanMusic();
+            cdNote = std::to_string(n) + " Stücke der CD eingelesen.";
+        }
+        if(ui.button(id("cd.import"), {x, y, w, app.dp(48)},
+                     have ? "Original-CD erneut einlesen" : "Musik der Original-CD einlesen", Icon::Music))
+        {
+            const bfs::path img = CdImport::findImage(app.paths().gameData);
+            if(img.empty())
+                cdNote = "Kein CD-Abbild (.ccd oder .cue) bei den Spieldaten gefunden.";
+            else if(!cd.start(img, cdDir))
+                cdNote = cd.error();
+            else
+                cdNote.clear();
+        }
+        y += app.dp(56);
+        const std::string note = !cdNote.empty() ? cdNote :
+                                 have ? std::to_string(have) + " Stücke der CD vorhanden (nur auf diesem Gerät)." :
+                                        "Liest die Audiospuren deines CD-Abbilds ein; sie bleiben auf diesem Gerät.";
+        y += ui.textWrapped(x, y, w, note, app.dp(th.type.caption), th.textFaint) + app.dp(8);
+    }
     return y - y0;
 }
 

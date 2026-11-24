@@ -143,6 +143,9 @@ struct Hud::Impl
     int sheetTab = 0;
     int statsType = 0, statsTime = 0;
     std::string missionTitle, missionText;
+    /// Portrait or picture of the mission message from the game data (file, index; empty = none)
+    std::string missionImageFile;
+    int missionImageIdx = -1;
     bool missionPaused = false;
     std::string gameOverText;
     std::string confirmText;

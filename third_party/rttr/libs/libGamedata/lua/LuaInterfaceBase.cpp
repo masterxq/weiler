@@ -127,8 +127,10 @@ void LuaInterfaceBase::registerTranslations(const kaguya::LuaRef& luaTranslation
         log(fmt.str());
     } else
     {
+        // Weiler: the texts of the scripts pass the program's translation once more, so that Weiler can adapt them
+        // (informal address) without changing the scripts
         for(const auto& it : translated)
-            translations_[it.first] = it.second;
+            translations_[it.first] = it.second.empty() ? it.second : std::string(mygettext::gettext(it.second.c_str()));
     }
 }
 

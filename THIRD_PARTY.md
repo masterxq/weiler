@@ -29,6 +29,9 @@ Changes against upstream:
 - The override graphics of RTTR (`assets/overrides`) are not included; the loader skips the missing folder and
   geologist water signs fall back to the single sign of the original data.
 - `RttrConfig` no longer changes the working directory.
+- `lua/LuaInterfaceBase.cpp`: translated texts of the Lua scripts pass `gettext` once more, so that
+  `data/lang/weiler-de.po` (merged before `rttr-de.po` at build time) can adapt the German mission texts to the
+  informal address of the Weiler interface.
 
 The game loop in `src/engine/Session.cpp` is adapted from RTTR (`extras/ai-battle`, `network/GameClient*`).
 

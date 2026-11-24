@@ -995,9 +995,24 @@ void Hud::Impl::sheetAttack(const Rect2& r)
 void Hud::Impl::sheetMission(const Rect2& r)
 {
     const Rect2 c = sheetHeader(r, missionTitle.empty() ? "Mission" : missionTitle, Icon::Info);
-    const Rect2 view{c.x, c.y, c.w, c.h - app.dp(64)};
+    // Portrait of the narrator (from the game data) in a frame beside the text
+    const ISpriteSource* img = nullptr;
+    if(!missionImageFile.empty())
+        img = src(LOADER.getTextureN(ResourceId::make(missionImageFile), static_cast<unsigned>(missionImageIdx)));
+    float tx = c.x;
+    if(img)
+    {
+        const float pw = app.dp(landscape() ? 84 : 92);
+        const Rect2 frame{c.x, c.y + app.dp(2), pw, pw * 1.18f};
+        app.batch().roundRect(frame, app.dp(ui.theme.radius.md), Color::rgb(0x000000, 0.28f));
+        ui.sprite(img, frame.inset(app.dp(6)));
+        app.batch().roundRect(frame, app.dp(ui.theme.radius.md), ui.theme.accent.withAlpha(0.55f), 1.f, app.dp(1.5f));
+        tx = frame.right() + app.dp(16);
+    }
+    const Rect2 view{tx, c.y, c.right() - tx, c.h - app.dp(64)};
     float y = ui.beginScroll(id("mission.scroll"), view);
-    const float h = ui.textWrapped(c.x, y, c.w, missionText, app.dp(16), ui.theme.text);
+    const float h = ui.textWrapped(view.x, y, view.w - app.dp(6), missionText, app.dp(ui.theme.type.body),
+                                   ui.theme.text);
     ui.endScroll(h);
     if(ui.button(id("mission.ok"), {c.x, c.bottom() - app.dp(54), c.w, app.dp(54)}, "OK", Icon::Check, Style::Primary))
         closeSheet();

@@ -1080,6 +1080,17 @@ void Hud::showLuaMessage(const LuaMessage& msg)
 {
     d->missionTitle = msg.title;
     d->missionText = reflowText(msg.text);
+    d->missionImageFile.clear();
+    d->missionImageIdx = -1;
+    if(msg.isMissionStatement && msg.helpImage != 0)
+    {
+        d->missionImageFile = "io";
+        d->missionImageIdx = static_cast<int>(msg.helpImage);
+    } else if(!msg.iconFile.empty() && msg.iconIdx >= 0)
+    {
+        d->missionImageFile = msg.iconFile;
+        d->missionImageIdx = msg.iconIdx;
+    }
     d->missionPaused = msg.pause && !d->game.paused();
     if(d->missionPaused)
         d->game.setPaused(true);

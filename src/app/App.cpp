@@ -5,6 +5,7 @@
 #include "App.h"
 #include "menu/MenuBackdrop.h"
 #include "Music.h"
+#include "CdImport.h"
 #include "Audio.h"
 #include "Loader.h"
 #include "Settings.h"
@@ -42,6 +43,7 @@ App::~App()
     nextScreen_.reset();
     backdrop_.reset();
     ui_.reset();
+    cdImport_.reset();
     music_.reset();
     audio_.reset();
     atlas_.reset();
@@ -253,6 +255,13 @@ void App::frame(double dt)
         posted_.pop_front();
         fn();
     }
+}
+
+CdImport& App::cdImport()
+{
+    if(!cdImport_)
+        cdImport_ = std::make_unique<CdImport>();
+    return *cdImport_;
 }
 
 void App::scanMusic()

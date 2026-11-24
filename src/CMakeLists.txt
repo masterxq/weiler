@@ -24,7 +24,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(FREETYPE REQUIRED IMPORTED_TARGET freetype2)
 pkg_check_modules(HARFBUZZ REQUIRED IMPORTED_TARGET harfbuzz)
 pkg_check_modules(GLES REQUIRED IMPORTED_TARGET glesv2)
-pkg_check_modules(VORBIS REQUIRED IMPORTED_TARGET vorbisfile vorbisenc)
+pkg_check_modules(VORBIS REQUIRED IMPORTED_TARGET vorbisfile vorbisenc vorbis ogg)
 
 file(GLOB_RECURSE APP_SRC CONFIGURE_DEPENDS app/*.cpp app/*.h)
 add_executable(weiler ${APP_SRC})
@@ -35,17 +35,21 @@ target_compile_definitions(weiler PRIVATE WEILER_FONT_DIR="${PROJECT_SOURCE_DIR}
     WEILER_MUSIC_DIR="${PROJECT_SOURCE_DIR}/data/music")
 
 # German texts of the core (post messages, mission texts) from the RTTR translation
+# Weiler's own texts (informal address, mission texts) take precedence over the RTTR translation
 find_program(MSGFMT_EXECUTABLE msgfmt)
-if(MSGFMT_EXECUTABLE)
+find_program(MSGCAT_EXECUTABLE msgcat)
+if(MSGFMT_EXECUTABLE AND MSGCAT_EXECUTABLE)
     set(WEILER_LANG_DIR ${CMAKE_CURRENT_BINARY_DIR}/languages)
     set(PO_FILE ${PROJECT_SOURCE_DIR}/third_party/rttr/data/RTTR/languages/rttr-de.po)
+    set(WEILER_PO_FILE ${PROJECT_SOURCE_DIR}/data/lang/weiler-de.po)
     add_custom_command(OUTPUT ${WEILER_LANG_DIR}/rttr-de.mo
                        COMMAND ${CMAKE_COMMAND} -E make_directory ${WEILER_LANG_DIR}
-                       COMMAND ${MSGFMT_EXECUTABLE} -o ${WEILER_LANG_DIR}/rttr-de.mo ${PO_FILE}
-                       DEPENDS ${PO_FILE})
+                       COMMAND ${MSGCAT_EXECUTABLE} --use-first -o ${WEILER_LANG_DIR}/de.po ${WEILER_PO_FILE} ${PO_FILE}
+                       COMMAND ${MSGFMT_EXECUTABLE} -o ${WEILER_LANG_DIR}/rttr-de.mo ${WEILER_LANG_DIR}/de.po
+                       DEPENDS ${PO_FILE} ${WEILER_PO_FILE})
     add_custom_target(weiler_languages ALL DEPENDS ${WEILER_LANG_DIR}/rttr-de.mo)
     add_dependencies(weiler weiler_languages)
     target_compile_definitions(weiler PRIVATE WEILER_LANG_DIR="${WEILER_LANG_DIR}")
 else()
-    message(WARNING "msgfmt (gettext) not found: messages of the core stay English")
+    message(WARNING "msgfmt/msgcat (gettext) not found: messages of the core stay English")
 endif()
