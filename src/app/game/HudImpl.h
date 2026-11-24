@@ -267,6 +267,8 @@ struct Hud::Impl
     VisualSettings edit;
     bool editValid = false;
     void ensureEdit();
+    /// "Standardwerte" button at the end of a settings list (moves y below it)
+    bool defaultsButton(float x, float& y, float w);
     void sheetEconomy(const ui::Rect2& r);
     void sheetDistribution(const ui::Rect2& r);
     void sheetTransport(const ui::Rect2& r);

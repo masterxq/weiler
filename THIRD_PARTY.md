@@ -47,6 +47,8 @@ Changes against upstream:
   `data/lang/weiler-de.po` (merged before `rttr-de.po` at build time) can adapt the German mission texts to the
   informal address of the Weiler interface.
 - `data/RTTR/campaigns/world/campaign.lua`: German spelling of the campaign name ("Weltkampagne").
+- `GamePlayer`: the default settings of a new player are available as static functions
+  (`getStandardVisualSettings`, `getStandardToolSettings`, `getStandardMilitarySettings`) for the default buttons.
 
 The game loop in `src/engine/Session.cpp` is adapted from RTTR (`extras/ai-battle`, `network/GameClient*`).
 

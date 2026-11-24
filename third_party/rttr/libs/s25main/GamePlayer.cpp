@@ -82,31 +82,59 @@ void GamePlayer::loadStandardToolSettings()
     std::fill(tools_ordered_delta.begin(), tools_ordered_delta.end(), 0);
 
     // percentage (tool-settings-window-slider, in 10th percent)
-    toolsSettings_[Tool::Tongs] = 1;
-    toolsSettings_[Tool::Hammer] = 4;
-    toolsSettings_[Tool::Axe] = 2;
-    toolsSettings_[Tool::Saw] = 5;
-    toolsSettings_[Tool::PickAxe] = 7;
-    toolsSettings_[Tool::Shovel] = 1;
-    toolsSettings_[Tool::Crucible] = 3;
-    toolsSettings_[Tool::RodAndLine] = 1;
-    toolsSettings_[Tool::Scythe] = 2;
-    toolsSettings_[Tool::Cleaver] = 1;
-    toolsSettings_[Tool::Rollingpin] = 2;
-    toolsSettings_[Tool::Bow] = 1;
+    toolsSettings_ = getStandardToolSettings();
+}
+
+ToolSettings GamePlayer::getStandardToolSettings()
+{
+    ToolSettings t{};
+    t[Tool::Tongs] = 1;
+    t[Tool::Hammer] = 4;
+    t[Tool::Axe] = 2;
+    t[Tool::Saw] = 5;
+    t[Tool::PickAxe] = 7;
+    t[Tool::Shovel] = 1;
+    t[Tool::Crucible] = 3;
+    t[Tool::RodAndLine] = 1;
+    t[Tool::Scythe] = 2;
+    t[Tool::Cleaver] = 1;
+    t[Tool::Rollingpin] = 2;
+    t[Tool::Bow] = 1;
+    return t;
 }
 
 void GamePlayer::loadStandardMilitarySettings()
 {
+    militarySettings_ = getStandardMilitarySettings();
+}
+
+MilitarySettings GamePlayer::getStandardMilitarySettings()
+{
     // military settings (military-window-slider, in 10th percent)
-    militarySettings_[0] = MILITARY_SETTINGS_SCALE[0]; //-V525
-    militarySettings_[1] = 3;
-    militarySettings_[2] = MILITARY_SETTINGS_SCALE[2];
-    militarySettings_[3] = 3;
-    militarySettings_[4] = 0;
-    militarySettings_[5] = 1;
-    militarySettings_[6] = MILITARY_SETTINGS_SCALE[6];
-    militarySettings_[7] = MILITARY_SETTINGS_SCALE[7];
+    MilitarySettings m{};
+    m[0] = MILITARY_SETTINGS_SCALE[0]; //-V525
+    m[1] = 3;
+    m[2] = MILITARY_SETTINGS_SCALE[2];
+    m[3] = 3;
+    m[4] = 0;
+    m[5] = 1;
+    m[6] = MILITARY_SETTINGS_SCALE[6];
+    m[7] = MILITARY_SETTINGS_SCALE[7];
+    return m;
+}
+
+VisualSettings GamePlayer::getStandardVisualSettings()
+{
+    VisualSettings vs;
+    unsigned visIdx = 0;
+    for(const DistributionMapping& mapping : distributionMap)
+        vs.distribution[visIdx++] = std::get<2>(mapping);
+    vs.useCustomBuildOrder = false;
+    vs.build_order = getStandardBuildOrder();
+    vs.transport_order = getOrderingFromTransportPrio(STD_TRANSPORT_PRIO);
+    vs.military_settings = getStandardMilitarySettings();
+    vs.tools_settings = getStandardToolSettings();
+    return vs;
 }
 
 BuildOrders GamePlayer::getStandardBuildOrder()

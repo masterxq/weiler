@@ -344,6 +344,10 @@ public:
     void fillVisualSettings(VisualSettings& visualSettings) const;
 
     static BuildOrders getStandardBuildOrder();
+    /// Weiler: settings of a new player (default buttons of the economy sheets)
+    static VisualSettings getStandardVisualSettings();
+    static ToolSettings getStandardToolSettings();
+    static MilitarySettings getStandardMilitarySettings();
 
 private:
     /// Access to the world

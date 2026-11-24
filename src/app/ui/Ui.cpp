@@ -62,6 +62,7 @@ bool Ui::pointer(const PointerEvent& ev)
             pressY_ = curY_ = ev.y;
             pressTime_ = app_.time();
             dragDY_ = 0;
+            scrollGesture_ = false;
             return true;
         case PointerEvent::Type::Move:
             if(!captured_)
@@ -499,12 +500,19 @@ bool Ui::slider(Id i, const Rect2& r, float& value, float lo, float hi, float st
     const float x0 = r.x + knob, x1 = r.right() - knob;
     const float cy = r.y + r.h / 2;
     bool changed = false;
-    const bool active = captured_ && r.contains(pressX_, pressY_) && (activeSlider_ == 0 || activeSlider_ == i);
-    if(active)
+    // In a list a slider only takes a sideways drag or a tap, so that scrolling over it changes nothing
+    const bool inList = !scrollStack_.empty();
+    const float dx = std::abs(curX_ - pressX_), dy = std::abs(curY_ - pressY_);
+    const bool sideways = !scrollGesture_ && dx > dp(8) && dx > dy;
+    const bool pressedHere = r.contains(pressX_, pressY_);
+    const bool active = captured_ && pressedHere
+                        && (activeSlider_ == i || (activeSlider_ == 0 && (!inList || sideways)));
+    const bool tapped = inList && released_ && !dragging_ && pressedHere && r.contains(relX_, relY_);
+    if(active || tapped)
     {
-        activeSlider_ = i;
-        dragging_ = true;
-        float t = std::clamp((curX_ - x0) / std::max(1.f, x1 - x0), 0.f, 1.f);
+        activeSlider_ = active ? i : activeSlider_;
+        dragging_ = dragging_ || active;
+        float t = std::clamp(((active ? curX_ : relX_) - x0) / std::max(1.f, x1 - x0), 0.f, 1.f);
         float v = lo + t * (hi - lo);
         if(step > 0)
             v = std::round(v / step) * step;
@@ -620,8 +628,11 @@ float Ui::beginScroll(Id i, const Rect2& view)
     s.view = view;
     scrollStack_.push_back(i);
     block(view);
-    if(captured_ && dragging_ && view.contains(pressX_, pressY_) && activeSlider_ == 0)
+    // A press scrolls once it moves mostly vertically and no slider has taken it
+    if(captured_ && dragging_ && view.contains(pressX_, pressY_) && activeSlider_ == 0
+       && (scrollGesture_ || std::abs(curY_ - pressY_) >= std::abs(curX_ - pressX_)))
     {
+        scrollGesture_ = true;
         s.y -= dragDY_;
         s.vel = -dragDY_ * 60.f;
     } else if(!captured_)

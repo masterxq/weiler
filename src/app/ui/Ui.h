@@ -163,6 +163,7 @@ private:
     std::vector<Id> scrollStack_;
     float wheelDelta_ = 0, wheelX_ = 0, wheelY_ = 0;
     Id activeSlider_ = 0;
+    bool scrollGesture_ = false; // the current press scrolls a list (sliders in it stay untouched)
     struct AnimState
     {
         float value;

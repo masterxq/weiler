@@ -204,6 +204,14 @@ void Hud::Impl::sheetEconomy(const Rect2& r)
     fit(r, g.area.y + static_cast<float>(g.n) * (g.h + g.gap));
 }
 
+bool Hud::Impl::defaultsButton(float x, float& y, float w)
+{
+    const bool hit = ui.button(id("defaults", static_cast<uint64_t>(sheet)), {x, y + app.dp(10), w, app.dp(48)},
+                               "Standardwerte");
+    y += app.dp(66);
+    return hit;
+}
+
 void Hud::Impl::ensureEdit()
 {
     if(!editValid)
@@ -243,6 +251,11 @@ void Hud::Impl::sheetDistribution(const Rect2& r)
             game.session().ChangeDistribution(edit.distribution);
         }
         y += app.dp(42);
+    }
+    if(defaultsButton(c.x, y, c.w - app.dp(8)))
+    {
+        edit.distribution = GamePlayer::getStandardVisualSettings().distribution;
+        game.session().ChangeDistribution(edit.distribution);
     }
     ui.endScroll(y - y0);
 }
@@ -293,6 +306,11 @@ void Hud::Impl::sheetTransport(const Rect2& r)
         }
         y += rowH;
     }
+    if(defaultsButton(c.x, y, c.w - app.dp(8)))
+    {
+        edit.transport_order = GamePlayer::getStandardVisualSettings().transport_order;
+        game.session().ChangeTransport(edit.transport_order);
+    }
     ui.endScroll(y - y0);
 }
 
@@ -321,6 +339,18 @@ void Hud::Impl::sheetTools(const Rect2& r)
         y += app.dp(46);
         ++i;
     }
+    // As in the original: defaults, or no tools at all
+    const float half = (c.w - app.dp(8) - app.dp(10)) / 2, by = y;
+    if(defaultsButton(c.x, y, half))
+    {
+        edit.tools_settings = GamePlayer::getStandardToolSettings();
+        game.session().ChangeTools(edit.tools_settings);
+    }
+    if(ui.button(id("tools.zero"), {c.x + half + app.dp(10), by + app.dp(10), half, app.dp(48)}, "Alle auf 0"))
+    {
+        edit.tools_settings = ToolSettings{};
+        game.session().ChangeTools(edit.tools_settings);
+    }
     ui.endScroll(y - y0);
 }
 
@@ -344,6 +374,11 @@ void Hud::Impl::sheetMilitary(const Rect2& r)
             game.session().ChangeMilitary(edit.military_settings);
         }
         y += app.dp(70);
+    }
+    if(defaultsButton(c.x, y, c.w - app.dp(8)))
+    {
+        edit.military_settings = GamePlayer::getStandardMilitarySettings();
+        game.session().ChangeMilitary(edit.military_settings);
     }
     ui.endScroll(y - y0);
 }
