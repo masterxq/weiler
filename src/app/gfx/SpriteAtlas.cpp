@@ -10,6 +10,9 @@
 #include "libsiedler2/PixelBufferBGRA.h"
 #include <algorithm>
 #include <atomic>
+#ifdef __GLIBC__
+#    include <malloc.h>
+#endif
 #include <chrono>
 #include <iostream>
 #include <cmath>
@@ -355,6 +358,14 @@ void SpriteAtlas::preload(const std::vector<const ISpriteSource*>& sources)
         addEntry(todo[i], e);
     }
     lateSprites_ = 0;
+    todo.clear();
+    todo.shrink_to_fit();
+    page.clear();
+    page.shrink_to_fit();
+#ifdef __GLIBC__
+    // The decoding threads left freed memory in their malloc arenas: give it back to the system
+    malloc_trim(0);
+#endif
     const auto end = std::chrono::steady_clock::now();
     auto ms = [](auto a, auto b) { return static_cast<long>(std::chrono::duration<double, std::milli>(b - a).count()); };
     std::cout << "[time] atlas preload: " << todo.size() << " sprites, decode " << ms(start, decoded) << " ms ("
