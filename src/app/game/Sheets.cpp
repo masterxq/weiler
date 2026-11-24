@@ -32,6 +32,7 @@
 #include "world/GameWorldViewer.h"
 #include "gameTypes/SettingsTypes.h"
 #include "gameTypes/ShipDirection.h"
+#include "gameData/BuildingProperties.h"
 #include "gameTypes/VisualSettings.h"
 #include "gameData/BuildingConsts.h"
 #include "gameData/MilitaryConsts.h"
@@ -939,16 +940,7 @@ void Hud::Impl::sheetSaveLoad(const Rect2& r, bool save)
                     doSave();
             } else
             {
-                App& a = app;
-                a.post([this, &a, path] {
-                    try
-                    {
-                        a.setScreen(createGameScreen(a, Session::loadGame(path, 1)));
-                    } catch(const std::exception& e)
-                    {
-                        toast(std::string("Laden fehlgeschlagen: ") + e.what());
-                    }
-                });
+                game.loadFrom(path);
             }
         }
         y += rowH;
@@ -1080,8 +1072,12 @@ void Hud::Impl::sheetGameOver(const Rect2& r)
     // Three key figures of the own realm
     const auto& reg = player().getBuildingRegister();
     unsigned buildings = static_cast<unsigned>(reg.getMilitaryBuildings().size());
+    buildings += static_cast<unsigned>(reg.getStorehouses().size());
     for(const auto bt : helpers::enumRange<BuildingType>())
-        buildings += static_cast<unsigned>(reg.getBuildings(bt).size());
+    {
+        if(BuildingProperties::isUsual(bt))
+            buildings += static_cast<unsigned>(reg.getBuildings(bt).size());
+    }
     const Inventory& inv = player().getInventory();
     unsigned soldiers = 0;
     for(Job j : {Job::Private, Job::PrivateFirstClass, Job::Sergeant, Job::Officer, Job::General})

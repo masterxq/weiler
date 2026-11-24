@@ -303,6 +303,7 @@ void App::frame(double dt, std::chrono::steady_clock::time_point workStart)
     ui_->begin();
     if(screen_)
         screen_->draw();
+    drawNotice();
     ui_->end();
     batch_.flush();
     const double drawMs = msSince(drawStart);
@@ -447,6 +448,43 @@ void App::releaseMenuBackdrop()
 void App::setScreen(std::unique_ptr<Screen> screen)
 {
     nextScreen_ = std::move(screen);
+}
+
+void App::closeScreen()
+{
+    screen_.reset();
+    nextScreen_.reset();
+}
+
+void App::notify(std::string text)
+{
+    notice_ = std::move(text);
+    noticeTime_ = time_;
+}
+
+void App::drawNotice()
+{
+    const float age = static_cast<float>(time_ - noticeTime_);
+    if(notice_.empty() || age > 6)
+        return;
+    auto& ui = *ui_;
+    const float a = std::min(1.f, age / 0.15f) * std::min(1.f, (6.f - age) / 0.5f);
+    const float fs = dp(14), W = static_cast<float>(fbW_);
+    const float maxW = std::min(W - dp(40), dp(520));
+    const auto lines = font_->wrap(notice_, fs, maxW - dp(28));
+    float w = 0;
+    for(const auto& l : lines)
+        w = std::max(w, ui.textWidth(l, fs));
+    w += dp(28);
+    const float h = static_cast<float>(lines.size()) * fs * 1.3f + dp(18);
+    const ui::Rect2 r{(W - w) / 2, static_cast<float>(fbH_) - h - dp(40), w, h};
+    ui.panel(r, dp(ui.theme.radius.lg), ui.theme.glassStrong, a);
+    float ty = r.y + dp(9);
+    for(const auto& l : lines)
+    {
+        ui.text(r.x + dp(14), ty, l, fs, ui.theme.text.withAlpha(a));
+        ty += fs * 1.3f;
+    }
 }
 
 bool App::saveThumbnail(const std::string& pngPath)

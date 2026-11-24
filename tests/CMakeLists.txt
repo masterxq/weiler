@@ -6,3 +6,30 @@ add_test(NAME headless_determinism
     COMMAND ${CMAKE_COMMAND} -DHEADLESS=$<TARGET_FILE:weiler-headless> -DDATA=${WEILER_TEST_DATA}
             -DWORK=${CMAKE_CURRENT_BINARY_DIR}/headless -DMAP=DATA/MAPS4/KARTE01.WLD -DMINUTES=30
             -P ${CMAKE_CURRENT_SOURCE_DIR}/HeadlessDeterminism.cmake)
+
+# Interface scripts in the offscreen test mode (label "ui")
+function(add_ui_test name size)
+    cmake_parse_arguments(UI "FIRST_START" "SCRIPT" "" ${ARGN})
+    if(NOT UI_SCRIPT)
+        set(UI_SCRIPT ${name})
+    endif()
+    string(REPLACE ";" "|" args "${UI_UNPARSED_ARGUMENTS}")
+    add_test(NAME ui_${name}
+        COMMAND ${CMAKE_COMMAND} -DWEILER=$<TARGET_FILE:weiler> -DDATA=${WEILER_TEST_DATA}
+                -DWORK=${CMAKE_CURRENT_BINARY_DIR}/ui/${name} -DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/ui/${UI_SCRIPT}.txt
+                -DSIZE=${size} -DFIRST_START=${UI_FIRST_START} "-DARGS=${args}"
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/ui/RunScript.cmake)
+    set_tests_properties(ui_${name} PROPERTIES LABELS ui)
+endfunction()
+
+set(_skirmish --map DATA/MAPS4/KARTE01.WLD --ais 1)
+add_ui_test(tut 1080x2400 FIRST_START)
+add_ui_test(sheets 1080x2400 ${_skirmish})
+add_ui_test(misc 1080x2400 ${_skirmish})
+add_ui_test(build 1080x2400 ${_skirmish})
+add_ui_test(save 1080x2400 ${_skirmish})
+add_ui_test(camp 1080x2400)
+add_ui_test(land 2400x1080)
+add_ui_test(land_hd 1920x1080 SCRIPT land)
+add_ui_test(attack 1080x2400 --map DATA/MAPS3/AKARTE01.WLD --ais 1 --warmup 60000 --autoplay)
+add_ui_test(names 1080x2400 --map DATA/MAPS4/KARTE01.WLD --ais 1 --warmup 36000 --autoplay)

@@ -1,6 +1,6 @@
 wait 10
 game dump
-game findenemy
+game findenemy reachable
 wait 3
 tap found:
 wait 20

@@ -9,6 +9,7 @@
 #include "Session.h"
 #include "gfx/Minimap.h"
 #include "gfx/WorldView.h"
+#include <functional>
 #include <future>
 #include <memory>
 
@@ -51,6 +52,8 @@ public:
     bool quickSave();
     bool quickLoad();
     bool saveTo(const std::string& path);
+    /// Replace this game by a savegame; false (and a message) if the file cannot be read
+    bool loadFrom(const std::string& path);
     void startTutorial(bool firstStart = false);
 
     // GameInterface
@@ -88,6 +91,11 @@ private:
 
 /// Create a game screen for a new or loaded game; shows an error message on failure
 std::unique_ptr<Screen> createGameScreen(App& app, std::unique_ptr<Session> session);
+/// Start a game at the end of the frame. The current screen and its session are closed first: the core keeps
+/// global state (object counters, world pointer, random generators) that only one session may use at a time.
+/// `prepare` runs on the new screen before it is shown. On failure the main menu shows the error.
+void startGame(App& app, std::function<std::unique_ptr<Session>()> create,
+               std::function<void(GameScreen&)> prepare = {});
 /// Load the files of the original data needed before any game (palettes, fonts of the core, ...)
 bool ensureStartFilesLoaded();
 

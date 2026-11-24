@@ -4,6 +4,7 @@
 
 #include "Settings.h"
 #include <boost/filesystem.hpp>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 
@@ -24,14 +25,18 @@ Settings::Settings(boost::filesystem::path file) : file_(std::move(file))
 
 void Settings::save() const
 {
-    boost::filesystem::create_directories(file_.parent_path());
+    // A read-only or full disk must not end the game: the settings are simply not kept
+    boost::system::error_code ec;
+    boost::filesystem::create_directories(file_.parent_path(), ec);
     const std::string tmp = file_.string() + ".tmp";
     {
         std::ofstream out(tmp);
         for(const auto& [k, v] : values_)
             out << k << '=' << v << '\n';
+        if(!out.flush())
+            return;
     }
-    boost::filesystem::rename(tmp, file_);
+    boost::filesystem::rename(tmp, file_, ec);
 }
 
 std::string Settings::get(const std::string& key, const std::string& def) const
@@ -61,7 +66,8 @@ float Settings::getFloat(const std::string& key, float def) const
         return def;
     try
     {
-        return std::stof(it->second);
+        const float v = std::stof(it->second);
+        return std::isfinite(v) ? v : def;
     } catch(...)
     {
         return def;

@@ -32,6 +32,8 @@
 #include "RttrConfig.h"
 #include "ViewState.h"
 #include "files.h"
+#include "Savegame.h"
+#include "menu/Menus.h"
 #include "gameData/GameLoader.h"
 #include "ogl/glAllocator.h"
 #include "libsiedler2/libsiedler2.h"
@@ -140,7 +142,8 @@ void GameScreen::runGame(double dt)
             const auto gfEnd = std::chrono::steady_clock::now();
             perf::gameFrame(std::chrono::duration<double, std::milli>(gfEnd - gfStart).count());
             accum_ -= gfLen;
-            if(gfEnd - start > budget)
+            // Not in the test mode: its pictures must not depend on the speed of the computer
+            if(gfEnd - start > budget && !app_.testMode())
                 break;
         }
         accum_ = std::min(accum_, std::max(gfLen, 0.25));
@@ -215,7 +218,8 @@ bool GameScreen::saveTo(const std::string& path)
 {
     // The game state is copied now; compressing and writing run on a worker thread (no hitch at autosave)
     const auto t0 = std::chrono::steady_clock::now();
-    bfs::create_directories(bfs::path(path).parent_path());
+    boost::system::error_code ec;
+    bfs::create_directories(bfs::path(path).parent_path(), ec);
     saving_ = session_->saveInBackground(path);
     const auto t1 = std::chrono::steady_clock::now();
     // Picture for the savegame lists (encoded on a worker thread as well)
@@ -224,6 +228,24 @@ bool GameScreen::saveTo(const std::string& path)
     auto ms = [](auto a, auto b) { return static_cast<long>(std::chrono::duration<double, std::milli>(b - a).count()); };
     std::cout << "[time] save: snapshot " << ms(t0, t1) << " ms, picture " << ms(t1, t2) << " ms on the main thread"
               << std::endl;
+    return true;
+}
+
+bool GameScreen::loadFrom(const std::string& path)
+{
+    // The file is read completely first: a damaged savegame keeps the running game
+    // Shared holder: the start function has to be copyable, it runs once
+    auto save = std::make_shared<std::unique_ptr<Savegame>>();
+    try
+    {
+        *save = Session::readSave(path);
+    } catch(const std::exception& e)
+    {
+        std::cerr << e.what() << std::endl;
+        hud_->toast("Spielstand ist beschädigt und kann nicht geladen werden.");
+        return false;
+    }
+    startGame(app_, [save, path] { return Session::loadGame(std::move(*save), path); });
     return true;
 }
 
@@ -242,17 +264,7 @@ bool GameScreen::quickLoad()
     const bfs::path p = RTTRCONFIG.expandPath(s25::folders::save) / "quicksave.sav";
     if(!bfs::exists(p))
         return false;
-    App& app = app_;
-    app.post([&app, p] {
-        try
-        {
-            app.setScreen(createGameScreen(app, Session::loadGame(p, 1)));
-        } catch(const std::exception& e)
-        {
-            LOG.write("Quickload failed: %1%\n") % e.what();
-        }
-    });
-    return true;
+    return loadFrom(p.string());
 }
 
 // GameInterface
@@ -296,6 +308,26 @@ Cheats& GameScreen::GI_GetCheats()
 std::unique_ptr<Screen> createGameScreen(App& app, std::unique_ptr<Session> session)
 {
     return std::make_unique<GameScreen>(app, std::move(session));
+}
+
+void startGame(App& app, std::function<std::unique_ptr<Session>()> create, std::function<void(GameScreen&)> prepare)
+{
+    app.post([&app, create = std::move(create), prepare = std::move(prepare)] {
+        app.releaseMenuBackdrop();
+        app.closeScreen();
+        try
+        {
+            auto screen = std::make_unique<GameScreen>(app, create());
+            if(prepare)
+                prepare(*screen);
+            app.setScreen(std::move(screen));
+        } catch(const std::exception& e)
+        {
+            std::cerr << "Could not start the game: " << e.what() << std::endl;
+            app.setScreen(createMainMenu(app));
+            app.notify("Das Spiel konnte nicht gestartet werden.");
+        }
+    });
 }
 
 
@@ -386,7 +418,7 @@ bool GameScreen::testPoint(const std::string& spec, float& x, float& y)
                     if(b->getBuildingType() == bt)
                         pts.push_back(b->getPos());
                 }
-            } else
+            } else if(BuildingProperties::isUsual(bt))
             {
                 for(const auto* b : reg.getBuildings(bt))
                     pts.push_back(b->getPos());
@@ -555,31 +587,49 @@ bool GameScreen::testCommand(const std::string& cmd, const std::vector<std::stri
     }
     if(cmd == "findenemy")
     {
-        // Nearest attackable enemy military building
+        // Nearest attackable enemy military building, preferably one with own soldiers in reach
         MapPoint best = MapPoint::invalid();
         unsigned bestDist = 100000;
-        for(unsigned p = 0; p < world.getNumPlayers(); ++p)
+        bool bestReachable = false;
+        auto consider = [&](MapPoint pos, bool attackable) {
+            if(!attackable)
+                return;
+            const unsigned d = world.calcDistance(me.getHQPos(), pos);
+            const bool reachable = gwv_->getNumSoldiersForAttack(pos) > 0;
+            if((reachable && !bestReachable) || (reachable == bestReachable && d < bestDist))
+            {
+                best = pos;
+                bestDist = d;
+                bestReachable = reachable;
+            }
+        };
+        auto search = [&] {
+            best = MapPoint::invalid();
+            bestDist = 100000;
+            bestReachable = false;
+            for(unsigned p = 0; p < world.getNumPlayers(); ++p)
+            {
+                if(p == meId || world.getPlayer(p).isDefeated())
+                    continue;
+                for(const auto* b : world.getPlayer(p).getBuildingRegister().getMilitaryBuildings())
+                    consider(b->getPos(), b->isAttackable(meId));
+                for(const auto* b : world.getPlayer(p).getBuildingRegister().getStorehouses())
+                    consider(b->getPos(), b->isAttackable(meId));
+            }
+        };
+        search();
+        // "reachable": let the AI play for the local player until own soldiers can attack (at most 2 hours)
+        if(arg(0) == "reachable" && !bestReachable)
         {
-            if(p == meId || world.getPlayer(p).isDefeated())
-                continue;
-            for(const auto* b : world.getPlayer(p).getBuildingRegister().getMilitaryBuildings())
+            session_->toggleLocalAI();
+            for(unsigned i = 0; i < 288 && !bestReachable && !session_->isFinished(); ++i)
             {
-                const unsigned d = world.calcDistance(me.getHQPos(), b->getPos());
-                if(d < bestDist && b->isAttackable(meId))
-                {
-                    best = b->getPos();
-                    bestDist = d;
-                }
+                for(unsigned gf = 0; gf < 500; ++gf)
+                    session_->runGF();
+                search();
             }
-            for(const auto* b : world.getPlayer(p).getBuildingRegister().getStorehouses())
-            {
-                const unsigned d = world.calcDistance(me.getHQPos(), b->getPos());
-                if(d < bestDist && b->isAttackable(meId))
-                {
-                    best = b->getPos();
-                    bestDist = d;
-                }
-            }
+            session_->toggleLocalAI();
+            VIEWSTATE.currentGF = session_->getGF();
         }
         if(!best.isValid())
         {
@@ -682,7 +732,7 @@ bool GameScreen::testCommand(const std::string& cmd, const std::vector<std::stri
             for(unsigned i = 0; i < helpers::NumEnumValues_v<BuildingType>; ++i)
             {
                 const auto bt = static_cast<BuildingType>(i);
-                if(!BuildingProperties::isMilitary(bt) && !BuildingProperties::isWareHouse(bt))
+                if(BuildingProperties::isUsual(bt))
                     numBld += static_cast<unsigned>(reg.getBuildings(bt).size());
             }
             std::cout << "[script] player " << p << (p == meId ? " (me)" : "") << (pl.isDefeated() ? " defeated" : "")
@@ -696,7 +746,7 @@ bool GameScreen::testCommand(const std::string& cmd, const std::vector<std::stri
             for(unsigned i = 0; i < helpers::NumEnumValues_v<BuildingType>; ++i)
             {
                 const auto bt = static_cast<BuildingType>(i);
-                const size_t n = reg.getBuildings(bt).size();
+                const size_t n = BuildingProperties::isUsual(bt) ? reg.getBuildings(bt).size() : 0;
                 if(n)
                     std::cout << "[script]   " << buildingName(bt) << " " << n << std::endl;
             }

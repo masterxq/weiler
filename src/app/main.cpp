@@ -5,6 +5,7 @@
 #include "App.h"
 #include <boost/program_options.hpp>
 #include <iostream>
+#include <sstream>
 
 namespace po = boost::program_options;
 
@@ -53,12 +54,16 @@ int main(int argc, char** argv)
     }
     if(!size.empty())
     {
-        const auto x = size.find('x');
-        if(x != std::string::npos)
+        int w = 0, h = 0;
+        char sep = 0;
+        std::istringstream in(size);
+        if(!(in >> w >> sep >> h) || sep != 'x' || w < 64 || h < 64)
         {
-            opts.width = std::stoi(size.substr(0, x));
-            opts.height = std::stoi(size.substr(x + 1));
+            std::cerr << "Invalid --size '" << size << "', expected WxH, e.g. 1080x2400" << std::endl;
+            return 2;
         }
+        opts.width = w;
+        opts.height = h;
     }
     weiler::App app(opts);
     return app.run();

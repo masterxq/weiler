@@ -14,6 +14,7 @@
 #include "Settings.h"
 #include "files.h"
 #include "game/GameScreen.h"
+#include "gameData/MaxPlayers.h"
 #include "ui/Ui.h"
 #include "libsiedler2/Archiv.h"
 #include "libsiedler2/ArchivItem_Map.h"
@@ -86,16 +87,7 @@ std::string savePath(const std::string& stem)
 
 void startLoaded(App& app, const std::string& path)
 {
-    app.post([&app, path] {
-        try
-        {
-            app.releaseMenuBackdrop();
-            app.setScreen(createGameScreen(app, Session::loadGame(path, static_cast<unsigned>(std::time(nullptr)))));
-        } catch(const std::exception& e)
-        {
-            std::cerr << "Loading failed: " << e.what() << std::endl;
-        }
-    });
+    startGame(app, [path] { return Session::loadGame(path); });
 }
 
 // ------------------------------------------------------------------------------------------------------------------
@@ -155,11 +147,12 @@ public:
     {
         auto& st = app.settings();
         selected_ = std::clamp(st.getInt("newgame.map", 0), 0, std::max(0, static_cast<int>(maps_.size()) - 1));
-        ais_ = st.getInt("newgame.ais", 2);
-        level_ = st.getInt("newgame.level", 1);
-        wares_ = st.getInt("newgame.wares", 2);
-        goal_ = st.getInt("newgame.goal", 0);
-        nation_ = st.getInt("newgame.nation", 0);
+        // The settings file may be damaged or come from another version
+        ais_ = std::clamp(st.getInt("newgame.ais", 2), 0, static_cast<int>(MAX_PLAYERS) - 1);
+        level_ = std::clamp(st.getInt("newgame.level", 1), 0, 2);
+        wares_ = std::clamp(st.getInt("newgame.wares", 2), 0, 3);
+        goal_ = std::clamp(st.getInt("newgame.goal", 0), 0, 2);
+        nation_ = std::clamp(st.getInt("newgame.nation", 0), 0, 3);
     }
     void draw() override
     {
@@ -257,23 +250,15 @@ private:
         st.save();
         const MapEntry me = maps_[selected_];
         static const AI::Level levels[] = {AI::Level::Easy, AI::Level::Medium, AI::Level::Hard};
+        // Order of the nation buttons
+        static const Nation nations[] = {Nation::Romans, Nation::Vikings, Nation::Africans, Nation::Japanese};
         NewGameSetup setup = makeSkirmishSetup(me.path, static_cast<unsigned>(ais_),
-                                               static_cast<unsigned>(std::time(nullptr)), levels[level_], Nation(nation_));
+                                               static_cast<unsigned>(std::time(nullptr)), levels[level_], nations[nation_]);
         setup.ggs.startWares = static_cast<StartWares>(wares_);
         setup.ggs.objective = goal_ == 0 ? GameObjective::None :
                               goal_ == 1 ? GameObjective::Conquer3_4 : GameObjective::TotalDomination;
         setup.title = me.name;
-        App& app = app_;
-        app.post([&app, setup] {
-            try
-            {
-                app.releaseMenuBackdrop();
-                app.setScreen(createGameScreen(app, Session::newGame(setup)));
-            } catch(const std::exception& e)
-            {
-                std::cerr << "Could not start game: " << e.what() << std::endl;
-            }
-        });
+        startGame(app_, [setup] { return Session::newGame(setup); });
     }
     std::vector<MapEntry> maps_;
     int selected_ = 0, ais_ = 2, level_ = 1, wares_ = 2, goal_ = 0, nation_ = 0;
@@ -370,19 +355,10 @@ private:
     {
         app_.settings().setInt("campaign." + c.id + ".last", static_cast<int>(mission));
         app_.settings().save();
-        App& app = app_;
         const Campaign campaign = c;
-        app.post([&app, campaign, mission] {
-            try
-            {
-                NewGameSetup setup =
-                  makeMissionSetup(campaign, mission, "Du", static_cast<unsigned>(std::time(nullptr)));
-                app.releaseMenuBackdrop();
-                app.setScreen(createGameScreen(app, Session::newGame(setup)));
-            } catch(const std::exception& e)
-            {
-                std::cerr << "Could not start mission: " << e.what() << std::endl;
-            }
+        startGame(app_, [campaign, mission] {
+            return Session::newGame(
+              makeMissionSetup(campaign, mission, "Du", static_cast<unsigned>(std::time(nullptr))));
         });
     }
     std::vector<Campaign> campaigns_;
@@ -700,18 +676,9 @@ void startTutorialGame(App& app, bool firstStart)
         return;
     NewGameSetup setup = makeSkirmishSetup(best->path, 0, 1, AI::Level::Easy, Nation::Romans);
     setup.title = best->name;
-    app.post([&app, setup, firstStart] {
-        try
-        {
-            app.releaseMenuBackdrop();
-            auto screen = std::make_unique<GameScreen>(app, Session::newGame(setup));
-            screen->startTutorial(firstStart);
-            app.setScreen(std::move(screen));
-        } catch(const std::exception& e)
-        {
-            std::cerr << "Could not start tutorial: " << e.what() << std::endl;
-        }
-    });
+    startGame(
+      app, [setup] { return Session::newGame(setup); },
+      [firstStart](GameScreen& screen) { screen.startTutorial(firstStart); });
 }
 
 std::unique_ptr<Screen> createMissingDataScreen(App& app)

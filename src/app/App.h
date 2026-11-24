@@ -99,6 +99,10 @@ public:
 
     /// Replace the current screen at the end of the frame
     void setScreen(std::unique_ptr<Screen> screen);
+    /// Destroy the current screen right away (only from functions run by post)
+    void closeScreen();
+    /// Short message over every screen (errors outside of a game)
+    void notify(std::string text);
     void quit() { running_ = false; }
     /// Small picture of the world (without interface) for savegames, written as PNG
     bool saveThumbnail(const std::string& pngPath);
@@ -149,6 +153,9 @@ private:
     std::future<bool> thumbnail_;
     std::unique_ptr<TestScript> script_;
     std::deque<std::function<void()>> posted_;
+    std::string notice_;
+    double noticeTime_ = -100;
+    void drawNotice();
     int fbW_ = 1, fbH_ = 1;
     float uiScale_ = 1;
     double time_ = 0;
