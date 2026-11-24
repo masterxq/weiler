@@ -1,7 +1,8 @@
 # Interface test scripts
 
 Scripts for the built-in test mode (`weiler --script <file>`): synthetic touch input, screenshots and checks.
-Run them offscreen from a working folder that contains a `shots/` directory, with a separate user data folder:
+`ctest -L ui` runs them offscreen (see `tests/CMakeLists.txt`, screenshots in the build folder). By hand: from a
+working folder that contains a `shots/` directory, with a separate user data folder:
 
     mkdir -p work/shots/long && cd work
     WEILER_USERDATA=$PWD/userdata SDL_VIDEO_DRIVER=offscreen weiler --data <S2 folder> --size 1080x2400 --scale 3 \

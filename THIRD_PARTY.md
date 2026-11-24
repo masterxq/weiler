@@ -33,6 +33,16 @@ Changes against upstream:
   The loader loads addon graphics only for enabled addons (Weiler keeps these addons disabled), no longer loads
   `io_new`/`map_new`, and military buildings near harbors show the original middle distance flag.
 - `RttrConfig` no longer changes the working directory.
+- Loading savegames: military buildings sort their soldiers only after all objects are read
+  (`nobMilitary::finishLoading`), the soldiers may still be under construction before.
+- Damaged files are reported as errors instead of assertions or buffer overreads: `BinaryFile::readShortString` and
+  `readLongString` (libutil), `Serializer::popBool` (libutil), block headers in `ArchivItem_Map.cpp` (libsiedler2).
+- `Loader`: accessors for the nation archives (preloading of the sprite atlas); the carrier cache uses an empty
+  archive for the addon graphics that are not loaded.
+- `ai/random.cpp`: the AI generator starts without `random_device`, it is seeded from the game seed.
+- Lua: `rttr:SetCampaignChapterCompleted(campaign, chapter)` reports a completed campaign chapter to the frontend
+  (`ILocalGameState`); the Roman mission scripts (`data/RTTR/campaigns/roman/MISS2*.lua`) call it at their final
+  event.
 - `lua/LuaInterfaceBase.cpp`: translated texts of the Lua scripts pass `gettext` once more, so that
   `data/lang/weiler-de.po` (merged before `rttr-de.po` at build time) can adapt the German mission texts to the
   informal address of the Weiler interface.

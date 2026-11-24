@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Kopfloser Kerntest: neue Partie mit KI-Gegnern simulieren, speichern, laden, deterministisch weiterlaufen.
+# Headless core test: simulate a new game with AI players, save, load, continue deterministically.
 # Variablen: HEADLESS (Programm), DATA (Spieldaten), WORK (Arbeitsordner), MAP, MINUTES
 
 if(NOT EXISTS "${DATA}/DATA/RESOURCE.DAT")
