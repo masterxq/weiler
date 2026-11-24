@@ -15,6 +15,7 @@ class Screen;
 
 std::unique_ptr<Screen> createMissingDataScreen(App& app);
 std::unique_ptr<Screen> createMainMenu(App& app);
+void startTutorialGame(App& app);
 NewGameSetup makeSkirmishSetup(const boost::filesystem::path& map, unsigned numAIs, unsigned seed, AI::Level level,
                                Nation nation);
 

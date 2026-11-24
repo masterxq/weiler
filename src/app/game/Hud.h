@@ -9,6 +9,8 @@
 #include <map>
 #include <memory>
 
+struct LuaMessage;
+
 namespace weiler {
 
 class App;
@@ -32,9 +34,12 @@ public:
     void flagDestroyed(MapPoint pt);
     void startRoad(MapPoint start, bool water);
     void cancelRoad();
+    void startTutorial();
+    void showLuaMessage(const LuaMessage& msg);
+
+    struct Impl;
 
 private:
-    struct Impl;
     std::unique_ptr<Impl> d;
 };
 

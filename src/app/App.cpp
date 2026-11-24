@@ -8,6 +8,7 @@
 #include "Settings.h"
 #include "TestScript.h"
 #include "ViewState.h"
+#include "ui/Ui.h"
 #include "s25util/Log.h"
 #include <boost/filesystem.hpp>
 #include <chrono>
@@ -32,6 +33,7 @@ App::~App()
 {
     screen_.reset();
     nextScreen_.reset();
+    ui_.reset();
     audio_.reset();
     atlas_.reset();
     font_.reset();
@@ -110,6 +112,8 @@ int App::run()
         return 1;
     batch_.init();
     atlas_ = std::make_unique<gfx::SpriteAtlas>(batch_);
+    icons_.init(96);
+    ui_ = std::make_unique<ui::Ui>(*this);
     font_ = std::make_unique<gfx::Font>();
     fontBold_ = std::make_unique<gfx::Font>();
     std::vector<bfs::path> fontDirs = {paths_.appData / "fonts", bfs::path(WEILER_FONT_DIR)};
@@ -190,8 +194,10 @@ void App::frame(double dt)
     batch_.begin(fbW_, fbH_);
     glClearColor(0.07f, 0.075f, 0.08f, 1.f);
     glClear(GL_COLOR_BUFFER_BIT);
+    ui_->begin();
     if(screen_)
         screen_->draw();
+    ui_->end();
     batch_.flush();
     if(script_)
         script_->afterDraw();

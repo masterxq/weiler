@@ -9,6 +9,7 @@
 #include "gfx/Batch.h"
 #include "gfx/SpriteAtlas.h"
 #include "gfx/Text.h"
+#include "ui/Icons.h"
 #include <SDL3/SDL.h>
 #include <deque>
 #include <functional>
@@ -21,6 +22,9 @@ namespace weiler {
 class Audio;
 class Settings;
 class TestScript;
+namespace ui {
+class Ui;
+}
 
 struct AppOptions
 {
@@ -46,6 +50,8 @@ public:
     gfx::Font& font() { return *font_; }
     gfx::Font& fontBold() { return *fontBold_; }
     Audio& audio() { return *audio_; }
+    ui::IconAtlas& icons() { return icons_; }
+    ui::Ui& ui() { return *ui_; }
     Settings& settings() { return *settings_; }
     const DataPaths& paths() const { return paths_; }
     /// Density independent pixel -> framebuffer pixel
@@ -85,6 +91,8 @@ private:
     std::unique_ptr<gfx::SpriteAtlas> atlas_;
     std::unique_ptr<gfx::Font> font_, fontBold_;
     std::unique_ptr<Audio> audio_;
+    ui::IconAtlas icons_;
+    std::unique_ptr<ui::Ui> ui_;
     std::unique_ptr<Settings> settings_;
     std::unique_ptr<Screen> screen_, nextScreen_;
     std::unique_ptr<TestScript> script_;

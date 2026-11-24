@@ -60,6 +60,7 @@ GameScreen::GameScreen(App& app, std::unique_ptr<Session> session)
     VIEWSTATE.onDestroyBuilding = [this](MapPoint pt) { session_->DestroyBuilding(pt); };
     VIEWSTATE.onToggleHumanAIPlayer = [this] { session_->toggleLocalAI(); };
     hud_ = std::make_unique<Hud>(*this, app_);
+    session_->onLuaMessage = [this](const LuaMessage& msg) { hud_->showLuaMessage(msg); };
     lastAutosave_ = app.time();
 }
 
@@ -171,6 +172,11 @@ bool GameScreen::saveTo(const std::string& path)
 {
     bfs::create_directories(bfs::path(path).parent_path());
     return session_->save(path);
+}
+
+void GameScreen::startTutorial()
+{
+    hud_->startTutorial();
 }
 
 bool GameScreen::quickSave()

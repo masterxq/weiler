@@ -46,6 +46,7 @@ public:
     bool quickSave();
     bool quickLoad();
     bool saveTo(const std::string& path);
+    void startTutorial();
 
     // GameInterface
     void GI_PlayerDefeated(unsigned playerId) override;
