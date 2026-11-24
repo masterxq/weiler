@@ -8,6 +8,7 @@
 #include "Game.h"
 #include "GamePlayer.h"
 #include "Hud.h"
+#include "nodeObjs/noShip.h"
 #include "postSystem/PostManager.h"
 #include "addons/const_addons.h"
 #include "gameData/MapConsts.h"
@@ -301,6 +302,11 @@ bool GameScreen::testPoint(const std::string& spec, float& x, float& y)
         pt = kind == "hq" ? me.getHQPos() : testFound_;
         if(!arg.empty() && !parsePair(arg, dx, dy))
             return false;
+    } else if(kind == "ship")
+    {
+        if(me.getShips().empty())
+            return false;
+        pt = me.getShips().front()->getPos();
     } else if(kind == "hqflag" || kind == "foundflag")
     {
         const MapPoint base = kind == "hqflag" ? me.getHQPos() : testFound_;
@@ -387,6 +393,13 @@ bool GameScreen::testCommand(const std::string& cmd, const std::vector<std::stri
             jumpTo(me.getHQPos());
         else if(arg(0) == "found" && testFound_.isValid())
             jumpTo(testFound_);
+        else if(arg(0) == "ship")
+        {
+            if(me.getShips().empty())
+                return false;
+            std::cout << "[script] ships " << me.getShips().size() << std::endl;
+            jumpTo(me.getShips().front()->getPos());
+        }
         else
         {
             int px, py;

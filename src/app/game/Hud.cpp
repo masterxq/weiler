@@ -15,7 +15,10 @@
 #include "addons/const_addons.h"
 #include "buildings/noBaseBuilding.h"
 #include "buildings/nobBaseMilitary.h"
+#include "buildings/nobUsual.h"
+#include "buildings/noBuildingSite.h"
 #include "nodeObjs/noFlag.h"
+#include "nodeObjs/noShip.h"
 #include "pathfinding/FindPathForRoad.h"
 #include "postSystem/PostBox.h"
 #include "postSystem/PostManager.h"
@@ -86,6 +89,7 @@ std::vector<BuildingType> fittingBuildings(const Hud::Impl& h, MapPoint pt)
 Hud::Impl::Impl(GameScreen& g, App& a) : game(g), app(a), ui(a.ui())
 {
     lastInput = app.time();
+    showNames = app.settings().getBool("show.names");
 }
 
 Hud::Impl::~Impl()
@@ -232,6 +236,8 @@ void Hud::Impl::onTap(float x, float y)
         return;
     }
 
+    if(tapShip(pt))
+        return;
     // Buildings are tall: if the tapped node has no building, look at the nodes below for one
     if(!isBuildingObj(world().getNO(pt)))
     {
@@ -270,6 +276,30 @@ void Hud::Impl::onTap(float x, float y)
         return;
     }
     openRingAt(pt);
+}
+
+bool Hud::Impl::tapShip(MapPoint pt)
+{
+    std::vector<MapPoint> pts{pt};
+    for(const auto dir : helpers::EnumRange<Direction>{})
+        pts.push_back(world().getNeighbour(pt, dir));
+    for(const MapPoint p : pts)
+    {
+        if(game.viewer().getVisibility(p) != Visibility::Visible)
+            continue;
+        for(const noBase& fig : world().getFigures(p))
+        {
+            if(fig.getGOT() != GO_Type::Ship)
+                continue;
+            const auto& ship = static_cast<const noShip&>(fig);
+            if(ship.getPlayerId() != game.localPlayer())
+                continue;
+            shipId = player().getShipID(ship);
+            openSheet(SheetKind::Ship);
+            return true;
+        }
+    }
+    return false;
 }
 
 void Hud::Impl::onDoubleTap(float x, float y)
@@ -624,6 +654,23 @@ void Hud::Impl::drawWorldOverlay(MapPoint pt, PointF pos)
     auto& b = app.batch();
     auto& gwv = game.viewer();
     const float a = 1.f;
+    if(showNames)
+    {
+        const noBase* obj = world().getNO(pt);
+        if(isBuildingObj(obj) && static_cast<const noBaseBuilding*>(obj)->getPlayer() == game.localPlayer())
+        {
+            const auto* bld = static_cast<const noBaseBuilding*>(obj);
+            int prod = -1;
+            std::string text = buildingName(bld->getBuildingType());
+            if(obj->getType() == NodalObjectType::Buildingsite)
+            {
+                prod = static_cast<int>(static_cast<const noBuildingSite*>(obj)->getBuildProgress());
+                text = "Baustelle";
+            } else if(const auto* usual = dynamic_cast<const nobUsual*>(obj))
+                prod = usual->hasWorker() ? static_cast<int>(usual->getProductivity()) : -1;
+            nameLabels.push_back({text, pos, prod});
+        }
+    }
     if(showBQ || road.active)
     {
         const BuildingQuality bq = gwv.getBQ(pt);
@@ -677,6 +724,34 @@ void Hud::Impl::drawWorldOverlay(MapPoint pt, PointF pos)
         b.circle(pos.x, pos.y, 6, Color::rgb(0xFFFFFF, 0.9f), 1.5f);
     if(ring.open && pt == ring.pt)
         b.circle(pos.x, pos.y, 6, ui.theme.accent, 2.f);
+}
+
+void Hud::Impl::drawNameLabels()
+{
+    auto& b = app.batch();
+    auto& view = game.view();
+    // Small pills below the buildings; hidden when zoomed out far (would only be clutter)
+    if(view.cam.zoom < app.uiScale() * 0.6f)
+        return;
+    const float fs = app.dp(10.5f);
+    for(const NameLabel& l : nameLabels)
+    {
+        const PointF sp = view.worldToScreen(l.worldPos);
+        const float tw = ui.textWidth(l.text, fs, true);
+        const float barW = l.productivity >= 0 ? app.dp(28) : 0;
+        const float w = tw + app.dp(12) + (barW > 0 ? barW + app.dp(6) : 0), h = fs * 1.5f;
+        const Rect2 r{sp.x - w / 2, sp.y + app.dp(4), w, h};
+        b.roundRect(r, h / 2, Color::rgb(0x000000, 0.55f));
+        ui.text(r.x + app.dp(6), r.y + (h - fs * 1.3f) / 2, l.text, fs, ui.theme.text, gfx::Align::Left, true);
+        if(barW > 0)
+        {
+            const Rect2 bar{r.right() - barW - app.dp(6), r.y + h / 2 - app.dp(2.5f), barW, app.dp(5)};
+            const float f = std::clamp(static_cast<float>(l.productivity) / 100.f, 0.f, 1.f);
+            b.roundRect(bar, app.dp(2.5f), Color::rgb(0xFFFFFF, 0.15f));
+            b.roundRect({bar.x, bar.y, bar.w * f, bar.h}, app.dp(2.5f),
+                        l.productivity >= 60 ? ui.theme.ok : l.productivity >= 30 ? ui.theme.accent : ui.theme.danger);
+        }
+    }
 }
 
 void Hud::Impl::drawRing()
@@ -1010,7 +1085,7 @@ void Hud::update(double dt)
     if(d->tutorial)
         d->tutorial->update();
     // Only draw node overlays when needed (saves time)
-    const bool needOverlay = d->showBQ || d->road.active || (d->hasSelection && d->sheet != SheetKind::None) || d->ring.open;
+    const bool needOverlay = d->showBQ || d->showNames || d->road.active || (d->hasSelection && d->sheet != SheetKind::None) || d->ring.open;
     if(needOverlay && !view.nodeOverlay)
         view.nodeOverlay = [this](MapPoint pt, PointF pos) { d->drawWorldOverlay(pt, pos); };
     else if(!needOverlay && view.nodeOverlay)
@@ -1020,6 +1095,8 @@ void Hud::update(double dt)
 void Hud::draw()
 {
     Impl& s = *d;
+    s.drawNameLabels();
+    s.nameLabels.clear();
     s.drawTopBar();
     s.drawTools();
     s.drawMinimapPanel();
@@ -1251,6 +1328,10 @@ void Hud::onKey(SDL_Keycode key, bool down)
                 s.toast("Kein Schnellspeicherstand vorhanden");
             break;
         case SDLK_B: s.showBQ = !s.showBQ; break;
+        case SDLK_P:
+            s.showNames = !s.showNames;
+            s.app.settings().setBool("show.names", s.showNames);
+            break;
         case SDLK_M: s.showMinimap = !s.showMinimap; break;
         case SDLK_H: s.game.jumpTo(s.player().getHQPos()); break;
         case SDLK_N: s.openSheet(SheetKind::Messages); break;

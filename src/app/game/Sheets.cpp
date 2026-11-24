@@ -22,12 +22,14 @@
 #include "figures/nofPassiveSoldier.h"
 #include "files.h"
 #include "menu/Menus.h"
+#include "nodeObjs/noShip.h"
 #include "postSystem/PostBox.h"
 #include "postSystem/PostManager.h"
 #include "postSystem/PostMsg.h"
 #include "world/GameWorldBase.h"
 #include "world/GameWorldViewer.h"
 #include "gameTypes/SettingsTypes.h"
+#include "gameTypes/ShipDirection.h"
 #include "gameTypes/VisualSettings.h"
 #include "gameData/BuildingConsts.h"
 #include "gameData/MilitaryConsts.h"
@@ -116,6 +118,7 @@ void Hud::Impl::drawSheet()
             case SheetKind::Mission: sheetMission(r); break;
             case SheetKind::GameOver: sheetGameOver(r); break;
             case SheetKind::Help: sheetHelp(r); break;
+            case SheetKind::Ship: sheetShip(r); break;
             case SheetKind::None: break;
         }
         if(sheet == drawn)
@@ -405,6 +408,11 @@ void Hud::Impl::sheetBuilding(const Rect2& r)
             if(ui.button(id("bld.exp"), {c.x, by, c.w, bh}, exp ? "Expedition abbrechen" : "Expedition vorbereiten",
                          Icon::Ship))
                 s.StartStopExpedition(sheetPt, !exp);
+            by += bh + app.dp(8);
+            const bool expl = harbor->isExplorationExpeditionActive();
+            if(ui.button(id("bld.expl"), {c.x, by, c.w, bh}, expl ? "Erkundung abbrechen" : "Erkundungsfahrt vorbereiten",
+                         Icon::Eye))
+                s.StartStopExplorationExpedition(sheetPt, !expl);
             by += bh + app.dp(8);
         }
         // Ware list with store settings
@@ -906,7 +914,8 @@ void Hud::Impl::sheetSaveLoad(const Rect2& r, bool save)
 void Hud::Impl::sheetSettings(const Rect2& r)
 {
     const Rect2 c = sheetHeader(r, "Einstellungen", Icon::Gear);
-    float y = c.y;
+    float y = ui.beginScroll(id("set.scroll"), c);
+    const float y0 = y;
     auto& st = app.settings();
     ui.text(c.x, y, "Geräusche", app.dp(15), ui.theme.text);
     float ev = app.audio().effectVolume();
@@ -931,6 +940,9 @@ void Hud::Impl::sheetSettings(const Rect2& r)
         st.setBool("sound.birds", birds);
     }
     y += app.dp(56);
+    if(ui.toggle(id("set.names"), {c.x, y, c.w, app.dp(48)}, showNames, "Gebäudenamen anzeigen"))
+        st.setBool("show.names", showNames);
+    y += app.dp(56);
     bool autoRoad = st.getBool("build.autoconnect", true);
     if(ui.toggle(id("set.autoroad"), {c.x, y, c.w, app.dp(48)}, autoRoad, "Neue Gebäude anschließen"))
         st.setBool("build.autoconnect", autoRoad);
@@ -944,7 +956,8 @@ void Hud::Impl::sheetSettings(const Rect2& r)
         closeSheet();
         tutorial = std::make_unique<Tutorial>(*this);
     }
-    fit(r, y + app.dp(52));
+    ui.endScroll(y + app.dp(52) - y0);
+    fit(r, c.y + y + app.dp(52) - y0);
 }
 
 void Hud::Impl::sheetAttack(const Rect2& r)
@@ -1011,6 +1024,80 @@ void Hud::Impl::sheetGameOver(const Rect2& r)
         App& a = app;
         a.post([&a] { a.setScreen(createMainMenu(a)); });
     }
+}
+
+void Hud::Impl::sheetShip(const Rect2& r)
+{
+    const noShip* ship = player().getShipByID(shipId);
+    if(!ship)
+    {
+        closeSheet();
+        return;
+    }
+    const Rect2 c = sheetHeader(r, "Schiff " + ship->getName(), Icon::Ship);
+    float y = c.y;
+    std::string state = "Wartet im Hafen";
+    if(ship->isWaitingForExpeditionInstructions())
+        state = "Expedition wartet auf Befehle";
+    else if(ship->isOnExpedition())
+        state = "Auf Expedition";
+    else if(ship->isOnExplorationExpedition())
+        state = "Auf Erkundungsfahrt";
+    else if(ship->isOnAttackMission())
+        state = "Bringt Soldaten zum Angriff";
+    else if(ship->isLoading())
+        state = "Wird beladen";
+    else if(ship->isUnloading())
+        state = "Wird entladen";
+    else if(!ship->isIdling())
+        state = "Unterwegs";
+    ui.text(c.x, y, state, app.dp(16), ui.theme.text);
+    y += app.dp(32);
+    if(ship->isWaitingForExpeditionInstructions())
+    {
+        Session& s = game.session();
+        const float bh = app.dp(52);
+        if(ui.button(id("ship.colony"), {c.x, y, c.w, bh}, "Kolonie gründen", Icon::Flag, Style::Primary,
+                     ship->isAbleToFoundColony()))
+        {
+            s.foundColony(shipId);
+            closeSheet();
+            return;
+        }
+        y += bh + app.dp(10);
+        ui.text(c.x, y, "Weiterfahren nach", app.dp(13), ui.theme.textDim);
+        y += app.dp(22);
+        // Compass rose: six directions like the hexagonal map
+        static const struct
+        {
+            ShipDirection dir;
+            const char* label;
+            int col, row;
+        } dirs[] = {{ShipDirection::NorthWest, "Nordwest", 0, 0}, {ShipDirection::North, "Nord", 1, 0},
+                    {ShipDirection::NorthEast, "Nordost", 2, 0},   {ShipDirection::SouthWest, "Südwest", 0, 1},
+                    {ShipDirection::South, "Süd", 1, 1},           {ShipDirection::SouthEast, "Südost", 2, 1}};
+        const float gap = app.dp(8), bw = (c.w - 2 * gap) / 3;
+        for(const auto& d : dirs)
+        {
+            const Rect2 br{c.x + static_cast<float>(d.col) * (bw + gap), y + static_cast<float>(d.row) * (bh + gap), bw,
+                           bh};
+            if(ui.button(id("ship.dir", static_cast<uint64_t>(d.dir)), br, d.label))
+            {
+                s.travelToNextSpot(d.dir, shipId);
+                closeSheet();
+                return;
+            }
+        }
+        y += 2 * (bh + gap) + app.dp(4);
+        if(ui.button(id("ship.cancel"), {c.x, y, c.w, bh}, "Expedition abbrechen", Icon::Close, Style::Danger))
+        {
+            s.CancelExpedition(shipId);
+            closeSheet();
+            return;
+        }
+        y += bh;
+    }
+    fit(r, y);
 }
 
 void Hud::Impl::sheetHelp(const Rect2& r)

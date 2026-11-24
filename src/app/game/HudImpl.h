@@ -50,7 +50,8 @@ enum class SheetKind
     Attack,
     Mission,
     GameOver,
-    Help
+    Help,
+    Ship
 };
 
 struct RingItem
@@ -110,6 +111,16 @@ struct Hud::Impl
 
     // ---- Overlays
     bool showBQ = false;
+    /// Names and productivity of own buildings (collected while the world is drawn, drawn on top)
+    bool showNames = false;
+    struct NameLabel
+    {
+        std::string text;
+        PointF worldPos;
+        int productivity; // -1 = none
+    };
+    std::vector<NameLabel> nameLabels;
+    void drawNameLabels();
     bool showMinimap = false;
     bool hasSelection = false;
     MapPoint selected;
@@ -137,6 +148,7 @@ struct Hud::Impl
     std::string confirmText;
     std::function<void()> confirmAction;
     unsigned attackSoldiers = 1;
+    unsigned shipId = 0;
     bool attackStrong = true;
     std::vector<int> buildCategoryFilter;
 
@@ -221,6 +233,9 @@ struct Hud::Impl
     void sheetMission(const ui::Rect2& r);
     void sheetGameOver(const ui::Rect2& r);
     void sheetHelp(const ui::Rect2& r);
+    void sheetShip(const ui::Rect2& r);
+    /// Own ship at or next to pt (ships float between nodes); opens its sheet
+    bool tapShip(MapPoint pt);
     /// Icon of a building type from the game data (own symbol if the data has none)
     void buildingIcon(Nation nation, BuildingType bt, const ui::Rect2& r, float alpha = 1);
     /// Title row with close button; returns the remaining content rect
