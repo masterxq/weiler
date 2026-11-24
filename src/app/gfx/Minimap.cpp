@@ -35,6 +35,8 @@ void Minimap::init(const GameWorldViewer& gwv)
     // Two pixels per node horizontally: nodes are twice as wide as high
     pixels_.assign(static_cast<size_t>(size_.x) * 2 * size_.y, 0);
     tex_.create(size_.x * 2, size_.y, false, true, nullptr);
+    rowMin_.assign(size_.y, -1);
+    rowMax_.assign(size_.y, -1);
     invalidateAll();
     update(size_.y);
 }
@@ -93,9 +95,17 @@ void Minimap::update(unsigned rows)
     for(unsigned i = 0; i < rows; ++i)
     {
         const unsigned y = nextRow_;
+        rowMin_[y] = rowMax_[y] = -1;
         for(unsigned x = 0; x < size_.x; ++x)
         {
-            const uint32_t c = nodeColor(MapPoint(static_cast<MapCoord>(x), static_cast<MapCoord>(y)));
+            const MapPoint pt(static_cast<MapCoord>(x), static_cast<MapCoord>(y));
+            if(gwv_->getVisibility(pt) != Visibility::Invisible)
+            {
+                if(rowMin_[y] < 0)
+                    rowMin_[y] = static_cast<int>(x);
+                rowMax_[y] = static_cast<int>(x);
+            }
+            const uint32_t c = nodeColor(pt);
             // Odd rows are shifted by half a node
             const size_t base = static_cast<size_t>(y) * size_.x * 2;
             const unsigned px = (x * 2 + (y & 1)) % (size_.x * 2);
@@ -112,23 +122,57 @@ void Minimap::update(unsigned rows)
     }
 }
 
-Rect2 Minimap::fit(const Rect2& area, MapExtent size)
+Rect2 Minimap::exploredRegion() const
 {
-    // Pixel aspect: one node is 56x28 world pixels -> 2 texture pixels wide, 1 high
-    const float aspect = static_cast<float>(size.x * 2) / static_cast<float>(size.y);
+    const Rect2 all{0, 0, static_cast<float>(size_.x), static_cast<float>(size_.y)};
+    int x0 = size_.x, x1 = -1, y0 = size_.y, y1 = -1;
+    for(unsigned y = 0; y < size_.y; ++y)
+    {
+        if(rowMin_[y] < 0)
+            continue;
+        x0 = std::min(x0, rowMin_[y]);
+        x1 = std::max(x1, rowMax_[y]);
+        y0 = std::min(y0, static_cast<int>(y));
+        y1 = static_cast<int>(y);
+    }
+    if(x1 < 0)
+        return all;
+    // Margin, minimum size; areas across the map edge (the map wraps around) give the whole width or height
+    const float margin = 10, minSize = 48;
+    auto span = [&](int lo, int hi, float size, float& outLo, float& outLen) {
+        float len = static_cast<float>(hi - lo + 1) + 2 * margin;
+        len = std::max(len, std::min(minSize, size));
+        if(len > size * 0.8f)
+        {
+            outLo = 0;
+            outLen = size;
+            return;
+        }
+        const float center = static_cast<float>(lo + hi + 1) / 2;
+        outLo = std::clamp(center - len / 2, 0.f, size - len);
+        outLen = len;
+    };
+    Rect2 r;
+    span(x0, x1, all.w, r.x, r.w);
+    span(y0, y1, all.h, r.y, r.h);
+    return r;
+}
+
+Rect2 Minimap::draw(Batch& batch, const Rect2& area, float alpha)
+{
+    shown_ = exploredRegion();
+    // Pixel aspect: one node is 2 texture pixels wide, 1 high
+    const float aspect = shown_.w * 2 / shown_.h;
     float w = area.w, h = area.w / aspect;
     if(h > area.h)
     {
         h = area.h;
         w = h * aspect;
     }
-    return {area.x + (area.w - w) / 2, area.y + (area.h - h) / 2, w, h};
-}
-
-Rect2 Minimap::draw(Batch& batch, const Rect2& area, float alpha)
-{
-    const Rect2 r = fit(area, size_);
-    batch.quad(tex_.id(), r.x, r.y, r.right(), r.bottom(), 0, 0, 1, 1, Color{1, 1, 1, alpha});
+    const Rect2 r{area.x + (area.w - w) / 2, area.y + (area.h - h) / 2, w, h};
+    const float u0 = shown_.x / static_cast<float>(size_.x), v0 = shown_.y / static_cast<float>(size_.y);
+    const float u1 = shown_.right() / static_cast<float>(size_.x), v1 = shown_.bottom() / static_cast<float>(size_.y);
+    batch.quad(tex_.id(), r.x, r.y, r.right(), r.bottom(), u0, v0, u1, v1, Color{1, 1, 1, alpha});
     return r;
 }
 

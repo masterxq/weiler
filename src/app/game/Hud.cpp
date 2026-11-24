@@ -998,10 +998,15 @@ void Hud::Impl::drawMinimapPanel()
     const Rect2 inner = panelR.inset(app.dp(8));
     auto& b = app.batch();
     const Rect2 mr = game.minimap().draw(b, inner);
-    // View rectangle
+    // The minimap shows a part of the map (the explored area): world pixels of that part
     auto& view = game.view();
-    const float sx = mr.w / view.mapWidthPx(), sy = mr.h / view.mapHeightPx();
-    const Rect2 vr{mr.x + view.cam.x * sx, mr.y + view.cam.y * sy, view.cam.viewW() * sx, view.cam.viewH() * sy};
+    const Rect2& shown = game.minimap().shownNodes();
+    const MapExtent size = world().getSize();
+    const float nodeW = view.mapWidthPx() / static_cast<float>(size.x), nodeH = view.mapHeightPx() / static_cast<float>(size.y);
+    const float ox = shown.x * nodeW, oy = shown.y * nodeH;
+    const float sx = mr.w / (shown.w * nodeW), sy = mr.h / (shown.h * nodeH);
+    const Rect2 vr{mr.x + (view.cam.x - ox) * sx, mr.y + (view.cam.y - oy) * sy, view.cam.viewW() * sx,
+                   view.cam.viewH() * sy};
     app.batch().setClip(mr);
     b.roundRect(vr, app.dp(2), Color::rgb(0xFFFFFF, 0.9f), 1.f, app.dp(1.5f));
     app.batch().setClip({});
@@ -1014,9 +1019,8 @@ void Hud::Impl::drawMinimapPanel()
         minimapTap = false;
         if(mr.contains(minimapTapX, minimapTapY))
         {
-            const float fx = (minimapTapX - mr.x) / mr.w, fy = (minimapTapY - mr.y) / mr.h;
-            view.cam.x = fx * view.mapWidthPx() - view.cam.viewW() / 2;
-            view.cam.y = fy * view.mapHeightPx() - view.cam.viewH() / 2;
+            view.cam.x = ox + (minimapTapX - mr.x) / sx - view.cam.viewW() / 2;
+            view.cam.y = oy + (minimapTapY - mr.y) / sy - view.cam.viewH() / 2;
             view.normalize();
         }
     }

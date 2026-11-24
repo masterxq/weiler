@@ -20,10 +20,11 @@ public:
     /// Update a part of the image (call every frame)
     void update(unsigned rows = 8);
     void invalidateAll();
-    /// Draw into rect; returns the used rectangle (aspect kept)
+    /// Draw the explored part of the map into rect; returns the used rectangle (aspect kept)
     Rect2 draw(Batch& batch, const Rect2& area, float alpha = 1.f);
-    /// Rectangle -> map position, viewRect: visible area in world pixels
-    static Rect2 fit(const Rect2& area, MapExtent size);
+    /// Part of the map shown by the last draw, in nodes: the explored area with a margin (the whole map once most
+    /// of it is explored)
+    const Rect2& shownNodes() const { return shown_; }
     const Texture& texture() const { return tex_; }
 
 private:
@@ -33,6 +34,10 @@ private:
     Texture tex_;
     std::vector<uint32_t> pixels_;
     unsigned nextRow_ = 0;
+    /// Explored columns per row (-1 = nothing explored)
+    std::vector<int> rowMin_, rowMax_;
+    Rect2 shown_;
+    Rect2 exploredRegion() const;
     bool dirty_ = false;
 };
 
