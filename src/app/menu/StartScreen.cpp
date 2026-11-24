@@ -22,7 +22,6 @@ extern unsigned gQuickWarmupGF;
 extern bool gQuickAutoplay;
 extern std::string gQuickLoad;
 extern std::string gQuickLevel;
-bool ensureStartFilesLoaded();
 
 NewGameSetup makeSkirmishSetup(const bfs::path& map, unsigned numAIs, unsigned seed, AI::Level level, Nation nation)
 {

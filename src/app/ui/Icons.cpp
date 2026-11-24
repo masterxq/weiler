@@ -36,7 +36,7 @@ class Shape
 public:
     Shape& disk(float cx, float cy, float r, bool cut = false)
     {
-        prims.push_back({Prim::Disk, cut, cx, cy, 0, 0, r});
+        prims.push_back({Prim::Disk, cut, cx, cy, 0, 0, r, 0, {}});
         return *this;
     }
     Shape& ring(float cx, float cy, float r, float w)
@@ -46,7 +46,7 @@ public:
     }
     Shape& seg(float x0, float y0, float x1, float y1, float w, bool cut = false)
     {
-        prims.push_back({Prim::Seg, cut, x0, y0, x1, y1, 0, w});
+        prims.push_back({Prim::Seg, cut, x0, y0, x1, y1, 0, w, {}});
         return *this;
     }
     Shape& path(std::initializer_list<P> pts, float w)
@@ -58,12 +58,12 @@ public:
     }
     Shape& rrect(float x, float y, float w, float h, float r, bool cut = false)
     {
-        prims.push_back({Prim::RRect, cut, x, y, w, h, r});
+        prims.push_back({Prim::RRect, cut, x, y, w, h, r, 0, {}});
         return *this;
     }
     Shape& poly(std::vector<P> pts, bool cut = false)
     {
-        Prim p{Prim::Poly, cut};
+        Prim p{Prim::Poly, cut, 0, 0, 0, 0, 0, 0, {}};
         p.pts = std::move(pts);
         prims.push_back(std::move(p));
         return *this;

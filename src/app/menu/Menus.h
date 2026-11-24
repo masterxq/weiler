@@ -15,6 +15,8 @@ class Screen;
 
 std::unique_ptr<Screen> createMissingDataScreen(App& app);
 std::unique_ptr<Screen> createMainMenu(App& app);
+/// First screen: missing data notice, a game given on the command line, the introduction or the main menu
+std::unique_ptr<Screen> createStartScreen(App& app);
 void startTutorialGame(App& app, bool firstStart = false);
 /// Undo the hand wrapping of original texts (single line breaks), keep paragraphs
 std::string reflowText(const std::string& text);

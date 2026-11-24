@@ -7,6 +7,7 @@
 #include "Loader.h"
 #include "Settings.h"
 #include "TestScript.h"
+#include "menu/Menus.h"
 #include "ViewState.h"
 #include "ui/Ui.h"
 #include "s25util/Log.h"
@@ -155,7 +156,6 @@ int App::run()
             return 2;
     }
 
-    extern std::unique_ptr<Screen> createStartScreen(App & app);
     screen_ = createStartScreen(*this);
 
     using Clock = std::chrono::steady_clock;

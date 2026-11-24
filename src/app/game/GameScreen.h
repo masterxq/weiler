@@ -83,5 +83,7 @@ private:
 
 /// Create a game screen for a new or loaded game; shows an error message on failure
 std::unique_ptr<Screen> createGameScreen(App& app, std::unique_ptr<Session> session);
+/// Load the files of the original data needed before any game (palettes, fonts of the core, ...)
+bool ensureStartFilesLoaded();
 
 } // namespace weiler
