@@ -15,6 +15,8 @@ public:
     explicit Tutorial(Hud::Impl& hud);
     void update();
     void draw();
+    /// Animated ghost fingers for the gesture steps
+    void drawGesture();
 
     // Events from the HUD
     void onPan();

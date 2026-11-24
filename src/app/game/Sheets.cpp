@@ -7,6 +7,8 @@
 #include "GamePlayer.h"
 #include "HudImpl.h"
 #include "Loader.h"
+#include "AddonHelperFunctions.h"
+#include "GlobalGameSettings.h"
 #include "ogl/glArchivItem_Bitmap.h"
 #include "Names.h"
 #include "RttrConfig.h"
@@ -46,6 +48,34 @@ namespace weiler {
 using namespace ui;
 
 namespace {
+/// Wares, jobs and buildings of disabled addons (and internal goods) are not shown
+template<typename T>
+bool unused(const GameWorldBase& w, T value, std::function<bool(T)> (*make)(const GlobalGameSettings&))
+{
+    static const GlobalGameSettings* cached = nullptr;
+    static std::function<bool(T)> fn;
+    if(cached != &w.getGGS())
+    {
+        cached = &w.getGGS();
+        fn = make(*cached);
+    }
+    return fn(value);
+}
+bool hiddenWare(const GameWorldBase& w, GoodType gt)
+{
+    return gt == GoodType::Nothing || gt == GoodType::WaterEmpty || gt == GoodType::ShieldVikings
+           || gt == GoodType::ShieldAfricans || gt == GoodType::ShieldJapanese
+           || unused<GoodType>(w, gt, [](const GlobalGameSettings& g) { return makeIsUnusedWare(g); });
+}
+bool hiddenJob(const GameWorldBase& w, Job j)
+{
+    return unused<Job>(w, j, [](const GlobalGameSettings& g) { return makeIsUnusedJob(g); });
+}
+bool hiddenBuilding(const GameWorldBase& w, BuildingType bt)
+{
+    return unused<BuildingType>(w, bt, [](const GlobalGameSettings& g) { return makeIsUnusedBuilding(g); });
+}
+
 const ISpriteSource* src(ITexture* t)
 {
     return dynamic_cast<const ISpriteSource*>(t);
@@ -432,8 +462,7 @@ void Hud::Impl::sheetBuilding(const Rect2& r)
         unsigned row = 0;
         for(const auto gt : helpers::enumRange<GoodType>())
         {
-            if(gt == GoodType::Nothing || gt == GoodType::WaterEmpty || gt == GoodType::ShieldVikings
-               || gt == GoodType::ShieldAfricans || gt == GoodType::ShieldJapanese)
+            if(hiddenWare(world(), gt))
                 continue;
             const Rect2 rr{view.x, ly + static_cast<float>(row) * rowH, view.w, rowH};
             ui.sprite(src(LOADER.getWareTex(gt)), {rr.x, rr.y + app.dp(8), app.dp(32), app.dp(32)});
@@ -604,8 +633,7 @@ void Hud::Impl::sheetStats(const Rect2& r)
                 maxV = std::max(maxV, static_cast<unsigned>(inv[gt]));
             for(const auto gt : helpers::enumRange<GoodType>())
             {
-                if(gt == GoodType::Nothing || gt == GoodType::WaterEmpty || gt == GoodType::ShieldVikings
-                   || gt == GoodType::ShieldAfricans || gt == GoodType::ShieldJapanese)
+                if(hiddenWare(world(), gt))
                     continue;
                 ui.sprite(src(LOADER.getWareTex(gt)), {body.x, y + app.dp(4), app.dp(30), app.dp(30)});
                 ui.text(body.x + app.dp(40), y + app.dp(10), wareName(gt), app.dp(14), ui.theme.text);
@@ -693,6 +721,8 @@ void Hud::Impl::sheetDistribution(const Rect2& r)
     {
         const GoodType gt = std::get<0>(distributionMap[i]);
         const BuildingType bt = std::get<1>(distributionMap[i]);
+        if(hiddenBuilding(world(), bt))
+            continue;
         if(gt != lastGood)
         {
             y += app.dp(6);
@@ -836,8 +866,7 @@ void Hud::Impl::sheetInventory(const Rect2& r)
     {
         for(const auto gt : helpers::enumRange<GoodType>())
         {
-            if(gt == GoodType::Nothing || gt == GoodType::WaterEmpty || gt == GoodType::ShieldVikings
-               || gt == GoodType::ShieldAfricans || gt == GoodType::ShieldJapanese)
+            if(hiddenWare(world(), gt))
                 continue;
             const Rect2 cr = cellAt(n++);
             ui.sprite(src(LOADER.getWareTex(gt)), {cr.x + cr.w / 2 - app.dp(18), cr.y + app.dp(4), app.dp(36), app.dp(36)});
@@ -849,7 +878,7 @@ void Hud::Impl::sheetInventory(const Rect2& r)
     {
         for(const auto j : helpers::enumRange<Job>())
         {
-            if(j == Job::BoatCarrier)
+            if(j == Job::BoatCarrier || hiddenJob(world(), j))
                 continue;
             const Rect2 cr = cellAt(n++);
             ui.sprite(src(LOADER.getJobTex(j)), {cr.x + cr.w / 2 - app.dp(18), cr.y + app.dp(4), app.dp(36), app.dp(36)});
@@ -883,9 +912,17 @@ void Hud::Impl::sheetSaveLoad(const Rect2& r, bool save)
             continue;
         const Rect2 row{c.x, y, c.w, rowH - app.dp(8)};
         const bool rowHit = ui.row(id("slot", i), row);
-        ui.icon(save ? Icon::Save : Icon::Folder, row.x + app.dp(26), row.y + row.h / 2, app.dp(22), ui.theme.accent);
-        ui.text(row.x + app.dp(50), row.y + app.dp(8), slots[i].second, app.dp(16), ui.theme.text, gfx::Align::Left, true);
-        ui.text(row.x + app.dp(50), row.y + app.dp(29), exists ? saveDescription(path) : "leer", app.dp(13), ui.theme.textDim);
+        float tx = row.x + app.dp(50);
+        const gfx::Texture* thumb = exists ? app.imageTexture(bfs::path(path).replace_extension(".png").string()) : nullptr;
+        if(thumb)
+        {
+            const float th = row.h - app.dp(12);
+            ui.picture(*thumb, {row.x + app.dp(10), row.y + app.dp(6), th * 1.5f, th});
+            tx = row.x + app.dp(20) + th * 1.5f;
+        } else
+            ui.icon(save ? Icon::Save : Icon::Folder, row.x + app.dp(26), row.y + row.h / 2, app.dp(22), ui.theme.accent);
+        ui.text(tx, row.y + app.dp(8), slots[i].second, app.dp(16), ui.theme.text, gfx::Align::Left, true);
+        ui.text(tx, row.y + app.dp(29), exists ? saveDescription(path) : "leer", app.dp(13), ui.theme.textDim);
         ui.tag(slots[i].second, row);
         if(rowHit)
         {
@@ -1020,18 +1057,58 @@ void Hud::Impl::sheetMission(const Rect2& r)
 
 void Hud::Impl::sheetGameOver(const Rect2& r)
 {
-    const Rect2 c = sheetHeader(r, "Spielende", Icon::Trophy);
-    const float th = ui.textWrapped(c.x, c.y + app.dp(10), c.w, gameOverText, app.dp(20), ui.theme.text);
-    const float gy = c.y + app.dp(10) + th + app.dp(24);
-    Grid g{{c.x, gy, c.w, app.dp(124)}, 1, app.dp(54), app.dp(12)};
-    fit(r, gy + app.dp(120));
-    if(ui.button(id("go.cont"), g.next(), "Weiterspielen", Icon::Play))
+    const auto& th = ui.theme;
+    auto& b = app.batch();
+    const float pad = app.dp(th.space.xl);
+    const Rect2 c{r.x + pad, r.y + app.dp(26), r.w - 2 * pad, r.h - app.dp(40)};
+    // Emblem: ring with trophy (victory) or shield (defeat), with a soft glow that breathes slowly
+    const float t = Ui::ease(std::min(1.f, static_cast<float>((app.time() - sheetTime) / th.motion.slow)));
+    const float glow = 0.5f + 0.5f * std::sin(static_cast<float>(app.time()) * 1.6f);
+    const Color tone = gameOverWin ? th.accent : th.danger;
+    const float er = app.dp(38) * (0.7f + 0.3f * Ui::easeBack(t));
+    const float cx = c.x + c.w / 2, cy = c.y + app.dp(44);
+    b.circle(cx, cy, er * 1.9f, tone.withAlpha(0.10f + 0.06f * glow), 0, er);
+    b.circle(cx, cy, er, tone.withAlpha(0.16f));
+    b.circle(cx, cy, er, tone, app.dp(2));
+    ui.icon(gameOverWin ? Icon::Trophy : Icon::Shield, cx, cy, er * 1.05f, tone);
+    float y = cy + app.dp(52);
+    const float hs = app.dp(th.type.headline + 4);
+    ui.heading(cx, y, gameOverWin ? "Sieg" : "Niederlage", hs, th.text, gfx::Align::Center);
+    y += hs * 1.3f + app.dp(2);
+    y += ui.textWrapped(c.x, y, c.w, gameOverText, app.dp(th.type.body), th.textDim, gfx::Align::Center) + app.dp(18);
+    // Three key figures of the own realm
+    const auto& reg = player().getBuildingRegister();
+    unsigned buildings = static_cast<unsigned>(reg.getMilitaryBuildings().size());
+    for(const auto bt : helpers::enumRange<BuildingType>())
+        buildings += static_cast<unsigned>(reg.getBuildings(bt).size());
+    const Inventory& inv = player().getInventory();
+    unsigned soldiers = 0;
+    for(Job j : {Job::Private, Job::PrivateFirstClass, Job::Sergeant, Job::Officer, Job::General})
+        soldiers += inv[j];
+    const std::pair<std::string, std::string> stats[] = {
+      {game.session().formatGFTime(game.session().getGF()), "Spielzeit"},
+      {std::to_string(buildings), "Gebäude"},
+      {std::to_string(soldiers), "Soldaten"}};
+    const float gap = app.dp(10), sw = (c.w - 2 * gap) / 3, sh = app.dp(70);
+    for(int i = 0; i < 3; ++i)
+    {
+        const Rect2 sr{c.x + static_cast<float>(i) * (sw + gap), y, sw, sh};
+        b.roundRect(sr, app.dp(th.radius.md), th.surface);
+        ui.text(sr.x + sw / 2, sr.y + app.dp(12), stats[i].first, app.dp(th.type.title - 2), th.text, gfx::Align::Center,
+                true);
+        ui.text(sr.x + sw / 2, sr.y + app.dp(44), stats[i].second, app.dp(th.type.caption), th.textDim,
+                gfx::Align::Center);
+    }
+    y += sh + app.dp(20);
+    const float bh = app.dp(th.size.button), bw = (c.w - gap) / 2;
+    if(ui.button(id("go.cont"), {c.x, y, bw, bh}, "Weiterspielen", Icon::Play))
         closeSheet();
-    if(ui.button(id("go.menu"), g.next(), "Hauptmenü", Icon::Exit, Style::Primary))
+    if(ui.button(id("go.menu"), {c.x + bw + gap, y, bw, bh}, "Hauptmenü", Icon::Exit, Style::Primary))
     {
         App& a = app;
         a.post([&a] { a.setScreen(createMainMenu(a)); });
     }
+    fit(r, y + bh + app.dp(8));
 }
 
 void Hud::Impl::sheetShip(const Rect2& r)

@@ -148,6 +148,7 @@ struct Hud::Impl
     int missionImageIdx = -1;
     bool missionPaused = false;
     std::string gameOverText;
+    bool gameOverWin = false;
     std::string confirmText;
     std::function<void()> confirmAction;
     double confirmTime = 0;

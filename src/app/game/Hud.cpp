@@ -1436,6 +1436,7 @@ void Hud::notifyDefeated(unsigned playerId)
     if(playerId == d->game.localPlayer())
     {
         d->gameOverText = "Dein Reich ist gefallen.";
+        d->gameOverWin = false;
         d->openSheet(SheetKind::GameOver);
     } else
         d->toast(d->world().getPlayer(playerId).name + " wurde besiegt");
@@ -1445,7 +1446,8 @@ void Hud::notifyWinner(unsigned playerId, bool team)
 {
     const bool me = playerId == d->game.localPlayer()
                     || (team && d->world().getPlayer(playerId).isAlly(d->game.localPlayer()));
-    d->gameOverText = me ? "Sieg! Das Land gehört dir." : d->world().getPlayer(playerId).name + " hat gewonnen.";
+    d->gameOverText = me ? "Das Land gehört dir." : d->world().getPlayer(playerId).name + " hat gewonnen.";
+    d->gameOverWin = me;
     d->openSheet(SheetKind::GameOver);
 }
 

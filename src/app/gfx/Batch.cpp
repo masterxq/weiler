@@ -400,6 +400,28 @@ void Batch::captureBackdrop()
     backdropValid_ = true;
 }
 
+bool Batch::readBackdrop(std::vector<uint8_t>& rgba, int& w, int& h)
+{
+    const Target& t = down_[1];
+    if(!t.fbo)
+        return false;
+    flush();
+    w = t.w;
+    h = t.h;
+    std::vector<uint8_t> px(static_cast<size_t>(w) * h * 4);
+    glBindFramebuffer(GL_FRAMEBUFFER, t.fbo);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    rgba.resize(px.size());
+    const size_t row = static_cast<size_t>(w) * 4;
+    for(int y = 0; y < h; ++y)
+        std::copy_n(px.data() + (h - 1 - y) * row, row, rgba.data() + y * row);
+    for(size_t i = 3; i < rgba.size(); i += 4)
+        rgba[i] = 255;
+    return true;
+}
+
 void Batch::shadow(const Rect2& r, float radius, float blur, Color c)
 {
     roundRect(r, radius, c, blur);

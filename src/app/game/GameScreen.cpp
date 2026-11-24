@@ -193,7 +193,11 @@ void GameScreen::onSuspend()
 bool GameScreen::saveTo(const std::string& path)
 {
     bfs::create_directories(bfs::path(path).parent_path());
-    return session_->save(path);
+    if(!session_->save(path))
+        return false;
+    // Picture for the savegame lists
+    app_.saveThumbnail(bfs::path(path).replace_extension(".png").string());
+    return true;
 }
 
 void GameScreen::startTutorial(bool firstStart)
@@ -557,6 +561,15 @@ bool GameScreen::testCommand(const std::string& cmd, const std::vector<std::stri
         jumpTo(best);
         std::cout << "[script] enemy " << best.x << "," << best.y << " soldiers "
                   << gwv_->getNumSoldiersForAttack(best) << std::endl;
+        return true;
+    }
+    if(cmd == "gameover")
+    {
+        // Test: show the end of game sheet (win or lose)
+        if(arg(0) == "lose")
+            hud_->notifyDefeated(localPlayer());
+        else
+            hud_->notifyWinner(localPlayer(), false);
         return true;
     }
     if(cmd == "seafaring")

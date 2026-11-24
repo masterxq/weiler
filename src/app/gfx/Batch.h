@@ -59,6 +59,9 @@ public:
     /// Frosted glass: blurred copy of what was drawn so far, tinted with tint (alpha = tint strength).
     /// The backdrop is captured once per frame on first use.
     void glass(const Rect2& r, float radius, Color tint, float opacity = 1.f);
+    /// Copy of the last captured backdrop (world without interface) at a quarter of the screen size, RGBA top-down.
+    /// False if nothing was captured yet.
+    bool readBackdrop(std::vector<uint8_t>& rgba, int& w, int& h);
     /// Forget the captured backdrop (the next glass call captures again)
     void invalidateBackdrop() { backdropValid_ = false; }
     void circle(float cx, float cy, float radius, Color c, float stroke = 0.f, float softness = 1.f);

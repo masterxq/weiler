@@ -83,6 +83,10 @@ public:
     /// Replace the current screen at the end of the frame
     void setScreen(std::unique_ptr<Screen> screen);
     void quit() { running_ = false; }
+    /// Small picture of the world (without interface) for savegames, written as PNG
+    bool saveThumbnail(const std::string& pngPath);
+    /// Texture of a PNG file (cached; reloaded when the file changes), nullptr if missing
+    const gfx::Texture* imageTexture(const std::string& pngPath);
     /// Write a screenshot of the next presented frame
     bool saveScreenshot(const std::string& path);
     void startTextInput(bool on);
@@ -118,6 +122,12 @@ private:
     std::unique_ptr<Settings> settings_;
     std::unique_ptr<Screen> screen_, nextScreen_;
     std::unique_ptr<MenuBackdrop> backdrop_;
+    struct CachedImage
+    {
+        gfx::Texture tex;
+        long long stamp = 0;
+    };
+    std::map<std::string, CachedImage> images_;
     std::unique_ptr<TestScript> script_;
     std::deque<std::function<void()>> posted_;
     int fbW_ = 1, fbH_ = 1;

@@ -86,6 +86,8 @@ public:
     float textWrapped(float x, float y, float w, const std::string& s, float size, Color c,
                       gfx::Align align = gfx::Align::Left);
     void icon(Icon i, float cx, float cy, float size, Color c);
+    /// Picture filling r (centered crop) with a fine frame
+    void picture(const gfx::Texture& tex, const Rect2& r);
     /// Draw a sprite of the game data fitted into r
     void sprite(const ISpriteSource* src, const Rect2& r, unsigned playerColor = 0, float alpha = 1);
 

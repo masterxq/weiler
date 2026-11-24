@@ -432,10 +432,18 @@ public:
                 name = "Schnellspeicher";
             else if(name.rfind("slot", 0) == 0)
                 name = "Platz " + name.substr(4);
-            ui_.icon(Icon::Folder, row.x + app_.dp(24), row.y + row.h / 2, app_.dp(22), ui_.theme.accent);
-            ui_.text(row.x + app_.dp(48), row.y + app_.dp(8), name, app_.dp(16), ui_.theme.text, gfx::Align::Left, true);
-            ui_.text(row.x + app_.dp(48), row.y + app_.dp(30), saveDescription(files[i]), app_.dp(13),
-                     ui_.theme.textDim);
+            float tx = row.x + app_.dp(48);
+            bfs::path png = files[i];
+            png.replace_extension(".png");
+            if(const gfx::Texture* thumb = app_.imageTexture(png.string()))
+            {
+                const float th = row.h - app_.dp(12);
+                ui_.picture(*thumb, {row.x + app_.dp(10), row.y + app_.dp(6), th * 1.5f, th});
+                tx = row.x + app_.dp(20) + th * 1.5f;
+            } else
+                ui_.icon(Icon::Folder, row.x + app_.dp(24), row.y + row.h / 2, app_.dp(22), ui_.theme.accent);
+            ui_.text(tx, row.y + app_.dp(8), name, app_.dp(16), ui_.theme.text, gfx::Align::Left, true);
+            ui_.text(tx, row.y + app_.dp(30), saveDescription(files[i]), app_.dp(13), ui_.theme.textDim);
             ui_.tag(name, row);
             if(rowHit)
                 startLoaded(app_, files[i].string());
@@ -567,6 +575,7 @@ public:
         const float e = Ui::ease(t);
         const int n = canContinue ? 6 : 5;
         float bh = app_.dp(56), gap = app_.dp(10), primH = app_.dp(60);
+        int cols = 1;
         Rect2 col;
         if(app_.portrait())
         {
@@ -580,11 +589,12 @@ public:
             // Word mark on the left, buttons on the right; buttons shrink on short screens
             const float scale = std::clamp((H / app_.dp(1)) / 420.f, 0.7f, 1.2f);
             drawWordmark(app_, W * 0.3f, H / 2 - WORDMARK_H * app_.dp(1) * scale / 2, scale, e);
-            gap = app_.dp(8);
-            const float avail = H - app_.dp(60);
-            bh = std::min(bh, (avail - primH - app_.dp(50) - gap * static_cast<float>(n)) / static_cast<float>(n - 1));
-            const float total = primH + gap * 1.6f + (bh + gap) * static_cast<float>(n - 1) + app_.dp(50);
-            const float w = std::min(W * 0.4f, app_.dp(420));
+            // Short screens: the navigation cards form a grid of two columns
+            gap = app_.dp(10);
+            cols = 2;
+            const int rows = (n - 1 + 1) / 2;
+            const float total = primH + gap * 1.6f + (bh + gap) * static_cast<float>(rows) + app_.dp(50);
+            const float w = std::min(W * 0.46f, app_.dp(460));
             col = {W * 0.72f - w / 2, (H - total) / 2, w, total};
         }
         // Column slides up into place
@@ -600,12 +610,15 @@ public:
                 startLoaded(app_, autosave);
         }
         y += primH + gap * 1.6f;
+        int k = 0;
+        const float cw = (col.w - gap * static_cast<float>(cols - 1)) / static_cast<float>(cols);
         auto nav = [&](const char* key, const std::string& label, Icon ic) {
+            const Rect2 r{col.x + static_cast<float>(k % cols) * (cw + gap), y, cw, bh};
+            if(++k % cols == 0)
+                y += bh + gap;
             // Cards directly over the world get a glass base
-            app_.batch().glass({col.x, y, col.w, bh}, std::min(app_.dp(th.radius.md), bh / 2), th.glass);
-            const bool r = ui_.button(id(key), {col.x, y, col.w, bh}, label, ic, Style::Nav);
-            y += bh + gap;
-            return r;
+            app_.batch().glass(r, std::min(app_.dp(th.radius.md), bh / 2), th.glass);
+            return ui_.button(id(key), r, label, ic, Style::Nav);
         };
         if(!first && nav("mm.new", "Neues Spiel", Icon::Flag))
             app_.setScreen(std::make_unique<NewGameScreen>(app_));
@@ -617,6 +630,8 @@ public:
             app_.setScreen(std::make_unique<LoadScreen>(app_));
         if(nav("mm.set", "Einstellungen", Icon::Gear))
             app_.setScreen(std::make_unique<SettingsScreen>(app_));
+        if(k % cols != 0)
+            y += bh + gap;
         const float qw = app_.dp(150);
         if(ui_.button(id("mm.quit"), {col.x + (col.w - qw) / 2, y + app_.dp(2), qw, app_.dp(44)}, "Beenden", Icon::Exit,
                       Style::Flat))

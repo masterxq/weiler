@@ -258,6 +258,27 @@ void Ui::sprite(const ISpriteSource* src, const Rect2& r, unsigned playerColor, 
     app_.atlas().drawSource(*src, {r.x + (r.w - w) / 2, r.y + (r.h - h) / 2, w, h}, Color{1, 1, 1, alpha}, playerColor);
 }
 
+void Ui::picture(const gfx::Texture& tex, const Rect2& r)
+{
+    if(!tex || r.w <= 0 || r.h <= 0)
+        return;
+    const float ta = static_cast<float>(tex.width()) / static_cast<float>(tex.height()), ra = r.w / r.h;
+    float u0 = 0, v0 = 0, u1 = 1, v1 = 1;
+    if(ta > ra)
+    {
+        const float f = ra / ta;
+        u0 = (1 - f) / 2;
+        u1 = u0 + f;
+    } else
+    {
+        const float f = ta / ra;
+        v0 = (1 - f) / 2;
+        v1 = v0 + f;
+    }
+    batch().quad(tex.id(), r.x, r.y, r.right(), r.bottom(), u0, v0, u1, v1, Color{1, 1, 1, 1});
+    batch().roundRect(r, dp(3), theme.highlight, 1.f, dp(1));
+}
+
 bool Ui::pressed(Id, const Rect2& r) const
 {
     return captured_ && !dragging_ && r.contains(pressX_, pressY_) && r.contains(curX_, curY_);

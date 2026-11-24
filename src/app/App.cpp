@@ -42,6 +42,7 @@ App::~App()
     screen_.reset();
     nextScreen_.reset();
     backdrop_.reset();
+    images_.clear();
     ui_.reset();
     cdImport_.reset();
     music_.reset();
@@ -313,6 +314,45 @@ void App::releaseMenuBackdrop()
 void App::setScreen(std::unique_ptr<Screen> screen)
 {
     nextScreen_ = std::move(screen);
+}
+
+bool App::saveThumbnail(const std::string& pngPath)
+{
+    std::vector<uint8_t> px;
+    int w = 0, h = 0;
+    if(!batch_.readBackdrop(px, w, h))
+        return false;
+    SDL_Surface* surf = SDL_CreateSurfaceFrom(w, h, SDL_PIXELFORMAT_ABGR8888, px.data(), w * 4);
+    if(!surf)
+        return false;
+    const bool ok = SDL_SavePNG(surf, pngPath.c_str());
+    SDL_DestroySurface(surf);
+    images_.erase(pngPath);
+    return ok;
+}
+
+const gfx::Texture* App::imageTexture(const std::string& pngPath)
+{
+    boost::system::error_code ec;
+    const auto t = bfs::last_write_time(pngPath, ec);
+    if(ec)
+        return nullptr;
+    const long long stamp = static_cast<long long>(t);
+    auto it = images_.find(pngPath);
+    if(it != images_.end() && it->second.stamp == stamp)
+        return &it->second.tex;
+    SDL_Surface* loaded = SDL_LoadPNG(pngPath.c_str());
+    if(!loaded)
+        return nullptr;
+    SDL_Surface* surf = SDL_ConvertSurface(loaded, SDL_PIXELFORMAT_ABGR8888);
+    SDL_DestroySurface(loaded);
+    if(!surf)
+        return nullptr;
+    CachedImage& img = images_[pngPath];
+    img.stamp = stamp;
+    img.tex.create(surf->w, surf->h, false, true, surf->pixels);
+    SDL_DestroySurface(surf);
+    return &img.tex;
 }
 
 bool App::saveScreenshot(const std::string& path)
