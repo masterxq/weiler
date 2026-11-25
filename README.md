@@ -106,6 +106,11 @@ buildings limit their garrison per rank and exchange their soldiers; the economy
 the original. The victory condition of a free game and the own share of the land are shown in the post office. The
 introduction in the main menu shows the gestures step by step.
 
+Every game is recorded (the commands of all players) in `REPLAYS/` of the user data folder (`~/.local/share/weiler`
+or `WEILER_USERDATA`); the newest 5 recordings are kept. `weiler-headless --replay <file>` plays one back without
+interface, e.g. with `--foreign` to list figures outside their territory. Own figures (no soldiers) that step into
+another player's territory are written to the log in `LOGS/` with job, state, origin, goal and reason.
+
 ## License
 
 GPL-2.0-or-later, see `LICENSE`. Fonts: SIL Open Font License; music and soundfont: see `THIRD_PARTY.md`.

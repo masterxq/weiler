@@ -1,0 +1,18 @@
+wait 10
+game findbq small near=granite
+wait 2
+tap found:
+wait 15
+tap ui:ring:Steinbruch
+wait 30
+game expect connected
+game findbq small near=tree
+wait 2
+tap found:
+wait 15
+tap ui:ring:Holzfäller
+wait 30
+game expect connected
+game ff 30000
+wait 2
+quit

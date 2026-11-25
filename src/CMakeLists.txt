@@ -6,6 +6,8 @@ find_package(Boost 1.74 REQUIRED COMPONENTS program_options)
 add_library(weiler_engine STATIC
     engine/Campaign.cpp
     engine/DataPaths.cpp
+    engine/ForeignEntryLog.cpp
+    engine/Names.cpp
     engine/Session.cpp
 )
 target_include_directories(weiler_engine PUBLIC engine)
@@ -26,8 +28,7 @@ if(WEILER_SOURCE_PATHS)
         WEILER_GAMEDATA_LIST="${PROJECT_SOURCE_DIR}/data/gamedata.list")
 endif()
 
-add_executable(weiler-headless tools/HeadlessMain.cpp app/game/Names.cpp)
-target_include_directories(weiler-headless PRIVATE app)
+add_executable(weiler-headless tools/HeadlessMain.cpp)
 target_link_libraries(weiler-headless PRIVATE weiler_engine Boost::program_options)
 
 # Game application

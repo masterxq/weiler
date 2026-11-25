@@ -23,6 +23,7 @@ working folder that contains a `shots/` directory, with a separate user data fol
 | `goal.txt` | `--map DATA/MAPS3/AKARTE01.WLD --ais 1 --warmup 60000 --autoplay --objective conquer` | victory condition in the post office, team victory |
 | `perf.txt`, `names.txt` | `--map ... --warmup 36000 --autoplay` | frame time (`[perf]` lines), name labels |
 | `datasetup1..3.txt` | no game data (`DataSetup.cmake`: own home folder, data linked in) | missing data, folder dialog and own browser, remembered folder, removable medium gone and back, lower case names |
+| `record.txt` | `--map DATA/MAPS4/KARTE01.WLD --ais 1` (`RecordReplay.cmake`) | the game is recorded in `REPLAYS/`, the log names the file, `weiler-headless --replay` plays it back equal |
 | `genlong.py` | writes a long game script: `python3 genlong.py long.txt` | economy, military, attack |
 
 Test hooks of the game screen: `game seafaring` places a harbor with wares and a ship next to it (ship and expedition

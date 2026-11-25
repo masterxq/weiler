@@ -5,13 +5,18 @@
 // weiler-headless: runs a game without user interface (AI players only) for tests and benchmarks.
 
 #include "DataPaths.h"
+#include "ForeignEntryLog.h"
 #include "Session.h"
 #include "GamePlayer.h"
 #include "SerializedGameData.h"
 #include "buildings/nobBaseWarehouse.h"
 #include "figures/noFigure.h"
+#include "notifications/FigureNote.h"
+#include "figures/nofFlagWorker.h"
+#include "nodeObjs/noFlag.h"
+#include "RoadSegment.h"
 #include "world/GameWorld.h"
-#include "game/Names.h"
+#include "Names.h"
 #include "gameData/GameConsts.h"
 #include "gameData/MaxPlayers.h"
 #include "s25util/Log.h"
@@ -26,6 +31,7 @@
 #include <iterator>
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
 #include <optional>
 #include <random>
 #include <vector>
@@ -107,6 +113,18 @@ class ForeignWatch
 {
 public:
     explicit ForeignWatch(bool verbose) : verbose_(verbose) {}
+    /// A figure stepped into another player's territory: was there contact between the two territories yet?
+    /// Entries without contact (no-man's-land in between) are the suspicious ones.
+    void onEntry(const Session& s, const FigureNote& note)
+    {
+        auto& known = contact_[{note.player, note.territoryOwner}];
+        if(!known)
+            known = touching(s.world(), note.player, note.territoryOwner);
+        if(known || !entered_.insert(note.figure.getObjId()).second)
+            return;
+        ++beforeContact_;
+        std::cout << "[vor-kontakt] " << ForeignEntryLog::describe(s, note).substr(8) << std::endl;
+    }
     void scan(const Session& s)
     {
         const GameWorld& w = s.world();
@@ -130,7 +148,15 @@ public:
                         info.firstPos = pt;
                         const auto* wh = w.getSpecObj<nobBaseWarehouse>(pt);
                         info.fromWarehouse = wh && wh->getPlayer() == fig->getPlayer();
+                        // Leaving a warehouse without a goal: the figure will wander off
+                        if(info.fromWarehouse && fig->isWandering() && !fig->isSoldier())
+                            std::cout << "[auszug] GF " << s.getGF() << " (" << s.formatGFTime(s.getGF()) << ") P"
+                                      << unsigned(fig->getPlayer()) << " " << jobName(fig->getJobType())
+                                      << " verlaesst " << buildingName(wh->getBuildingType()) << " ohne Ziel"
+                                      << std::endl;
                     }
+                    if(!fig->isSoldier())
+                        checkOtherPlayer(s, *fig, pt, info);
                     if(info.reported || owner == fig->getPlayer() + 1u || fig->isSoldier())
                         continue;
                     info.reported = true;
@@ -150,7 +176,7 @@ public:
                                             + (info.fromWarehouse ? "aus Lager" : "von unterwegs");
                     ++counts_[key];
                     if(verbose_ || counts_[key] <= 3)
-                        std::cout << "[fremd] GF " << s.getGF() << " P" << unsigned(fig->getPlayer()) << " "
+                        std::cout << "[ausserhalb] GF " << s.getGF() << " P" << unsigned(fig->getPlayer()) << " "
                                   << jobName(fig->getJobType()) << " (GOT " << rttr::enumCast(fig->getGOT())
                                   << ") " << state << " bei (" << pt.x << "," << pt.y << ") " << (owner ? "Gebiet P" + std::to_string(owner - 1) : std::string("Niemandsland"))
                                   << ", Ziel " << goal << ", zuerst GF " << info.firstGF << " bei ("
@@ -162,8 +188,10 @@ public:
     }
     void summary() const
     {
+        std::cout << "[fremdziel-summe] Figuren mit Ziel/Strasse geprueft: " << withGoal_
+                  << ", davon Ziel/Strasse/Flagge eines anderen Spielers: " << otherPlayer_ << std::endl;
         for(const auto& [key, n] : counts_)
-            std::cout << "[fremd-summe] " << key << ": " << n << std::endl;
+            std::cout << "[ausserhalb-summe] " << key << ": " << n << std::endl;
     }
 
 private:
@@ -171,12 +199,114 @@ private:
     {
         unsigned firstGF = 0;
         MapPoint firstPos;
-        bool fromWarehouse = false, reported = false;
+        bool fromWarehouse = false, reported = false, goalChecked = false, otherReported = false;
     };
+    /// Does a figure (no soldier) walk to a building or flag of another player or on another player's road?
+    /// (A request of one player must never be served by another player's warehouse.)
+    void checkOtherPlayer(const Session& s, const noFigure& fig, MapPoint pt, Seen& info)
+    {
+        const unsigned me = fig.getPlayer();
+        const noRoadNode* goal = fig.getGoal();
+        const RoadSegment* road = fig.getCurrentRoad();
+        const auto* flagWorker = dynamic_cast<const nofFlagWorker*>(&fig);
+        const noFlag* flag = flagWorker ? flagWorker->getFlag() : nullptr;
+        if(!goal && !road && !flag)
+            return;
+        if(!info.goalChecked)
+        {
+            info.goalChecked = true;
+            ++withGoal_;
+        }
+        std::string what;
+        if(goal && goal->getPlayer() != me)
+            what = "Ziel";
+        else if(road && (road->getF1()->getPlayer() != me || road->getF2()->getPlayer() != me))
+            what = "Strasse";
+        else if(flag && flag->getPlayer() != me)
+            what = "Flagge";
+        if(what.empty() || info.otherReported)
+            return;
+        info.otherReported = true;
+        ++otherPlayer_;
+        const noRoadNode* other = what == "Ziel" ? goal : what == "Flagge" ? flag : road->getF1();
+        std::cout << "[fremdziel] GF " << s.getGF() << " P" << me << " " << jobName(fig.getJobType()) << " bei ("
+                  << pt.x << "," << pt.y << "): " << what << " (" << other->getPos().x << "," << other->getPos().y
+                  << ") gehoert P" << unsigned(other->getPlayer()) << ", zuerst GF " << info.firstGF
+                  << (info.fromWarehouse ? " im Lager" : "") << std::endl;
+    }
+    unsigned withGoal_ = 0, otherPlayer_ = 0;
+    /// Do the territories of two players touch?
+    static bool touching(const GameWorld& w, unsigned a, unsigned b)
+    {
+        const MapExtent size = w.getSize();
+        for(MapCoord y = 0; y < size.y; ++y)
+        {
+            for(MapCoord x = 0; x < size.x; ++x)
+            {
+                const MapPoint pt(x, y);
+                const unsigned o = w.getNode(pt).owner;
+                if(o != a + 1 && o != b + 1)
+                    continue;
+                const unsigned other = o == a + 1 ? b + 1 : a + 1;
+                for(const Direction dir : {Direction::East, Direction::SouthEast, Direction::SouthWest})
+                {
+                    if(w.getNode(w.getNeighbour(pt, dir)).owner == other)
+                        return true;
+                }
+            }
+        }
+        return false;
+    }
+    std::map<std::pair<unsigned, unsigned>, bool> contact_;
+    std::unordered_set<unsigned> entered_;
+
+public:
+    unsigned beforeContact_ = 0;
     bool verbose_;
     std::unordered_map<unsigned, Seen> seen_;
     std::map<std::string, unsigned> counts_;
 };
+
+/// Store settings that differ from the default (send out, stop, collect) in all warehouses
+void printStoreSettings(const Session& s)
+{
+    const auto& w = s.world();
+    const auto describe = [](InventorySetting st) {
+        std::string r;
+        if(st.isSet(EInventorySetting::Send))
+            r += " auslagern";
+        if(st.isSet(EInventorySetting::Stop))
+            r += " stopp";
+        if(st.isSet(EInventorySetting::Collect))
+            r += " einlagern";
+        return r;
+    };
+    for(unsigned i = 0; i < w.getNumPlayers(); ++i)
+    {
+        const GamePlayer& p = w.getPlayer(i);
+        if(!p.isUsed())
+            continue;
+        for(const nobBaseWarehouse* wh : p.getBuildingRegister().getStorehouses())
+        {
+            std::string line;
+            for(const auto job : helpers::enumRange<Job>())
+            {
+                const std::string d = describe(wh->getInventorySetting(job));
+                if(!d.empty())
+                    line += std::string(" ") + jobName(job) + ":" + d + " ("
+                            + std::to_string(wh->getNumRealFigures(job)) + ")";
+            }
+            for(const auto gt : helpers::enumRange<GoodType>())
+            {
+                const std::string d = describe(wh->getInventorySetting(gt));
+                if(!d.empty())
+                    line += std::string(" ") + wareName(gt) + ":" + d;
+            }
+            std::cout << "[lager] P" << i << " " << buildingName(wh->getBuildingType()) << " (" << wh->getPos().x
+                      << "," << wh->getPos().y << ")" << (line.empty() ? " Standard" : line) << std::endl;
+        }
+    }
+}
 
 void printStatus(const Session& s)
 {
@@ -198,23 +328,30 @@ void printStatus(const Session& s)
 
 int main(int argc, char** argv)
 {
-    std::string dataDir, map, loadPath, savePath;
-    unsigned numAIs = 2, seed = 1, minutes = 30, extraGFs = 0, reportEvery = 0, damageTests = 0;
-    bool printHash = false, foreign = false, foreignAll = false;
+    std::string dataDir, map, loadPath, savePath, replayPath, recordDir;
+    unsigned numAIs = 2, seed = 1, minutes = 30, extraGFs = 0, reportEvery = 0, damageTests = 0, snapshotEvery = 0;
+    bool printHash = false, foreign = false, foreignAll = false, human = false;
     std::vector<std::string> sendOut;
     po::options_description desc("weiler-headless options");
     desc.add_options()("help,h", "Show help")("data", po::value(&dataDir), "Folder with the original game data")(
       "map", po::value(&map), "Map file (relative paths are looked up in the game data)")(
       "ais", po::value(&numAIs)->default_value(2), "Number of AI players for a new game")(
+      "human", po::bool_switch(&human), "Player 0 of a new game is a passive human player (no AI), the AIs follow")(
       "seed", po::value(&seed)->default_value(1), "Random seed (--load: derived from the savegame if not given)")(
       "minutes", po::value(&minutes)->default_value(30), "Game minutes to simulate (normal speed)")(
       "gfs", po::value(&extraGFs), "Game frames to simulate (overrides --minutes)")(
       "load", po::value(&loadPath), "Load a savegame instead of starting a new game")(
       "save", po::value(&savePath), "Write a savegame at the end")(
+      "replay", po::value(&replayPath),
+      "Play back a recorded game (.rpl), by default up to its end; the commands of all players come from the file")(
+      "record", po::value(&recordDir), "Record the game as a replay in this folder")(
       "report", po::value(&reportEvery)->default_value(0), "Print status every N game minutes")(
+      "snapshot-every", po::value(&snapshotEvery),
+      "Take a snapshot of the game state (as for saving) every N game frames (must not change the game)")(
       "hash", po::bool_switch(&printHash), "Print a hash of the complete game state at the end")(
       "foreign", po::bool_switch(&foreign),
-      "Report figures (no soldiers) outside their own territory: job, state, goal, origin")(
+      "Report figures (no soldiers) outside their own territory and every step into another player's territory: "
+      "job, state, goal, origin, reason; also store settings and figures walking to other players' objects")(
       "foreign-all", po::bool_switch(&foreignAll), "With --foreign: print every figure, not only 3 per kind")(
       "send-out", po::value(&sendOut)->multitoken(),
       "Set 'send out' for these jobs (enum numbers) in the headquarters of player 0 at the start")(
@@ -230,7 +367,7 @@ int main(int argc, char** argv)
         std::cerr << e.what() << "\n" << desc << std::endl;
         return 2;
     }
-    if(vm.count("help") || (map.empty() && loadPath.empty()))
+    if(vm.count("help") || (map.empty() && loadPath.empty() && replayPath.empty()))
     {
         std::cout << desc << std::endl;
         return vm.count("help") ? 0 : 2;
@@ -256,10 +393,10 @@ int main(int argc, char** argv)
         setup.map = mapPath;
         setup.seed = seed;
         setup.ggs.objective = GameObjective::TotalDomination;
-        for(unsigned i = 0; i < numAIs && i < MAX_PLAYERS; ++i)
+        for(unsigned i = 0; i < numAIs + (human ? 1 : 0) && i < MAX_PLAYERS; ++i)
         {
             PlayerInfo pi;
-            pi.ps = PlayerState::AI;
+            pi.ps = human && i == 0 ? PlayerState::Occupied : PlayerState::AI;
             pi.aiInfo = AI::Info(AI::Type::Default, AI::Level::Hard);
             pi.name = "AI " + std::to_string(i + 1);
             pi.nation = Nation(i % 4);
@@ -276,16 +413,29 @@ int main(int argc, char** argv)
     std::unique_ptr<Session> session;
     try
     {
-        session = startSession(loadPath, map);
+        session = replayPath.empty() ? startSession(loadPath, map) : Session::loadReplay(replayPath);
     } catch(const std::exception& e)
     {
         std::cerr << "Could not start game: " << e.what() << std::endl;
         return 4;
     }
+    if(!recordDir.empty())
+    {
+        const bfs::path file = session->startRecording(recordDir);
+        if(file.empty())
+        {
+            std::cerr << "Could not record the game in " << recordDir << std::endl;
+            return 6;
+        }
+        std::cout << "recording " << file.string() << std::endl;
+    }
 
     const unsigned gfPerMinute = static_cast<unsigned>(
       std::chrono::minutes(1) / std::chrono::milliseconds(SPEED_GF_LENGTHS[GameSpeed::Normal]));
-    const unsigned numGFs = vm.count("gfs") ? extraGFs : minutes * gfPerMinute;
+    unsigned numGFs = vm.count("gfs") ? extraGFs : minutes * gfPerMinute;
+    // A replay runs to its end unless a length is given
+    if(session->isReplay() && !vm.count("gfs") && vm["minutes"].defaulted())
+        numGFs = session->replayEndGF() > session->getGF() ? session->replayEndGF() - session->getGF() : 0;
     const unsigned targetGF = session->getGF() + numGFs;
     for(const std::string& job : sendOut)
     {
@@ -295,19 +445,42 @@ int main(int argc, char** argv)
                                      InventorySetting(EInventorySetting::Send));
     }
     ForeignWatch watch(foreignAll);
+    std::optional<ForeignEntryLog> entries;
+    Subscription contactSub;
+    if(foreign)
+    {
+        printStoreSettings(*session);
+        entries.emplace(
+          *session, [](const std::string& line) { std::cout << line << std::endl; }, std::nullopt, 0);
+        contactSub = session->world().getNotifications().subscribe<FigureNote>(
+          [&watch, &session](const FigureNote& note) { watch.onEntry(*session, note); });
+    }
     const auto start = std::chrono::steady_clock::now();
     while(session->getGF() < targetGF && !session->isFinished())
     {
         session->runGF();
         if(foreign && session->getGF() % 10 == 0)
             watch.scan(*session);
+        if(snapshotEvery && session->getGF() % snapshotEvery == 0)
+            stateHash(*session);
         if(reportEvery && session->getGF() % (reportEvery * gfPerMinute) == 0)
             printStatus(*session);
     }
     const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     printStatus(*session);
     if(foreign)
+    {
         watch.summary();
+        std::cout << "[fremd-summe] Figuren im Gebiet eines anderen Spielers: " << entries->count()
+                  << ", davon ohne Kontakt der Gebiete: " << watch.beforeContact_ << std::endl;
+    }
+    if(session->isReplay())
+    {
+        if(const auto gf = session->replayDesyncGF())
+            std::cout << "replay: differs from the recording from GF " << *gf << std::endl;
+        else
+            std::cout << "replay: matches the recording (end GF " << session->replayEndGF() << ")" << std::endl;
+    }
     std::cout << "Simulated " << numGFs << " GF in " << std::fixed << std::setprecision(1) << secs << " s ("
               << std::setprecision(0) << numGFs / std::max(secs, 1e-3) << " GF/s)" << std::endl;
     std::cout << "checksum " << session->checksum() << std::endl;

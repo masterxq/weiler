@@ -20,6 +20,11 @@ add_test(NAME foreign_figures
     COMMAND ${CMAKE_COMMAND} -DHEADLESS=$<TARGET_FILE:weiler-headless> -DDATA=${WEILER_TEST_DATA}
             -DWORK=${CMAKE_CURRENT_BINARY_DIR}/foreign -P ${CMAKE_CURRENT_SOURCE_DIR}/ForeignFigures.cmake)
 
+# Game recordings: playback gives the same game, only the newest 5 are kept
+add_test(NAME replay
+    COMMAND ${CMAKE_COMMAND} -DHEADLESS=$<TARGET_FILE:weiler-headless> -DDATA=${WEILER_TEST_DATA}
+            -DWORK=${CMAKE_CURRENT_BINARY_DIR}/replay -P ${CMAKE_CURRENT_SOURCE_DIR}/Replay.cmake)
+
 # weiler-pack-data with a fake game folder (needs no game data)
 add_test(NAME pack_data
     COMMAND ${CMAKE_COMMAND} -DPACKER=${PROJECT_SOURCE_DIR}/tools/weiler-pack-data
@@ -67,3 +72,10 @@ add_test(NAME ui_datasetup
             -DWORK=${CMAKE_CURRENT_BINARY_DIR}/ui/datasetup -DSCRIPTS=${CMAKE_CURRENT_SOURCE_DIR}/ui
             -P ${CMAKE_CURRENT_SOURCE_DIR}/ui/DataSetup.cmake)
 set_tests_properties(ui_datasetup PROPERTIES LABELS ui)
+
+# A game played over the interface is recorded and plays back the same with weiler-headless
+add_test(NAME ui_record
+    COMMAND ${CMAKE_COMMAND} -DWEILER=$<TARGET_FILE:weiler> -DHEADLESS=$<TARGET_FILE:weiler-headless>
+            -DDATA=${WEILER_TEST_DATA} -DWORK=${CMAKE_CURRENT_BINARY_DIR}/ui/record
+            -DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/ui/record.txt -P ${CMAKE_CURRENT_SOURCE_DIR}/ui/RecordReplay.cmake)
+set_tests_properties(ui_record PROPERTIES LABELS ui)

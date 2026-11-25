@@ -17,6 +17,7 @@ class GameWorldViewer;
 
 namespace weiler {
 
+class ForeignEntryLog;
 class Hud;
 
 /// The running game: world view, input gestures, game loop with pause and fast forward.
@@ -81,6 +82,8 @@ private:
     gfx::WorldView view_;
     gfx::Minimap minimap_;
     std::unique_ptr<Hud> hud_;
+    /// Own figures stepping into foreign territory are written to the log (diagnosis)
+    std::unique_ptr<ForeignEntryLog> foreignLog_;
     double accum_ = 0;
     unsigned speedFactor_ = 1;
     bool paused_ = false;

@@ -10,8 +10,9 @@
 #include "Game.h"
 #include "GamePlayer.h"
 #include "GameSetup.h"
+#include "Replay.h"
+#include "ReplayPlayback.h"
 #include "Savegame.h"
-#include <mutex>
 #include "ViewState.h"
 #include "ai/AIPlayer.h"
 #include "ai/random.h"
@@ -19,10 +20,14 @@
 #include "random/Random.h"
 #include "world/GameWorld.h"
 #include "gameTypes/MapInfo.h"
+#include "network/PlayerGameCommands.h"
 #include "gameData/GameConsts.h"
 #include "s25util/Log.h"
 #include <boost/filesystem.hpp>
 #include <boost/format.hpp>
+#include <algorithm>
+#include <ctime>
+#include <mutex>
 #include <stdexcept>
 
 namespace bfs = boost::filesystem;
@@ -53,6 +58,11 @@ Session::Session(std::shared_ptr<Game> game, unsigned localPlayer, std::string t
 
 Session::~Session()
 {
+    if(isRecording())
+    {
+        replay_->updateLastGF(getGF());
+        replay_->stopRecording();
+    }
     // AIs reference the world, destroy them first
     localAI_.reset();
     if(game_)
@@ -66,14 +76,16 @@ std::unique_ptr<Session> Session::newGame(const NewGameSetup& setup)
     std::unique_ptr<Session> session(
       new Session(std::move(game), findLocalPlayer(setup.players),
                   setup.title.empty() ? setup.map.stem().string() : setup.title));
-    MapInfo mapInfo;
-    mapInfo.type = MapType::OldMap;
-    mapInfo.filepath = setup.map;
-    mapInfo.luaFilepath = setup.lua;
-    mapInfo.title = session->title_;
-    setupGameWorld(*session->game_, mapInfo, *session, nullptr);
+    auto mapInfo = std::make_unique<MapInfo>();
+    mapInfo->type = MapType::OldMap;
+    mapInfo->filepath = setup.map;
+    mapInfo->luaFilepath = setup.lua;
+    mapInfo->title = session->title_;
+    setupGameWorld(*session->game_, *mapInfo, *session, nullptr);
     session->createAIs();
     session->game_->start(false);
+    session->seed_ = setup.seed;
+    session->startInfo_ = std::move(mapInfo);
     return session;
 }
 
@@ -122,15 +134,129 @@ std::unique_ptr<Session> Session::loadGame(std::unique_ptr<Savegame> save, const
         players.emplace_back(save->getPlayer(i));
     auto game = std::make_shared<Game>(save->ggs, save->start_gf, players);
     std::unique_ptr<Session> session(new Session(std::move(game), findLocalPlayer(players), save->getMapName()));
-    MapInfo mapInfo;
-    mapInfo.type = MapType::Savegame;
-    mapInfo.filepath = path;
-    mapInfo.title = save->getMapName();
-    mapInfo.savegame = std::move(save);
-    setupGameWorld(*session->game_, mapInfo, *session, nullptr);
+    auto mapInfo = std::make_unique<MapInfo>();
+    mapInfo->type = MapType::Savegame;
+    mapInfo->filepath = path;
+    mapInfo->title = save->getMapName();
+    mapInfo->savegame = std::move(save);
+    setupGameWorld(*session->game_, *mapInfo, *session, nullptr);
     session->createAIs();
     session->game_->start(true);
+    session->seed_ = *seed;
+    session->startInfo_ = std::move(mapInfo);
     return session;
+}
+
+std::unique_ptr<Session> Session::loadReplay(const bfs::path& path)
+{
+    auto replay = std::make_unique<Replay>();
+    auto mapInfo = std::make_unique<MapInfo>();
+    if(!replay->loadHeader(path) || !replay->loadGameData(*mapInfo))
+        throw std::runtime_error("Could not load replay " + path.string() + ": " + replay->getLastErrorMsg());
+    seedRandom(replay->getSeed());
+    std::vector<PlayerInfo> players;
+    for(unsigned i = 0; i < replay->getNumPlayers(); ++i)
+        players.emplace_back(replay->getPlayer(i));
+    const unsigned startGF = mapInfo->savegame ? mapInfo->savegame->start_gf : 0;
+    auto game = std::make_shared<Game>(replay->ggs, startGF, players);
+    std::unique_ptr<Session> session(new Session(std::move(game), findLocalPlayer(players), replay->getMapName()));
+    try
+    {
+        setupGameWorld(*session->game_, *mapInfo, *session, replay.get());
+    } catch(const std::exception& e)
+    {
+        throw std::runtime_error("Could not start replay " + path.string() + ": " + e.what());
+    }
+    // No AI: the commands of the AI players were recorded as well
+    session->game_->start(mapInfo->savegame != nullptr);
+    session->seed_ = replay->getSeed();
+    session->nextReplayGF_ = replay->readGF();
+    session->replay_ = std::move(replay);
+    return session;
+}
+
+namespace {
+/// Recordings in a folder, oldest first (names are date and time)
+std::vector<bfs::path> listRecordings(const bfs::path& folder)
+{
+    std::vector<bfs::path> files;
+    boost::system::error_code ec;
+    for(bfs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec))
+    {
+        if(it->path().extension() == ".rpl")
+            files.push_back(it->path());
+    }
+    std::sort(files.begin(), files.end());
+    return files;
+}
+} // namespace
+
+bfs::path Session::startRecording(const bfs::path& folder, unsigned keep)
+{
+    if(!startInfo_ || replay_)
+        return {};
+    std::unique_ptr<MapInfo> info = std::move(startInfo_);
+    boost::system::error_code ec;
+    bfs::create_directories(folder, ec);
+    // Only the newest recordings are kept (including the new one)
+    std::vector<bfs::path> old = listRecordings(folder);
+    for(size_t i = 0; i + std::max(keep, 1u) <= old.size(); ++i)
+        bfs::remove(old[i], ec);
+    char stamp[32];
+    const std::time_t now = std::time(nullptr);
+    std::tm tm{};
+    localtime_r(&now, &tm);
+    std::strftime(stamp, sizeof(stamp), "%Y-%m-%d_%H-%M-%S", &tm);
+    bfs::path file = folder / (std::string(stamp) + ".rpl");
+    for(unsigned n = 2; bfs::exists(file); ++n)
+        file = folder / (std::string(stamp) + "_" + std::to_string(n) + ".rpl"); // sorts after the first one
+    try
+    {
+        if(info->type == MapType::OldMap)
+        {
+            // The map and script themselves go into the recording (the replay must not depend on the files)
+            if(!info->mapData.compressFromFile(info->filepath, &info->mapChecksum))
+                return {};
+            if(!info->luaFilepath.empty() && !info->luaData.compressFromFile(info->luaFilepath, &info->luaChecksum))
+                return {};
+        }
+        auto replay = std::make_unique<Replay>();
+        for(const auto& player : game_->world_.getPlayers())
+            replay->addPlayer(player);
+        replay->ggs = game_->ggs_;
+        if(!replay->startRecording(file, *info, seed_))
+        {
+            LOG.write("Could not record the game in %1%: %2%\n") % file % replay->getLastErrorMsg();
+            return {};
+        }
+        replay_ = std::move(replay);
+    } catch(const std::exception& e)
+    {
+        LOG.write("Could not record the game in %1%: %2%\n") % file % e.what();
+        return {};
+    }
+    return file;
+}
+
+void Session::flushRecording()
+{
+    if(isRecording())
+        replay_->updateLastGF(getGF());
+}
+
+bool Session::isRecording() const
+{
+    return replay_ && replay_->isRecording();
+}
+
+bool Session::isReplay() const
+{
+    return replay_ && !replay_->isRecording();
+}
+
+unsigned Session::replayEndGF() const
+{
+    return replay_ ? replay_->getLastGF() : 0;
 }
 
 void Session::createAIs()
@@ -193,10 +319,46 @@ void Session::runGF()
     GameWorld& w = game_->world_;
     const unsigned gf = getGF();
     const bool isNWF = gf % NWF_LENGTH == 0;
+    // The start state is only needed for a recording that begins before the first frame
+    startInfo_.reset();
+
+    if(isReplay())
+    {
+        // Playback: the recorded commands of all players, no AI and no local input
+        localCommands_.clear();
+        try
+        {
+            const ReplayCommandsResult result = executeReplayCommands(*replay_, nextReplayGF_, *game_, nullptr);
+            if(result.desync && !replayDesyncGF_)
+                replayDesyncGF_ = result.desync->gf;
+        } catch(const std::exception& e)
+        {
+            // Incomplete end of a recording (program was killed while writing)
+            LOG.write("Replay ends at GF %1%: %2%\n") % gf % e.what();
+            nextReplayGF_.reset();
+        }
+        game_->runGF();
+        VIEWSTATE.currentGF = getGF();
+        return;
+    }
+
+    // Recording: every command batch with the checksum of the state before the first command of this frame
+    // (like RTTR, so that a playback can detect a difference)
+    std::optional<AsyncChecksum> checksum;
+    const auto record = [&](unsigned player, const std::vector<gc::GameCommandPtr>& batch) {
+        if(!isRecording() || batch.empty())
+            return;
+        if(!checksum)
+            checksum = AsyncChecksum::create(*game_);
+        replay_->addGameCommand(gf, static_cast<uint8_t>(player), PlayerGameCommands(*checksum, batch));
+    };
+    if(isRecording() && gf % 100 == 0)
+        replay_->updateLastGF(gf);
 
     // Commands of the local player are executed directly at the next GF
     std::vector<gc::GameCommandPtr> cmds;
     std::swap(cmds, localCommands_);
+    record(localPlayer_, cmds);
     for(const auto& cmd : cmds)
         cmd->execute(w, localPlayer_);
 
@@ -205,6 +367,7 @@ void Session::runGF()
         // AI commands collected at the last NWF (like the network round trip of RTTR)
         for(const auto& playerCmds : pendingAICommands_)
         {
+            record(playerCmds.first, playerCmds.second);
             for(const auto& cmd : playerCmds.second)
                 cmd->execute(w, playerCmds.first);
         }

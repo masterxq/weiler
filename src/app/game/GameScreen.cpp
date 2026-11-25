@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "GameScreen.h"
+#include "ForeignEntryLog.h"
 #include "Perf.h"
 #include "App.h"
 #include "Music.h"
@@ -93,6 +94,13 @@ GameScreen::GameScreen(App& app, std::unique_ptr<Session> session)
         if(chapter > 0)
             completeMission(campaignId, chapter - 1);
     };
+    // Every game is recorded (commands of all players) so that a problem can be replayed exactly; the newest 5
+    // recordings are kept
+    const bfs::path recording = session_->startRecording(RTTRCONFIG.expandPath(s25::folders::replays));
+    if(!recording.empty())
+        LOG.write("Spielaufzeichnung: %1%\n") % recording.string();
+    foreignLog_ = std::make_unique<ForeignEntryLog>(
+      *session_, [](const std::string& line) { LOG.write("%1%\n") % line; }, session_->getPlayerId());
     lastAutosave_ = app.time();
     app.music().play(Music::Context::Game);
 }
@@ -217,6 +225,7 @@ bool GameScreen::onBack()
 
 void GameScreen::onSuspend()
 {
+    session_->flushRecording();
     saveTo((RTTRCONFIG.expandPath(s25::folders::save) / "autosave.sav").string());
 }
 

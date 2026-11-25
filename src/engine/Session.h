@@ -20,6 +20,8 @@
 #include <vector>
 
 class Game;
+class MapInfo;
+class Replay;
 class Savegame;
 class GameWorld;
 class AIPlayer;
@@ -56,7 +58,24 @@ public:
                                              std::optional<unsigned> seed = std::nullopt);
     /// Short description of a savegame ("map · played time"), empty if unreadable
     static std::string describeSave(const boost::filesystem::path& path);
+    /// Play back a recorded game (RTTR replay): the commands of all players come from the file, no AI runs.
+    /// Throws std::runtime_error if the file cannot be read.
+    static std::unique_ptr<Session> loadReplay(const boost::filesystem::path& path);
     ~Session() override;
+
+    /// Record this game (start state and the commands of all players) as an RTTR replay in the given folder,
+    /// file named by date and time. Only the newest `keep` recordings in the folder are kept. Possible only before
+    /// the first game frame. Returns the file, empty if recording is not possible.
+    boost::filesystem::path startRecording(const boost::filesystem::path& folder, unsigned keep = 5);
+    bool isRecording() const;
+    /// Write the current game frame as the end of the recording (before the program may be ended from outside)
+    void flushRecording();
+    /// The game is a playback of a recording
+    bool isReplay() const;
+    /// Last game frame of the recording (only for playback)
+    unsigned replayEndGF() const;
+    /// First game frame at which the playback differed from the recording (checksums), if any
+    std::optional<unsigned> replayDesyncGF() const { return replayDesyncGF_; }
 
     /// Number of game frames between two AI command rounds
     static constexpr unsigned NWF_LENGTH = 4;
@@ -119,6 +138,14 @@ private:
     unsigned localPlayer_;
     std::string title_;
     std::vector<gc::GameCommandPtr> localCommands_;
+    /// Seed of the random generators at the start (for the recording)
+    unsigned seed_ = 0;
+    /// Start of the game (map or savegame), kept until the first game frame for a recording
+    std::unique_ptr<MapInfo> startInfo_;
+    /// Recording or playback
+    std::unique_ptr<Replay> replay_;
+    std::optional<unsigned> nextReplayGF_;
+    std::optional<unsigned> replayDesyncGF_;
     /// AI commands collected at the last NWF, executed at the next one
     std::vector<std::pair<unsigned, std::vector<gc::GameCommandPtr>>> pendingAICommands_;
     std::unique_ptr<AIPlayer> localAI_;
