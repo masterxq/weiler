@@ -1,0 +1,371 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# weiler-pack-data: builds the local Debian package weiler-data from the user's own copy of the Gold Edition
+# (installed folder, copied CD or CD image), for all users of this computer. The package contains only the files
+# Weiler loads (list: gamedata.list of Weiler) and optionally the audio tracks of the CD. It is for this computer
+# only: the game data is not free and must not be passed on.
+set -euo pipefail
+
+VERSION=1.0
+PKG=weiler-data
+PKGDIR=/usr/share/games/weiler-data
+
+case "${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}" in de*) DE=1 ;; *) DE= ;; esac
+t() { if [ -n "$DE" ]; then printf '%s' "$1"; else printf '%s' "$2"; fi; }
+say() { printf '%s\n' "$(t "$1" "$2")"; }
+warn() { printf '%s: %s\n' "${0##*/}" "$(t "$1" "$2")" >&2; }
+die() { warn "$1" "$2"; exit 1; }
+
+usage() {
+	if [ -n "$DE" ]; then
+		cat <<-EOF
+		Aufruf: ${0##*/} [Optionen]
+
+		Baut das lokale Paket $PKG aus deinen Spieldaten der Gold Edition, damit Weiler sie für alle
+		Nutzer dieses Rechners findet. Ohne Optionen am Terminal fragt das Programm alles Nötige ab.
+
+		  --source <ordner|abbild>  Ordner mit den Spieldaten (wird mit allen Unterordnern durchsucht)
+		                            oder CD-Abbild (.iso, .ccd/.img, .cue/.bin)
+		  --output <ordner>         Ordner für das Paket (Vorgabe: aktueller Ordner)
+		  --music                   Audiospuren der CD mit einpacken (aus einem .ccd- oder .cue-Abbild)
+		  --install                 Paket danach installieren (apt, mit sudo)
+		  --yes                     Rückfragen mit Ja beantworten (fehlende Werkzeuge installieren)
+		  --help                    Diese Hilfe
+
+		Das Paket ist nur für diesen Rechner bestimmt; die Spieldaten dürfen nicht weitergegeben werden.
+		EOF
+	else
+		cat <<-EOF
+		Usage: ${0##*/} [options]
+
+		Builds the local package $PKG from your game data of the Gold Edition, so that Weiler finds it
+		for all users of this computer. Without options on a terminal it asks for everything it needs.
+
+		  --source <folder|image>   folder with the game data (searched with all sub folders)
+		                            or CD image (.iso, .ccd/.img, .cue/.bin)
+		  --output <folder>         folder for the package (default: current folder)
+		  --music                   include the audio tracks of the CD (from a .ccd or .cue image)
+		  --install                 install the package afterwards (apt, with sudo)
+		  --yes                     answer questions with yes (install missing tools)
+		  --help                    this help
+
+		The package is meant for this computer only; the game data must not be passed on.
+		EOF
+	fi
+}
+
+SOURCE= OUTPUT=. MUSIC= INSTALL= YES= INTERACTIVE=
+if [ $# -eq 0 ]; then
+	[ -t 0 ] && [ -t 1 ] || { usage >&2; exit 2; }
+	INTERACTIVE=1
+fi
+while [ $# -gt 0 ]; do
+	case $1 in
+	--source) [ $# -ge 2 ] || die "--source braucht einen Ordner oder ein Abbild" "--source needs a folder or an image"; SOURCE=$2; shift ;;
+	--source=*) SOURCE=${1#*=} ;;
+	--output) [ $# -ge 2 ] || die "--output braucht einen Ordner" "--output needs a folder"; OUTPUT=$2; shift ;;
+	--output=*) OUTPUT=${1#*=} ;;
+	--music) MUSIC=1 ;;
+	--install) INSTALL=1 ;;
+	--yes | -y) YES=1 ;;
+	--help | -h) usage; exit 0 ;;
+	*) usage >&2; exit 2 ;;
+	esac
+	shift
+done
+
+# yes/no question; $3 = default (y or n). --yes answers yes, without a terminal the default counts.
+ask() {
+	local def=$3 hint answer
+	[ -z "$YES" ] || return 0
+	if [ ! -t 0 ]; then
+		[ "$def" = y ]
+		return $?
+	fi
+	if [ "$def" = y ]; then hint=$(t "[J/n]" "[Y/n]"); else hint=$(t "[j/N]" "[y/N]"); fi
+	read -r -p "$(t "$1" "$2") $hint " answer || answer=
+	case $answer in
+	[jJyY]*) return 0 ;;
+	[nN]*) return 1 ;;
+	*) [ "$def" = y ] ;;
+	esac
+}
+
+as_root() {
+	if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi
+}
+
+# ---- Tools: command and Debian package
+declare -A TOOL_PKG=([dpkg-deb]=dpkg [find]=findutils [gzip]=gzip [md5sum]=coreutils [7z]=7zip [bchunk]=bchunk)
+need_tools() {
+	local missing=() pkgs=() c
+	for c in "$@"; do command -v "$c" > /dev/null || { missing+=("$c"); pkgs+=("${TOOL_PKG[$c]}"); }; done
+	[ ${#missing[@]} -eq 0 ] && return 0
+	warn "Es fehlen Werkzeuge: ${missing[*]} (Pakete: ${pkgs[*]})" "Missing tools: ${missing[*]} (packages: ${pkgs[*]})"
+	if [ -n "$INTERACTIVE$YES" ] && command -v apt-get > /dev/null \
+		&& ask "Jetzt installieren (apt-get install ${pkgs[*]})?" "Install them now (apt-get install ${pkgs[*]})?" y; then
+		as_root apt-get install -y "${pkgs[@]}" || die "Installation fehlgeschlagen" "Installation failed"
+		for c in "${missing[@]}"; do command -v "$c" > /dev/null || die "$c fehlt weiterhin" "$c is still missing"; done
+	else
+		die "Bitte installieren: sudo apt install ${pkgs[*]}" "Please install: sudo apt install ${pkgs[*]}"
+	fi
+}
+
+# ---- List of the game files: next to the installed program data, or in the source tree
+find_list() {
+	local here d
+	here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+	for d in "${WEILER_APPDATA:-}" "$here/../share/games/weiler" "$here/../data" /usr/share/games/weiler; do
+		[ -n "$d" ] && [ -f "$d/gamedata.list" ] && { echo "$d/gamedata.list"; return 0; }
+	done
+	return 1
+}
+LIST=$(find_list) || die "gamedata.list von Weiler nicht gefunden" "gamedata.list of Weiler not found"
+
+# Entry of $1 named $2 in any case
+ci_child() {
+	[ -e "$1/$2" ] && { echo "$1/$2"; return 0; }
+	local e
+	e=$(find "$1/" -mindepth 1 -maxdepth 1 -iname "$2" -print -quit 2> /dev/null)
+	[ -n "$e" ] && echo "$e"
+}
+# Relative path $2 below $1 in any case
+ci_resolve() {
+	local cur=$1 part IFS=/
+	for part in $2; do
+		[ -n "$part" ] || continue
+		cur=$(ci_child "$cur" "$part") || return 1
+		[ -n "$cur" ] || return 1
+	done
+	echo "$cur"
+}
+required_files() { sed -n 's/^!//p' "$LIST"; }
+is_game_dir() {
+	local f
+	while read -r f; do ci_resolve "$1" "$f" > /dev/null || return 1; done < <(required_files)
+}
+# Search $1 with its sub folders; prints the shallowest game folder
+find_game_dir() {
+	local f dir
+	is_game_dir "$1" && { echo "$1"; return 0; }
+	while read -r f; do
+		dir=$(dirname "$(dirname "$f")")
+		is_game_dir "$dir" && { echo "$dir"; return 0; }
+	done < <(find "$1" -type f -ipath '*/data/resource.dat' 2> /dev/null | awk -F/ '{print NF "\t" $0}' | sort -n | cut -f2-)
+	return 1
+}
+
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/weiler-pack-data.XXXXXX")
+trap 'rm -rf "$WORK"' EXIT
+
+# ---- CD images: data track as ISO, extracted with 7z
+lba_to_msf() { printf '%02d:%02d:%02d' $(($1 / 4500)) $(($1 / 75 % 60)) $(($1 % 75)); }
+# Raw data track (2352 bytes per sector) from sector $2 to $3 (exclusive, empty: end of file) of $1 -> $WORK/data.iso
+raw_track_to_iso() {
+	local count=()
+	[ -n "${3:-}" ] && count=(count=$(($3 - $2)))
+	dd if="$1" of="$WORK/track.bin" bs=2352 skip="$2" "${count[@]}" status=none
+	printf 'FILE "track.bin" BINARY\n  TRACK 01 MODE1/2352\n    INDEX 01 00:00:00\n' > "$WORK/track.cue"
+	(cd "$WORK" && bchunk track.bin track.cue data > /dev/null) || die "bchunk konnte die Datenspur nicht lesen" "bchunk could not read the data track"
+	rm -f "$WORK/track.bin"
+	mv "$WORK"/data01.iso "$WORK/data.iso"
+}
+# Image $1 -> folder $WORK/cd; sets CUE_FOR_MUSIC to the .ccd/.cue (audio tracks)
+CUE_FOR_MUSIC=
+extract_image() {
+	local img=$1 ext ccd cue bin mode start next size
+	ext=$(printf '%s' "${img##*.}" | tr '[:upper:]' '[:lower:]')
+	case $ext in
+	iso)
+		need_tools 7z
+		cp "$img" "$WORK/data.iso" 2> /dev/null || ln -s "$(readlink -f "$img")" "$WORK/data.iso" ;;
+	ccd | img)
+		need_tools 7z bchunk
+		ccd=${img%.*}.ccd img=${img%.*}.img
+		[ -f "$img" ] || die "Abbild $img fehlt" "Image $img is missing"
+		if [ -f "$ccd" ]; then
+			CUE_FOR_MUSIC=$ccd
+			# [TRACK n] MODE=.. INDEX 1=<sector>: first track is the data track, it ends where track 2 begins
+			read -r mode start next < <(awk -F= '
+				/^\[TRACK/ { n++ } /^MODE=/ && n == 1 { m = $2 } /^INDEX 1=/ { s[n] = $2 + 0 }
+				END { print m + 0, s[1] + 0, (n > 1 ? s[2] : "") }' "$ccd" | tr -d '\r')
+			[ "$mode" -ne 0 ] || die "Die erste Spur ist keine Datenspur" "The first track is no data track"
+			raw_track_to_iso "$img" "$start" "$next"
+		else
+			size=$(stat -c %s "$img")
+			if [ $((size % 2352)) -eq 0 ]; then raw_track_to_iso "$img" 0 ""; else ln -s "$(readlink -f "$img")" "$WORK/data.iso"; fi
+		fi ;;
+	cue | bin)
+		need_tools 7z bchunk
+		cue=${img%.*}.cue
+		[ -f "$cue" ] || die "Cue-Datei $cue fehlt" "Cue sheet $cue is missing"
+		CUE_FOR_MUSIC=$cue
+		# First track: file, mode, start; end = next INDEX 01 in the same file
+		read -r bin mode start next < <(awk '
+			/^[ \t]*FILE/ { match($0, /"[^"]*"/); f = substr($0, RSTART + 1, RLENGTH - 2); nf++ }
+			/^[ \t]*TRACK/ { n++; if (n == 1) { file = f; m = $3 } }
+			/^[ \t]*INDEX 01/ { split($3, t, ":"); l = (t[1] * 60 + t[2]) * 75 + t[3]
+				if (n == 1) s = l; else if (n == 2 && f == file && e == "") e = l }
+			END { print file, m, s + 0, e }' "$cue" | tr -d '\r')
+		bin=$(dirname "$cue")/$bin
+		[ -f "$bin" ] || die "Spurdatei $bin fehlt" "Track file $bin is missing"
+		case $mode in
+		MODE1/2352) raw_track_to_iso "$bin" "$start" "$next" ;;
+		MODE1/2048) dd if="$bin" of="$WORK/data.iso" bs=2048 skip="$start" ${next:+count=$((next - start))} status=none ;;
+		*) die "Datenspur im Format $mode wird nicht unterstützt" "Data track format $mode is not supported" ;;
+		esac ;;
+	*) die "Unbekanntes Abbild: $img" "Unknown image: $img" ;;
+	esac
+	say "Lese das Abbild aus …" "Extracting the image …"
+	7z x -y -o"$WORK/cd" "$WORK/data.iso" > "$WORK/7z.log" 2>&1 || { tail -5 "$WORK/7z.log" >&2; die "7z konnte das Abbild nicht auslesen" "7z could not extract the image"; }
+	rm -f "$WORK/data.iso"
+}
+
+# ---- Interactive: source
+need_tools dpkg-deb find gzip md5sum
+if [ -n "$INTERACTIVE" ]; then
+	say "Weiler: Paket mit den Spieldaten der Gold Edition bauen" "Weiler: build a package with the game data of the Gold Edition"
+	say "Gib den Ordner mit den Spieldaten an (oder einen Ordner darüber, er wird durchsucht) oder ein CD-Abbild." \
+		"Enter the folder with the game data (or a folder above it, it is searched) or a CD image."
+	while [ -z "$SOURCE" ]; do
+		read -r -e -p "$(t "Ordner oder Abbild: " "Folder or image: ")" SOURCE || exit 1
+		SOURCE=${SOURCE/#\~/$HOME}
+		[ -e "$SOURCE" ] || { warn "$SOURCE gibt es nicht" "$SOURCE does not exist"; SOURCE=; }
+	done
+fi
+[ -n "$SOURCE" ] || { usage >&2; exit 2; }
+[ -e "$SOURCE" ] || die "$SOURCE gibt es nicht" "$SOURCE does not exist"
+
+if [ -d "$SOURCE" ]; then
+	say "Durchsuche $SOURCE …" "Searching $SOURCE …"
+	if GAME=$(find_game_dir "$SOURCE"); then
+		# A CD image next to the data (for the music)
+		CUE_FOR_MUSIC=$(find "$SOURCE" "$(dirname "$GAME")" -maxdepth 3 -type f \( -iname '*.ccd' -o -iname '*.cue' \) -print -quit 2> /dev/null || true)
+	else
+		# No game folder, but maybe a CD image in the folder
+		IMAGE=$(find "$SOURCE" -maxdepth 3 -type f \( -iname '*.ccd' -o -iname '*.cue' -o -iname '*.iso' \) -print -quit 2> /dev/null || true)
+		[ -n "$IMAGE" ] || die "In $SOURCE sind keine Spieldaten der Gold Edition" "No game data of the Gold Edition in $SOURCE"
+		say "Kein Spielordner, aber das CD-Abbild $IMAGE." "No game folder, but the CD image $IMAGE."
+		extract_image "$IMAGE"
+		GAME=$(find_game_dir "$WORK/cd") || die "Im Abbild sind keine Spieldaten der Gold Edition" "No game data of the Gold Edition in the image"
+	fi
+else
+	extract_image "$SOURCE"
+	GAME=$(find_game_dir "$WORK/cd") || die "Im Abbild sind keine Spieldaten der Gold Edition" "No game data of the Gold Edition in the image"
+fi
+say "Spieldaten gefunden: $GAME" "Game data found: $GAME"
+
+# ---- Package tree
+ROOT=$WORK/pkg
+DEST=$ROOT$PKGDIR/S2
+mkdir -p "$DEST" "$ROOT/DEBIAN" "$ROOT/usr/share/doc/$PKG"
+while read -r line; do
+	line=${line%%#*}
+	line=$(printf '%s' "$line" | tr -d '\r' | sed 's/[[:space:]]*$//')
+	[ -n "$line" ] || continue
+	kind=${line:0:1}
+	case $kind in '!' | '?') line=${line:1} ;; *) kind= ;; esac
+	rel_dir=$(dirname "$line") pattern=$(basename "$line")
+	dir=$GAME
+	[ "$rel_dir" = . ] || dir=$(ci_resolve "$GAME" "$rel_dir") || dir=
+	found=0
+	if [ -n "$dir" ]; then
+		upper_dir=$(printf '%s' "$rel_dir" | tr '[:lower:]' '[:upper:]')
+		while IFS= read -r -d '' f; do
+			name=$(basename "$f" | tr '[:lower:]' '[:upper:]')
+			install -D -m 0644 "$f" "$DEST/$upper_dir/$name"
+			found=$((found + 1))
+		done < <(find -L "$dir/" -mindepth 1 -maxdepth 1 -type f -iname "$pattern" -print0)
+	fi
+	if [ $found -eq 0 ]; then
+		case $kind in
+		'!') die "$line fehlt in $GAME" "$line is missing in $GAME" ;;
+		'?') ;;
+		*) warn "$line fehlt in $GAME" "$line is missing in $GAME" ;;
+		esac
+	fi
+done < "$LIST"
+count=$(find "$DEST" -type f | wc -l)
+say "$count Dateien übernommen ($(du -sh "$DEST" | cut -f1))." "$count files taken over ($(du -sh "$DEST" | cut -f1))."
+
+# ---- Music of the CD (converted by Weiler itself)
+if [ -n "$CUE_FOR_MUSIC" ] && [ -z "$MUSIC" ] && [ -n "$INTERACTIVE" ]; then
+	ask "CD-Abbild $CUE_FOR_MUSIC gefunden. Die Musik der CD mit einpacken?" "Found the CD image $CUE_FOR_MUSIC. Include the music of the CD?" n && MUSIC=1
+fi
+if [ -n "$MUSIC" ]; then
+	[ -n "$CUE_FOR_MUSIC" ] || die "Für --music wird ein CD-Abbild (.ccd oder .cue) gebraucht" "--music needs a CD image (.ccd or .cue)"
+	WEILER_BIN=
+	for c in "${WEILER:-}" "$(dirname "$(readlink -f "$0")")/weiler" /usr/games/weiler "$(command -v weiler || true)"; do
+		[ -n "$c" ] && [ -x "$c" ] && { WEILER_BIN=$c; break; }
+	done
+	[ -n "$WEILER_BIN" ] || die "Weiler selbst wird zum Umwandeln der Musik gebraucht" "Weiler itself is needed to convert the music"
+	say "Wandle die Audiospuren um …" "Converting the audio tracks …"
+	SDL_VIDEO_DRIVER=dummy "$WEILER_BIN" --cd-music "$CUE_FOR_MUSIC" --cd-music-out "$ROOT$PKGDIR/music" > "$WORK/music.log" 2>&1 \
+		|| { tail -3 "$WORK/music.log" >&2; die "Die Musik ließ sich nicht umwandeln" "The music could not be converted"; }
+	chmod 0644 "$ROOT$PKGDIR/music"/*.ogg
+	say "$(ls "$ROOT$PKGDIR/music" | wc -l) Musikstücke." "$(ls "$ROOT$PKGDIR/music" | wc -l) music tracks."
+fi
+
+# ---- Control files and documentation
+DATE=$(date -R)
+WITH_MUSIC=
+[ -z "$MUSIC" ] || WITH_MUSIC=' and the music of the CD'
+SIZE=$(du -sk --exclude=DEBIAN "$ROOT" | cut -f1)
+cat > "$ROOT/DEBIAN/control" <<EOF
+Package: $PKG
+Version: $VERSION
+Architecture: all
+Section: non-free/games
+Priority: optional
+Maintainer: Local package of weiler-pack-data <weiler-pack-data@localhost.invalid>
+Installed-Size: $SIZE
+Enhances: weiler
+Description: game data of the Gold Edition for Weiler (local package)
+ Made by weiler-pack-data from the own copy of the user. It contains the
+ files of the original game that Weiler loads$WITH_MUSIC.
+ .
+ This package is for this computer only. The game data is not free and
+ must not be passed on.
+EOF
+cat > "$ROOT/usr/share/doc/$PKG/copyright" <<EOF
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: game data of the Gold Edition
+Comment: Made by weiler-pack-data on this computer from the own copy of the
+ user. Not for distribution.
+
+Files: *
+Copyright: 1996, 1997 the publisher of the original game
+License: non-free
+ The files under $PKGDIR are part of the original game and copied from
+ the own copy of the user. They are not free and must not be passed on.
+EOF
+printf '%s (%s) unstable; urgency=medium\n\n  * Local package made by weiler-pack-data.\n\n -- Local package of weiler-pack-data <weiler-pack-data@localhost.invalid>  %s\n' \
+	"$PKG" "$VERSION" "$DATE" | gzip -9n > "$ROOT/usr/share/doc/$PKG/changelog.gz"
+chmod 0644 "$ROOT/usr/share/doc/$PKG"/*
+(cd "$ROOT" && find usr -type f -print0 | sort -z | xargs -0 md5sum) > "$ROOT/DEBIAN/md5sums"
+chmod 0644 "$ROOT/DEBIAN/control" "$ROOT/DEBIAN/md5sums"
+find "$ROOT" -type d -exec chmod 0755 {} +
+
+mkdir -p "$OUTPUT"
+DEB=$(cd "$OUTPUT" && pwd)/${PKG}_${VERSION}_all.deb
+dpkg-deb --root-owner-group -Zxz -b "$ROOT" "$DEB" > /dev/null
+say "Paket gebaut: $DEB ($(du -h "$DEB" | cut -f1))" "Package built: $DEB ($(du -h "$DEB" | cut -f1))"
+if command -v lintian > /dev/null; then
+	lintian "$DEB" > "$WORK/lintian.log" 2>&1 || true
+	if grep -q '^E:' "$WORK/lintian.log"; then
+		warn "lintian meldet Fehler:" "lintian reports errors:"
+		grep '^E:' "$WORK/lintian.log" >&2
+	fi
+fi
+
+# ---- Install
+if [ -z "$INSTALL" ] && [ -n "$INTERACTIVE" ]; then
+	ask "Jetzt installieren?" "Install it now?" y && INSTALL=1
+fi
+if [ -n "$INSTALL" ]; then
+	as_root apt-get install -y --reinstall "$DEB" || die "Installation fehlgeschlagen" "Installation failed"
+	say "Installiert. Weiler findet die Spieldaten jetzt in $PKGDIR." "Installed. Weiler now finds the game data in $PKGDIR."
+else
+	say "Installieren mit: sudo apt install $DEB" "Install with: sudo apt install $DEB"
+fi

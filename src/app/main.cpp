@@ -3,9 +3,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "App.h"
+#include "CdImport.h"
+#include <chrono>
 #include <boost/program_options.hpp>
 #include <iostream>
 #include <sstream>
+#include <thread>
 
 namespace po = boost::program_options;
 
@@ -24,7 +27,7 @@ std::string gQuickLoad;
 int main(int argc, char** argv)
 {
     weiler::AppOptions opts;
-    std::string size;
+    std::string size, cdImage, cdOut;
     po::options_description desc("Weiler options");
     desc.add_options()("help,h", "Show help")("data", po::value(&opts.dataDir),
                                                 "Folder with the original game data (contains DATA and GFX)")(
@@ -38,7 +41,9 @@ int main(int argc, char** argv)
       "load", po::value(&weiler::gQuickLoad), "Load a savegame directly")(
       "ai-level", po::value(&weiler::gQuickLevel), "AI strength for --map: easy, medium or hard")(
       "objective", po::value(&weiler::gQuickObjective), "Victory condition for --map: none, conquer (3/4 of the land) or all")(
-      "autoplay", po::bool_switch(&weiler::gQuickAutoplay), "Let an AI play for the local player (during --warmup; whole game with --load)");
+      "autoplay", po::bool_switch(&weiler::gQuickAutoplay), "Let an AI play for the local player (during --warmup; whole game with --load)")(
+      "cd-music", po::value(&cdImage), "Convert the audio tracks of a CD image (.ccd or .cue) to Ogg Vorbis and quit")(
+      "cd-music-out", po::value(&cdOut), "Folder for the tracks of --cd-music (trackNN.ogg)");
     po::variables_map vm;
     try
     {
@@ -53,6 +58,23 @@ int main(int argc, char** argv)
     {
         std::cout << desc << std::endl;
         return 0;
+    }
+    if(!cdImage.empty())
+    {
+        // Used by weiler-pack-data: the tracks of the user's CD go into the local package weiler-data
+        weiler::CdImport import;
+        if(cdOut.empty() || !import.start(cdImage, cdOut))
+        {
+            std::cerr << (cdOut.empty() ? "--cd-music-out is missing" : import.error()) << std::endl;
+            return 1;
+        }
+        while(import.running())
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        const int written = import.takeWritten();
+        if(!import.error().empty())
+            std::cerr << import.error() << std::endl;
+        std::cout << written << " tracks written to " << cdOut << std::endl;
+        return written > 0 ? 0 : 1;
     }
     if(!size.empty())
     {
