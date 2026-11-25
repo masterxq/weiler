@@ -14,7 +14,9 @@ install(DIRECTORY ${PROJECT_SOURCE_DIR}/third_party/rttr/data/RTTR/ DESTINATION 
 install(PROGRAMS ${PROJECT_SOURCE_DIR}/tools/weiler-pack-data DESTINATION ${WEILER_INSTALL_BINDIR})
 install(FILES man/weiler.6 man/weiler-pack-data.6 DESTINATION ${CMAKE_INSTALL_MANDIR}/man6)
 
-install(FILES desktop/${_appid}.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+set(WEILER_EXEC ${CMAKE_INSTALL_PREFIX}/${WEILER_INSTALL_BINDIR}/weiler)
+configure_file(desktop/${_appid}.desktop.in ${CMAKE_CURRENT_BINARY_DIR}/${_appid}.desktop @ONLY)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${_appid}.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
 install(FILES desktop/${_appid}.metainfo.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
 install(FILES icons/${_appid}.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
 foreach(_size 16 22 24 32 48 64 128 256 512)

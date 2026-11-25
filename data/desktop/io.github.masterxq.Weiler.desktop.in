@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Name=Weiler
+GenericName=Settlement Building Game
+GenericName[de]=Aufbaustrategiespiel
+Comment=Build a settlement and its economy, made for touch screens
+Comment[de]=Baue eine Siedlung und ihre Wirtschaft auf, gemacht für Touchscreens
+Icon=io.github.masterxq.Weiler
+Exec=@WEILER_EXEC@
+TryExec=@WEILER_EXEC@
+Terminal=false
+Categories=Game;StrategyGame;
+Keywords=settlement;village;economy;strategy;building;trade;touch;
+Keywords[de]=Siedlung;Dorf;Wirtschaft;Strategie;Aufbau;Handel;Touch;
+StartupWMClass=io.github.masterxq.Weiler
+X-Purism-FormFactor=Workstation;Mobile;
+X-KDE-FormFactor=desktop;tablet;handset;

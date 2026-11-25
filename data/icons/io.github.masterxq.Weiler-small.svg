@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<!-- Weiler app icon for 16 to 32 pixels: the emblem without ring, gables as solid shapes -->
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3A3229"/>
+      <stop offset="1" stop-color="#17140F"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="30" height="30" rx="7" fill="url(#tile)"/>
+  <rect x="1.5" y="1.5" width="29" height="29" rx="6.5" fill="none" stroke="#ECAA4C" stroke-opacity="0.6" stroke-width="1"/>
+  <circle cx="23.5" cy="8.5" r="2.6" fill="#F0B45A"/>
+  <path d="M6.5 25V16.2L12 10l5.5 6.2V25z" fill="#ECAA4C"/>
+  <path d="M10.6 25v-5.2h2.4V25z" fill="#1E1A15"/>
+  <path d="M16.5 25v-6.8l4.5-4.9 4.5 4.9V25z" fill="#ECAA4C" stroke="#231E18" stroke-width="1.2" stroke-linejoin="round"/>
+  <path d="M5 25.2h22" stroke="#ECAA4C" stroke-width="1.6" stroke-linecap="round"/>
+</svg>

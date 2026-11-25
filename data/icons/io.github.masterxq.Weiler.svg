@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<!-- Weiler app icon: the emblem of the word mark (two gables under a low sun, in a ring) on a warm dark tile -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#342D25"/>
+      <stop offset="1" stop-color="#15120E"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ECAA4C" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#ECAA4C" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="gold" gradientUnits="userSpaceOnUse" x1="0" y1="80" x2="0" y2="440">
+      <stop offset="0" stop-color="#F4BE68"/>
+      <stop offset="1" stop-color="#D9932F"/>
+    </linearGradient>
+  </defs>
+  <rect x="32" y="32" width="448" height="448" rx="100" fill="url(#tile)"/>
+  <rect x="35" y="35" width="442" height="442" rx="97" fill="none" stroke="#ECAA4C" stroke-opacity="0.45" stroke-width="6"/>
+  <circle cx="256" cy="262" r="200" fill="url(#glow)"/>
+  <g transform="translate(256 262) scale(1.1) translate(-256 -262)">
+  <g fill="none" stroke="url(#gold)" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="256" cy="262" r="162" stroke-width="10.5"/>
+    <line x1="142.6" y1="332.2" x2="369.4" y2="332.2" stroke-width="14"/>
+    <polyline points="164.2,294.4 223.6,229.6 283,294.4" stroke-width="14"/>
+    <line x1="180.4" y1="278.2" x2="180.4" y2="332.2" stroke-width="14"/>
+    <line x1="266.8" y1="278.2" x2="266.8" y2="332.2" stroke-width="14"/>
+    <polyline points="261.4,307.9 304.6,262 347.8,307.9" stroke-width="14"/>
+    <line x1="337" y1="294.4" x2="337" y2="332.2" stroke-width="14"/>
+  </g>
+  <g fill="url(#gold)">
+    <rect x="215.5" y="294.4" width="16.2" height="37.8" rx="6.5"/>
+    <circle cx="304.6" cy="213.4" r="22.7"/>
+  </g>
+  </g>
+</svg>

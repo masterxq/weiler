@@ -1,0 +1,108 @@
+.\" SPDX-License-Identifier: GPL-2.0-or-later
+.TH WEILER 6 2026-11-25 "Weiler 0.1.0" "Games"
+.SH NAME
+weiler \- settlement building game for touch screens, plays the data of the Gold Edition
+.SH SYNOPSIS
+.B weiler
+.RB [ \-\-data
+.IR folder ]
+.RB [ \-\-fullscreen ]
+.RB [ \-\-size
+.IR W x H ]
+.RB [ \-\-scale
+.IR factor ]
+.br
+.B weiler
+.B \-\-cd\-music
+.I image
+.B \-\-cd\-music\-out
+.I folder
+.SH DESCRIPTION
+.B Weiler
+plays the classic settlement building game of 1996 from the data of its Gold Edition, by the original rules
+(taken from Return to the Roots), with a new interface made for touch screens.
+It works with touch, mouse and keyboard, in portrait and landscape.
+.PP
+The game data is not included.
+Weiler looks for the folder that contains
+.I DATA
+and
+.I GFX
+in this order:
+.BR \-\-data ,
+the environment variable
+.BR WEILER_DATA ,
+the folder chosen earlier in the game, the package
+.B weiler\-data
+.RI ( /usr/share/games/weiler\-data/S2 ,
+made by
+.BR weiler\-pack\-data (6))
+and
+.IR $XDG_DATA_HOME/weiler/S2 .
+Without data Weiler asks for the folder, searches it with all sub folders and remembers the result.
+If the remembered folder is on a removable medium that is not inserted, Weiler shows its path and waits for
+the medium.
+.SH OPTIONS
+.TP
+.BI \-\-data " folder"
+Folder with the game data (contains DATA and GFX).
+.TP
+.B \-\-fullscreen
+Start in full screen mode.
+.TP
+.BI \-\-size " W" x H
+Window size in pixels, e.g. 1080x2400.
+.TP
+.BI \-\-scale " factor"
+Size of the interface (default: the scale of the display).
+.TP
+.BI \-\-cd\-music " image"
+Convert the audio tracks of a CD image
+.RI ( .ccd
+or
+.IR .cue )
+to Ogg Vorbis files in the folder given by
+.B \-\-cd\-music\-out
+and quit (used by
+.BR weiler\-pack\-data ).
+.TP
+.B \-\-help
+Show all options, including those for tests
+.RB ( \-\-script ,
+.BR \-\-map ,
+.BR \-\-load ).
+.SH CONTROLS
+Drag with one finger to move the map, pinch to zoom, tap with two fingers to go back.
+Tap a building site to build, drag from a flag to lay a road, tap a building to open it.
+With mouse and keyboard: right click or Esc goes back, Space pauses, + and \- change the speed,
+F5 and F9 save and load quickly.
+The introduction in the main menu shows the gestures step by step.
+.SH ENVIRONMENT
+.TP
+.B WEILER_DATA
+Folder with the game data.
+.TP
+.B WEILER_USERDATA
+Folder for settings and savegames (default:
+.IR $XDG_DATA_HOME/weiler ).
+.TP
+.B WEILER_APPDATA
+Folder of the program data (default:
+.I ../share/games/weiler
+next to the program).
+.TP
+.B WEILER_UI_SCALE
+Size of the interface, like
+.BR \-\-scale .
+.SH FILES
+.TP
+.I $XDG_DATA_HOME/weiler/settings.ini
+Settings, including the remembered folder of the game data.
+.TP
+.I $XDG_DATA_HOME/weiler/SAVE/
+Savegames.
+.TP
+.I /usr/share/games/weiler/
+Program data: fonts, music, the world descriptions and campaigns of Return to the Roots.
+.SH SEE ALSO
+.BR weiler\-pack\-data (6)

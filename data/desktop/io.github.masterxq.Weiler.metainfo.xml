@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 Weiler contributors -->
+<component type="desktop-application">
+  <id>io.github.masterxq.Weiler</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-2.0-or-later</project_license>
+  <name>Weiler</name>
+  <summary>Settlement building game for touch screens</summary>
+  <summary xml:lang="de">Aufbauspiel für Touchscreens</summary>
+  <developer id="io.github.masterxq">
+    <name>Weiler contributors</name>
+  </developer>
+  <description>
+    <p>
+      Weiler plays the classic settlement building game of 1996 from the data of its Gold Edition, by the
+      original rules, with a new interface made for touch screens. Build roads and buildings, run the economy,
+      expand your land and conquer the land of the computer opponents.
+    </p>
+    <p xml:lang="de">
+      Weiler spielt das klassische Aufbauspiel von 1996 mit den Daten seiner Gold Edition, nach den
+      Originalregeln, mit einer neuen Oberfläche für Touchscreens. Baue Straßen und Gebäude, lenke die
+      Wirtschaft, erweitere dein Land und erobere das Land der Computergegner.
+    </p>
+    <ul>
+      <li>Free games against computer opponents on the original maps</li>
+      <li xml:lang="de">Freie Spiele gegen Computergegner auf den Originalkarten</li>
+      <li>The Roman and the world campaign</li>
+      <li xml:lang="de">Die Römer- und die Weltkampagne</li>
+      <li>Saving and loading with several slots and an autosave</li>
+      <li xml:lang="de">Speichern und Laden mit mehreren Plätzen und automatischem Sichern</li>
+      <li>Portrait and landscape, touch, mouse and keyboard</li>
+      <li xml:lang="de">Hoch- und Querformat, Touch, Maus und Tastatur</li>
+    </ul>
+    <p>
+      The game data of the Gold Edition is not included. Weiler asks for its folder on the first start;
+      weiler-pack-data builds a local package from it for all users of the computer.
+    </p>
+    <p xml:lang="de">
+      Die Spieldaten der Gold Edition sind nicht enthalten. Weiler fragt beim ersten Start nach ihrem Ordner;
+      weiler-pack-data baut daraus ein lokales Paket für alle Nutzer des Rechners.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.masterxq.Weiler.desktop</launchable>
+  <url type="homepage">https://github.com/masterxq/weiler</url>
+  <url type="bugtracker">https://github.com/masterxq/weiler/issues</url>
+  <url type="vcs-browser">https://github.com/masterxq/weiler</url>
+  <categories>
+    <category>Game</category>
+    <category>StrategyGame</category>
+  </categories>
+  <keywords>
+    <keyword>settlement</keyword>
+    <keyword>economy</keyword>
+    <keyword>strategy</keyword>
+    <keyword xml:lang="de">Siedlung</keyword>
+    <keyword xml:lang="de">Wirtschaft</keyword>
+    <keyword xml:lang="de">Aufbau</keyword>
+  </keywords>
+  <provides>
+    <binary>weiler</binary>
+  </provides>
+  <supports>
+    <control>touch</control>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  <content_rating type="oars-1.1">
+    <content_attribute id="violence-cartoon">mild</content_attribute>
+  </content_rating>
+  <releases>
+    <release version="0.1.0" date="2026-11-25">
+      <description>
+        <p>First release as a Debian package.</p>
+      </description>
+    </release>
+  </releases>
+</component>

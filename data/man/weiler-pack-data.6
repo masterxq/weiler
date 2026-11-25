@@ -1,0 +1,83 @@
+.\" SPDX-License-Identifier: GPL-2.0-or-later
+.TH WEILER\-PACK\-DATA 6 2026-11-25 "Weiler 0.1.0" "Games"
+.SH NAME
+weiler\-pack\-data \- build the local package weiler\-data from the game data of the Gold Edition
+.SH SYNOPSIS
+.B weiler\-pack\-data
+.br
+.B weiler\-pack\-data
+.B \-\-source
+.I folder\fR|\fIimage
+.RB [ \-\-output
+.IR folder ]
+.RB [ \-\-music ]
+.RB [ \-\-install ]
+.RB [ \-\-yes ]
+.SH DESCRIPTION
+.B weiler\-pack\-data
+builds the Debian package
+.I weiler\-data_1.0_all.deb
+from your own copy of the Gold Edition, so that
+.BR weiler (6)
+finds the game data for all users of the computer in
+.IR /usr/share/games/weiler\-data .
+The package contains only the files Weiler loads (listed in
+.IR /usr/share/games/weiler/gamedata.list ),
+in upper case names, and optionally the music of the CD.
+It is meant for this computer only: the game data is not free and must not be passed on.
+.PP
+Without options on a terminal the program checks the tools it needs (and offers to install missing ones with
+apt), asks for the folder or CD image, shows what it found, builds the package and offers to install it.
+.PP
+A folder is searched with all its sub folders for the game folder (the one with DATA and GFX); the case of the
+names does not matter.
+CD images are read with
+.BR bchunk (1)
+and
+.BR 7z (1):
+.IR .iso ,
+CloneCD
+.RI ( .ccd
+with
+.IR .img )
+and
+.I .cue
+with
+.IR .bin .
+.SH OPTIONS
+.TP
+.BI \-\-source " folder" \fR|\fIimage
+Folder with the game data or above it, or a CD image.
+.TP
+.BI \-\-output " folder"
+Folder for the package (default: the current folder).
+.TP
+.B \-\-music
+Include the audio tracks of the CD, converted to Ogg Vorbis by
+.BR "weiler \-\-cd\-music" .
+Needs a
+.I .ccd
+or
+.I .cue
+image; for a folder, an image in or next to it is used.
+.TP
+.B \-\-install
+Install the package afterwards (apt, with sudo if not run as root).
+.TP
+.B \-\-yes
+Answer all questions with yes, e.g. install missing tools.
+.TP
+.B \-\-help
+Show a short help.
+.SH EXIT STATUS
+0 on success, 1 on errors, 2 on wrong usage.
+.SH EXAMPLES
+.EX
+weiler\-pack\-data \-\-source /media/cdrom \-\-install
+weiler\-pack\-data \-\-source ~/S2GOLD.ccd \-\-music \-\-output ~/pakete
+.EE
+.SH SEE ALSO
+.BR weiler (6),
+.BR dpkg\-deb (1),
+.BR bchunk (1),
+.BR 7z (1)
