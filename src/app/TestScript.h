@@ -18,7 +18,7 @@ class App;
 /// Commands (one per line, coordinates in pixels or percent of the screen, e.g. "50%"):
 ///   wait <frames> | sec <seconds> | tap x y | longpress x y | drag x0 y0 x1 y1 [frames] |
 ///   pinch cx cy d0 d1 [frames] | twotap x y | click x y [right] | wheel x y delta | key <name> |
-///   text <string> | shot <file.png> | resize w h | log <text> | quit
+///   text <string> | shot <file.png> | resize w h | rename <from> <to> | log <text> | quit
 /// Extra commands: waitfor <point> [frames] | tapfirst <point>... | tapopt <point>... | labels | perf [frames] [label] |
 ///   perfasync [frames] [label] (measure while the next commands run) | overdraw [heatmap.png] |
 ///   failshots <dir> | game <screen command> [args]

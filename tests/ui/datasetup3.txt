@@ -1,0 +1,7 @@
+wait 20
+game expect unreachable
+tap ui:Anderen_Ordner_wählen
+game dialog home/klein
+waitfor ui:Kampagne 1200
+shot shots/d3_menu.png
+quit

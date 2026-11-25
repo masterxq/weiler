@@ -26,10 +26,6 @@
 #include <stdexcept>
 #include <vector>
 
-#ifndef WEILER_FONT_DIR
-#    define WEILER_FONT_DIR ""
-#endif
-
 namespace bfs = boost::filesystem;
 
 namespace weiler {
@@ -66,7 +62,7 @@ bool App::initVideo()
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "Portrait LandscapeLeft LandscapeRight");
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
     SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
-    SDL_SetHint(SDL_HINT_APP_ID, "weiler");
+    SDL_SetHint(SDL_HINT_APP_ID, "io.github.masterxq.Weiler");
     if(!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))
     {
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
@@ -131,13 +127,14 @@ void App::updateSize()
 
 int App::run()
 {
-#ifdef WEILER_LANG_DIR
     // Texts of the core (post messages, missions) in German
-    mygettext::setlocale(LC_ALL, "de");
-    mygettext::bind_textdomain_codeset("rttr", "UTF-8");
-    mygettext::bindtextdomain("rttr", WEILER_LANG_DIR);
-    mygettext::textdomain("rttr");
-#endif
+    if(!paths_.langDir.empty())
+    {
+        mygettext::setlocale(LC_ALL, "de");
+        mygettext::bind_textdomain_codeset("rttr", "UTF-8");
+        mygettext::bindtextdomain("rttr", paths_.langDir.string().c_str());
+        mygettext::textdomain("rttr");
+    }
     if(!initVideo())
         return 1;
     batch_.init();
@@ -148,18 +145,15 @@ int App::run()
     font_ = std::make_unique<gfx::Font>();
     fontBold_ = std::make_unique<gfx::Font>();
     fontDisplay_ = std::make_unique<gfx::Font>();
-    std::vector<bfs::path> fontDirs = {paths_.appData / "fonts", bfs::path(WEILER_FONT_DIR)};
-    for(const auto& dir : fontDirs)
+    if(!paths_.fontDir.empty())
     {
-        if(bfs::exists(dir / "Lato-Regular.ttf"))
-        {
-            font_->load((dir / "Lato-Regular.ttf").string());
-            fontBold_->load((dir / "Lato-Bold.ttf").string());
-            if(!fontDisplay_->load((dir / "NotoSerifDisplay-SemiBold.ttf").string()))
-                fontDisplay_->load((dir / "Lato-Bold.ttf").string());
-            break;
-        }
-    }
+        const bfs::path& dir = paths_.fontDir;
+        font_->load((dir / "Lato-Regular.ttf").string());
+        fontBold_->load((dir / "Lato-Bold.ttf").string());
+        if(!fontDisplay_->load((dir / "NotoSerifDisplay-SemiBold.ttf").string()))
+            fontDisplay_->load((dir / "Lato-Bold.ttf").string());
+    } else
+        std::cerr << "Fonts not found in " << paths_.appData << std::endl;
     atlas_->textDrawer = [this](float x, float y, const std::string& text, gfx::Color c) {
         font_->draw(batch_, x, y - 8, text, 9, c, gfx::Align::Center);
     };
@@ -170,6 +164,13 @@ int App::run()
     else if(const char* wav = std::getenv("WEILER_AUDIO_WAV"))
         audio_->initFile(wav);
     settings_ = std::make_unique<Settings>(paths_.userData / "settings.ini");
+    // Now with the folder of the game data chosen earlier; one that holds no game data any more is forgotten
+    paths_ = DataPaths::detect(opts_.dataDir, settings_->get("data.path"));
+    if(paths_.remembered == DataPaths::Remembered::Invalid)
+    {
+        settings_->set("data.path", "");
+        settings_->save();
+    }
     audio_->setVolume(Bus::Effects, settings_->getFloat("volume.effects", 0.8f));
     audio_->setVolume(Bus::Music, settings_->getFloat("volume.music", 0.6f));
     audio_->setVolume(Bus::Ui, settings_->getFloat("volume.ui", 0.6f));
@@ -414,9 +415,7 @@ void App::scanMusic()
         }
         return files;
     };
-    bfs::path dir = paths_.appData / "music";
-    if(!bfs::exists(dir))
-        dir = WEILER_MUSIC_DIR;
+    const bfs::path& dir = paths_.musicDir;
     music_->setTracks(Music::Context::Menu, collect(dir, "menu"));
     // Source: 0 = own pieces, 1 = own and CD, 2 = CD only (imported tracks of the original CD)
     const int source = settings_->getInt("music.source", 0);
@@ -425,7 +424,7 @@ void App::scanMusic()
         game = collect(dir, "game");
     if(source != 0)
     {
-        auto cd = collect(paths_.userData / "music" / "cd", "track");
+        auto cd = collect(cdMusicDir(), "track");
         game.insert(game.end(), cd.begin(), cd.end());
     }
     if(game.empty())
@@ -443,6 +442,35 @@ MenuBackdrop& App::menuBackdrop()
 void App::releaseMenuBackdrop()
 {
     backdrop_.reset();
+}
+
+bfs::path App::cdMusicDir() const
+{
+    // Imported in the settings, else packed into weiler-data by weiler-pack-data
+    const bfs::path own = paths_.userData / "music" / "cd";
+    boost::system::error_code ec;
+    if(!bfs::is_directory(own, ec) || bfs::directory_iterator(own, ec) == bfs::directory_iterator())
+    {
+        for(const auto& pkg : DataPaths::packageDataCandidates())
+        {
+            if(bfs::is_directory(pkg.parent_path() / "music", ec))
+                return pkg.parent_path() / "music";
+        }
+    }
+    return own;
+}
+
+void App::setGameData(const bfs::path& dir, bool remember)
+{
+    paths_.gameData = dir;
+    paths_.source = DataPaths::Source::Chosen;
+    if(remember)
+    {
+        paths_.rememberedData = dir;
+        paths_.remembered = DataPaths::Remembered::Ok;
+        settings_->set("data.path", dir.string());
+        settings_->save();
+    }
 }
 
 void App::setScreen(std::unique_ptr<Screen> screen)

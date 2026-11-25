@@ -488,6 +488,8 @@ private:
 };
 
 // ------------------------------------------------------------------------------------------------------------------
+} // namespace
+
 /// Word mark: emblem (two gables under a low sun, in a ring) above "WEILER" in spaced serif capitals
 void drawWordmark(App& app, float cx, float top, float scale, float alpha)
 {
@@ -546,6 +548,7 @@ void drawWordmark(App& app, float cx, float top, float scale, float alpha)
     b.line(cx + tw / 2 + gap, ry, cx + tw / 2 + gap + rl, ry, 1.f * u, gold.withAlpha(0.6f * alpha));
 }
 
+namespace {
 /// Height of the word mark at scale 1 in dp
 constexpr float WORDMARK_H = 60 + 12 + 50 * 1.3f + 6 + 20;
 
@@ -638,37 +641,6 @@ private:
     double shownAt_ = app_.time();
 };
 
-class MessageScreen : public MenuScreen
-{
-public:
-    MessageScreen(App& app, std::string title, std::string text)
-        : MenuScreen(app), title_(std::move(title)), text_(std::move(text))
-    {}
-    void draw() override
-    {
-        drawBackground(app_);
-        title(title_);
-        const Rect2 col = column(app_.portrait() ? app_.dp(170) : app_.dp(110));
-        const float h =
-          static_cast<float>(app_.font().wrap(text_, app_.dp(16), col.w - app_.dp(40)).size()) * app_.dp(16) * 1.3f
-          + app_.dp(110);
-        const Rect2 p{col.x, col.y, col.w, h};
-        ui_.panel(p, app_.dp(20));
-        ui_.textWrapped(p.x + app_.dp(20), p.y + app_.dp(20), p.w - app_.dp(40), text_, app_.dp(16), ui_.theme.text);
-        if(ui_.button(id("msg.quit"), {p.x + app_.dp(20), p.bottom() - app_.dp(70), p.w - app_.dp(40), app_.dp(52)},
-                      "Beenden", Icon::Exit))
-            app_.quit();
-    }
-    bool onBack() override
-    {
-        app_.quit();
-        return true;
-    }
-
-private:
-    std::string title_, text_;
-};
-
 } // namespace
 
 namespace {
@@ -719,16 +691,6 @@ void startTutorialGame(App& app, bool firstStart)
     startGame(
       app, [setup] { return Session::newGame(setup); },
       [firstStart](GameScreen& screen) { screen.startTutorial(firstStart); });
-}
-
-std::unique_ptr<Screen> createMissingDataScreen(App& app)
-{
-    return std::make_unique<MessageScreen>(
-      app, "Weiler",
-      "Weiler benötigt die Daten der Gold Edition.\n\nKopiere den Spielordner (der DATA und GFX enthält) nach\n"
-        + app.paths().gameData.string()
-        + "\noder starte Weiler mit --data <Ordner> bzw. setze WEILER_DATA.\n\nGrund: "
-        + app.paths().missingGameDataReason());
 }
 
 std::string reflowText(const std::string& text)
@@ -831,7 +793,7 @@ float drawAudioSettings(App& app, float x, float y, float w)
     {
         size_t have = 0;
         boost::system::error_code ec;
-        for(const auto& e : bfs::directory_iterator(cdDir, ec))
+        for(const auto& e : bfs::directory_iterator(app.cdMusicDir(), ec))
             have += e.path().extension() == ".ogg";
         if(const int n = cd.takeWritten())
         {

@@ -1,0 +1,12 @@
+wait 20
+game expect unreachable
+shot shots/d2_unreachable.png
+tap ui:Erneut_versuchen
+wait 5
+game expect unreachable
+shot shots/d2_still.png
+rename home/Karte-weg home/Karte
+tap ui:Erneut_versuchen
+waitfor ui:Kampagne 1200
+shot shots/d2_menu.png
+quit

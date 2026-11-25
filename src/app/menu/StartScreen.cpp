@@ -54,10 +54,10 @@ NewGameSetup makeSkirmishSetup(const bfs::path& map, unsigned numAIs, unsigned s
 std::unique_ptr<Screen> createStartScreen(App& app)
 {
     if(!app.paths().hasGameData())
-        return createMissingDataScreen(app);
+        return createDataSetupScreen(app);
     app.paths().apply();
     if(!ensureStartFilesLoaded())
-        return createMissingDataScreen(app);
+        return createDataSetupScreen(app);
     try
     {
         if(!gQuickLoad.empty())

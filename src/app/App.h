@@ -63,10 +63,14 @@ public:
     CdImport& cdImport();
     /// Collect the music files (own pieces, imported CD tracks) according to the settings
     void scanMusic();
+    /// Folder with the tracks of the original CD (imported, else from the package weiler-data)
+    boost::filesystem::path cdMusicDir() const;
     ui::IconAtlas& icons() { return icons_; }
     ui::Ui& ui() { return *ui_; }
     Settings& settings() { return *settings_; }
     const DataPaths& paths() const { return paths_; }
+    /// Use the game data in dir (chosen by the user); remember: keep it in the settings for the next start
+    void setGameData(const boost::filesystem::path& dir, bool remember);
     /// Density independent pixel -> framebuffer pixel
     float dp(float v) const { return v * uiScale_; }
     float uiScale() const { return uiScale_; }

@@ -45,10 +45,20 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
     endif()
 endif()
 
+include(GNUInstallDirs)
+# Install layout. Debian: -DWEILER_INSTALL_BINDIR=games -DWEILER_INSTALL_DATADIR=share/games/weiler
+set(WEILER_INSTALL_BINDIR "${CMAKE_INSTALL_BINDIR}" CACHE STRING "Folder of the programs, relative to the prefix")
+set(WEILER_INSTALL_DATADIR "${CMAKE_INSTALL_DATADIR}/weiler" CACHE STRING
+    "Folder of the program data (fonts, music, RTTR data), relative to the prefix")
+# Development builds find the program data in the source and build tree. Packages turn this off, the installed
+# program then contains no path of the build machine and finds its data next to itself.
+option(WEILER_SOURCE_PATHS "Find the program data in the source and build tree (development builds)" ON)
+
 include(CTest)
 
 add_subdirectory(third_party/rttr)
 add_subdirectory(src)
+add_subdirectory(data)
 if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()

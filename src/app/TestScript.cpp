@@ -11,6 +11,7 @@
 #include <cmath>
 #include <iterator>
 #include <fstream>
+#include <cstdio>
 #include <iostream>
 #include <sstream>
 
@@ -300,6 +301,14 @@ bool TestScript::execute(const std::string& line)
         {
             SDL_SetWindowSize(SDL_GL_GetCurrentWindow(), static_cast<int>(num(0, 1080)), static_cast<int>(num(1, 2400)));
             waitFrames_ = 3;
+        } else if(cmd == "rename")
+        {
+            // Move a file or folder (e.g. a removable medium that disappears)
+            if(std::rename(a.at(0).c_str(), a.at(1).c_str()) != 0)
+            {
+                std::cerr << "[script] FAIL: " << line << std::endl;
+                exitCode_ = 4;
+            }
         } else if(cmd == "log")
             std::cout << "[script] " << line.substr(4) << std::endl;
         else if(cmd == "quit")

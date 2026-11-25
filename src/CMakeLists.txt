@@ -11,9 +11,20 @@ add_library(weiler_engine STATIC
 target_include_directories(weiler_engine PUBLIC engine)
 target_link_libraries(weiler_engine PUBLIC s25Main)
 target_compile_features(weiler_engine PUBLIC cxx_std_20)
+# Program data relative to the program (installed layout, also an unpacked package) and absolute
+file(RELATIVE_PATH WEILER_APPDATA_REL "${CMAKE_INSTALL_PREFIX}/${WEILER_INSTALL_BINDIR}"
+     "${CMAKE_INSTALL_PREFIX}/${WEILER_INSTALL_DATADIR}")
 target_compile_definitions(weiler_engine PRIVATE
-    WEILER_SOURCE_DATA_DIR="${PROJECT_SOURCE_DIR}/third_party/rttr/data"
-    WEILER_INSTALL_DATA_DIR="${CMAKE_INSTALL_PREFIX}/share/weiler")
+    WEILER_APPDATA_REL="${WEILER_APPDATA_REL}"
+    WEILER_INSTALL_DATA_DIR="${CMAKE_INSTALL_PREFIX}/${WEILER_INSTALL_DATADIR}")
+if(WEILER_SOURCE_PATHS)
+    target_compile_definitions(weiler_engine PRIVATE
+        WEILER_SOURCE_DATA_DIR="${PROJECT_SOURCE_DIR}/third_party/rttr/data"
+        WEILER_FONT_DIR="${PROJECT_SOURCE_DIR}/data/fonts"
+        WEILER_MUSIC_DIR="${PROJECT_SOURCE_DIR}/data/music"
+        WEILER_LANG_DIR="${CMAKE_CURRENT_BINARY_DIR}/languages"
+        WEILER_GAMEDATA_LIST="${PROJECT_SOURCE_DIR}/data/gamedata.list")
+endif()
 
 add_executable(weiler-headless tools/HeadlessMain.cpp)
 target_link_libraries(weiler-headless PRIVATE weiler_engine Boost::program_options)
@@ -31,8 +42,6 @@ add_executable(weiler ${APP_SRC})
 target_include_directories(weiler PRIVATE app)
 target_link_libraries(weiler PRIVATE weiler_engine SDL3::SDL3 PkgConfig::FREETYPE PkgConfig::HARFBUZZ PkgConfig::GLES
     PkgConfig::VORBIS Boost::program_options)
-target_compile_definitions(weiler PRIVATE WEILER_FONT_DIR="${PROJECT_SOURCE_DIR}/data/fonts"
-    WEILER_MUSIC_DIR="${PROJECT_SOURCE_DIR}/data/music")
 
 # German texts of the core (post messages, mission texts) from the RTTR translation
 # Weiler's own texts (informal address, mission texts) take precedence over the RTTR translation
@@ -49,7 +58,9 @@ if(MSGFMT_EXECUTABLE AND MSGCAT_EXECUTABLE)
                        DEPENDS ${PO_FILE} ${WEILER_PO_FILE})
     add_custom_target(weiler_languages ALL DEPENDS ${WEILER_LANG_DIR}/rttr-de.mo)
     add_dependencies(weiler weiler_languages)
-    target_compile_definitions(weiler PRIVATE WEILER_LANG_DIR="${WEILER_LANG_DIR}")
+    install(FILES ${WEILER_LANG_DIR}/rttr-de.mo DESTINATION ${WEILER_INSTALL_DATADIR}/languages)
 else()
     message(WARNING "msgfmt/msgcat (gettext) not found: messages of the core stay English")
 endif()
+
+install(TARGETS weiler RUNTIME DESTINATION ${WEILER_INSTALL_BINDIR})

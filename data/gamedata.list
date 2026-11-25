@@ -1,0 +1,37 @@
+# Files of the Gold Edition that Weiler loads, relative to the game folder (the folder with DATA and GFX).
+# Used by weiler-pack-data and by the game when it takes over a folder chosen by the player. Names are matched
+# without regard to case and stored in upper case; '*' and '?' work in the last part of a line.
+#   !  required, identifies the game folder (same list in src/engine/DataPaths.cpp)
+#   ?  optional (own maps)
+# Not needed: the DOS programs, videos, the editor files, mission texts and pictures of the original menus.
+!DATA/RESOURCE.DAT
+DATA/RESOURCE.IDX
+DATA/BOOT_Z.LST
+DATA/MAP_0_Z.LST
+DATA/MAP_1_Z.LST
+DATA/MAP_2_Z.LST
+DATA/MIS?BOBS.LST
+!DATA/BOBS/JOBS.BOB
+DATA/BOBS/CARRIER.BOB
+DATA/BOBS/BOAT.LST
+DATA/CBOB/ROM_BOBS.LST
+!DATA/IO/IO.DAT
+DATA/IO/IO.IDX
+!DATA/MBOB/ROM_Z.LST
+DATA/MBOB/*_Z.LST
+DATA/MBOB/*_ICON.LST
+!DATA/SOUNDDAT/SOUND.LST
+DATA/MAPS/*.WLD
+DATA/MAPS2/*.WLD
+DATA/MAPS3/*.WLD
+DATA/MAPS4/*.WLD
+?DATA/MAPS2/*.SWD
+?DATA/MAPS3/*.SWD
+?DATA/MAPS4/*.SWD
+!GFX/PALETTE/PAL5.BBM
+GFX/PALETTE/*.BBM
+GFX/TEXTURES/TEX5.LBM
+GFX/TEXTURES/TEX6.LBM
+GFX/TEXTURES/TEX7.LBM
+?WORLDS/*.WLD
+?WORLDS/*.SWD

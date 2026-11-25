@@ -14,7 +14,10 @@ class App;
 class Screen;
 class Settings;
 
-std::unique_ptr<Screen> createMissingDataScreen(App& app);
+/// Game data missing or not reachable: choose a folder (portal dialog or own folder browser), search it, remember it
+std::unique_ptr<Screen> createDataSetupScreen(App& app);
+/// Word mark (emblem above "WEILER"), top = upper edge, scale 1 = about 160 dp high
+void drawWordmark(App& app, float cx, float top, float scale, float alpha);
 std::unique_ptr<Screen> createMainMenu(App& app);
 /// First screen: missing data notice, a game given on the command line, the introduction or the main menu
 std::unique_ptr<Screen> createStartScreen(App& app);

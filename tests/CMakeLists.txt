@@ -43,3 +43,10 @@ add_ui_test(land_hd 1920x1080 SCRIPT land)
 add_ui_test(attack 1080x2400 --map DATA/MAPS3/AKARTE01.WLD --ais 1 --warmup 60000 --autoplay)
 add_ui_test(goal 1080x2400 --map DATA/MAPS3/AKARTE01.WLD --ais 1 --warmup 60000 --autoplay --objective conquer)
 add_ui_test(names 1080x2400 --map DATA/MAPS4/KARTE01.WLD --ais 1 --warmup 36000 --autoplay)
+
+# Game data missing: choosing a folder, remembering it, removable medium gone and back, lower case file names
+add_test(NAME ui_datasetup
+    COMMAND ${CMAKE_COMMAND} -DWEILER=$<TARGET_FILE:weiler> -DDATA=${WEILER_TEST_DATA}
+            -DWORK=${CMAKE_CURRENT_BINARY_DIR}/ui/datasetup -DSCRIPTS=${CMAKE_CURRENT_SOURCE_DIR}/ui
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/ui/DataSetup.cmake)
+set_tests_properties(ui_datasetup PROPERTIES LABELS ui)

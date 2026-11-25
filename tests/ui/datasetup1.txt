@@ -1,0 +1,30 @@
+wait 20
+game expect missing
+shot shots/d1_missing.png
+tap ui:Ordner_wählen
+game expect busy
+game dialog home/Leer
+wait 60
+game expect idle
+game expect missing
+shot shots/d1_nothing.png
+tap ui:Ordner_wählen
+game dialog cancel
+wait 5
+game expect idle
+tap ui:Ordner_wählen
+game dialog fail
+wait 5
+game expect browse
+shot shots/d1_browser.png
+tap ui:Karte
+wait 5
+tap ui:Spiele
+wait 5
+tap ui:icon:Back
+wait 5
+shot shots/d1_browser_karte.png
+tap ui:Diesen_Ordner_durchsuchen
+waitfor ui:Kampagne 1200
+shot shots/d1_menu.png
+quit
