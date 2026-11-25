@@ -53,6 +53,10 @@ add_ui_test(land 2400x1080)
 add_ui_test(land_hd 1920x1080 SCRIPT land)
 add_ui_test(attack 1080x2400 --map DATA/MAPS3/AKARTE01.WLD --ais 1 --warmup 60000 --autoplay)
 add_ui_test(goal 1080x2400 --map DATA/MAPS3/AKARTE01.WLD --ais 1 --warmup 60000 --autoplay --objective conquer)
+add_ui_test(road 1080x2400 ${_skirmish})
+add_ui_test(map 2400x1080 ${_skirmish})
+add_ui_test(grids 1080x2400 ${_skirmish})
+add_ui_test(grids_land 2400x1080 SCRIPT grids ${_skirmish})
 add_ui_test(names 1080x2400 --map DATA/MAPS4/KARTE01.WLD --ais 1 --warmup 36000 --autoplay)
 
 # Game data missing: choosing a folder, remembering it, removable medium gone and back, lower case file names

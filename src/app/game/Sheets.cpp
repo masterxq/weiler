@@ -95,12 +95,13 @@ Rect2 Hud::Impl::sheetHeader(const Rect2& r, const std::string& title, Icon ic)
 {
     const auto& th = ui.theme;
     const float pad = app.dp(th.space.xl) - app.dp(4);
-    const float top = landscape() ? app.dp(6) : app.dp(14);
-    const float h = app.dp(58);
+    // Landscape: low title row, the content needs the height
+    const float top = landscape() ? app.dp(4) : app.dp(14);
+    const float h = app.dp(landscape() ? 44 : 58);
     float tx = r.x + pad;
     if(ic != Icon::None)
     {
-        const float d = app.dp(38);
+        const float d = std::min(app.dp(38), h * 0.72f);
         const float cx = tx + d / 2, cy = r.y + top + h / 2;
         app.batch().circle(cx, cy, d / 2, th.accentSoft);
         ui.icon(ic, cx, cy, app.dp(20), th.accent);
@@ -108,7 +109,7 @@ Rect2 Hud::Impl::sheetHeader(const Rect2& r, const std::string& title, Icon ic)
     }
     const float bs = app.dp(44);
     // Long titles shrink instead of running into the close button
-    float fs = app.dp(th.type.title);
+    float fs = std::min(app.dp(th.type.title), h * 0.5f);
     const float avail = r.right() - bs - app.dp(18) - tx;
     const float tw = ui.headingWidth(title, fs);
     if(tw > avail)
@@ -121,6 +122,94 @@ Rect2 Hud::Impl::sheetHeader(const Rect2& r, const std::string& title, Icon ic)
     const float ly = r.y + top + h + app.dp(2);
     app.batch().roundRectV({r.x + pad, ly, r.w - 2 * pad, 1}, 0, th.line, th.line);
     return {r.x + pad, ly + app.dp(12), r.w - 2 * pad, r.bottom() - ly - app.dp(12) - app.dp(th.space.lg)};
+}
+
+int Hud::Impl::cellGrid(Id gid, const Rect2& area, const std::vector<GridCell>& cells, int selected, Rect2* selRect)
+{
+    const auto& th = ui.theme;
+    auto& b = app.batch();
+    const int n = static_cast<int>(cells.size());
+    const float gap = app.dp(4);
+    // Largest cells with which everything fits; at the smallest size the grid scrolls
+    const float minH = app.dp(46), maxH = app.dp(74);
+    float ch = maxH;
+    int cols = 1, rows = 1;
+    bool fits = false;
+    for(; ch >= minH; ch -= app.dp(2))
+    {
+        cols = std::max(1, static_cast<int>((area.w + gap) / (ch * 0.92f + gap)));
+        rows = (n + cols - 1) / cols;
+        if(static_cast<float>(rows) * (ch + gap) - gap <= area.h)
+        {
+            fits = true;
+            break;
+        }
+    }
+    if(!fits)
+    {
+        ch = minH;
+        cols = std::max(1, static_cast<int>((area.w + gap) / (ch * 0.92f + gap)));
+        rows = (n + cols - 1) / cols;
+    }
+    cols = std::max(1, std::min(cols, n));
+    const float cw = std::min((area.w - gap * static_cast<float>(cols - 1)) / static_cast<float>(cols), ch * 1.6f);
+    float y0 = area.y;
+    if(!fits)
+        y0 = ui.beginScroll(gid ^ 0x5c011u, area);
+    // A tap between the cells (or below them) closes the details
+    int result = ui.area(gid ^ 0xb6u, area) ? -2 : -1;
+    for(int i = 0; i < n; ++i)
+    {
+        const GridCell& c = cells[static_cast<size_t>(i)];
+        const Rect2 r{area.x + static_cast<float>(i % cols) * (cw + gap), y0 + static_cast<float>(i / cols) * (ch + gap),
+                      cw, ch};
+        const bool sel = i == selected;
+        const Id cid = gid + 1 + static_cast<Id>(i);
+        const float p = ui.anim(cid ^ 0x77u, ui.pressed(cid, r) ? 1.f : 0.f, th.motion.fast);
+        b.roundRect(r, app.dp(9), sel ? th.accent.withAlpha(0.22f) : Color::rgb(0xFFFFFF, 0.045f + 0.06f * p));
+        if(sel)
+            b.roundRect(r, app.dp(9), th.accent, 1.f, app.dp(1.5f));
+        const float is = std::min(cw, ch) * 0.56f;
+        ui.sprite(c.icon, {r.x + (r.w - is) / 2, r.y + ch * 0.07f, is, is}, 0, c.dim ? 0.4f : 1.f);
+        const float fs = std::clamp(ch * 0.235f, app.dp(11), app.dp(16));
+        ui.text(r.x + r.w / 2, r.y + ch * 0.07f + is + (ch * 0.93f - is - fs * 1.3f) / 2, c.value, fs,
+                c.dim ? th.textDim : th.text, gfx::Align::Center, true);
+        if(c.mark > 0)
+        {
+            // Store setting: in (green), out (orange), stop (red)
+            static const Icon marks[] = {Icon::None, Icon::Down, Icon::Up, Icon::Minus};
+            const Color col = c.mark == 1 ? th.ok : c.mark == 2 ? th.accent : th.danger;
+            const float d = std::max(app.dp(15), ch * 0.3f);
+            const float mx = r.right() - d / 2 - app.dp(2), my = r.y + d / 2 + app.dp(2);
+            b.circle(mx, my, d / 2, col);
+            ui.icon(marks[c.mark], mx, my, d * 0.72f, th.panelSolid);
+        }
+        ui.tag(c.name, r);
+        if(ui.area(cid, r))
+            result = i;
+        if(sel && selRect)
+            *selRect = r;
+    }
+    if(!fits)
+        ui.endScroll(static_cast<float>(rows) * (ch + gap));
+    gridBottom = fits ? area.y + static_cast<float>(rows) * (ch + gap) - gap : area.bottom();
+    return result;
+}
+
+Rect2 Hud::Impl::popover(const Rect2& anchor, const Rect2& bounds, float contentH)
+{
+    const float pad = app.dp(12);
+    const float w = std::min(bounds.w, app.dp(400)), h = contentH + 2 * pad;
+    const float x = std::clamp(anchor.x + anchor.w / 2 - w / 2, bounds.x, bounds.right() - w);
+    // Below the cell, else above it, else at the bottom of the area
+    float y = anchor.bottom() + app.dp(6);
+    if(y + h > bounds.bottom())
+        y = anchor.y - h - app.dp(6);
+    if(y < bounds.y)
+        y = bounds.bottom() - h;
+    const Rect2 r{x, y, w, h};
+    ui.panel(r, app.dp(ui.theme.radius.lg), ui.theme.panelSolid);
+    return r.inset(pad);
 }
 
 void Hud::Impl::drawSheet()
@@ -312,6 +401,7 @@ void Hud::Impl::sheetBuild(const Rect2& r)
         if(ui.pressed(id("build", static_cast<uint64_t>(bt)), cr))
             app.batch().roundRect(cr.inset(app.dp(3)), app.dp(14), ui.theme.raised);
         buildingIcon(nation, bt, {cr.x + app.dp(8), cr.y + app.dp(6), cr.w - app.dp(16), app.dp(56)});
+        sizeBadge(ui, BUILDING_SIZE[bt], cr.right() - app.dp(14), cr.y + app.dp(14), app.dp(22));
         ui.textWrapped(cr.x + app.dp(2), cr.y + app.dp(66), cr.w - app.dp(4), buildingName(bt), app.dp(11.5f),
                        ui.theme.text, gfx::Align::Center);
         ui.tag(std::string("build:") + buildingName(bt), cr);
@@ -350,18 +440,18 @@ void Hud::Impl::sheetBuilding(const Rect2& r)
     Session& s = game.session();
     const BuildingType bt = bld->getBuildingType();
     const bool isSite = obj->getType() == NodalObjectType::Buildingsite;
-    Rect2 c = sheetHeader(r, std::string(isSite ? "Baustelle: " : "") + buildingName(bt));
-    // Everything but the store (own list) scrolls when the sheet is too low (landscape)
-    const bool isStore = !isSite && dynamic_cast<const nobBaseWarehouse*>(obj);
-    const Rect2 view = c;
-    if(!isStore)
+    if(const auto* wh = isSite ? nullptr : dynamic_cast<const nobBaseWarehouse*>(obj))
     {
-        c.y = ui.beginScroll(id("bld.scroll", static_cast<uint64_t>(sheetPt.x) << 16 | sheetPt.y), view);
-        c.h = 1e5f;
+        sheetStore(r, *wh);
+        return;
     }
+    Rect2 c = sheetHeader(r, std::string(isSite ? "Baustelle: " : "") + buildingName(bt));
+    // Scrolls when the sheet is too low (landscape)
+    const Rect2 view = c;
+    c.y = ui.beginScroll(id("bld.scroll", static_cast<uint64_t>(sheetPt.x) << 16 | sheetPt.y), view);
+    c.h = 1e5f;
     // Picture
-    // Stores in landscape: the list needs the height, the picture stays small
-    const float picW = isStore && landscape() ? app.dp(48) : std::min(app.dp(120), c.w * 0.32f);
+    const float picW = std::min(app.dp(120), c.w * 0.32f);
     buildingIcon(bld->getNation(), bt, {c.x, c.y, picW, picW * 0.9f});
     const float tx = c.x + picW + app.dp(16);
     const float tw = c.right() - tx;
@@ -491,96 +581,7 @@ void Hud::Impl::sheetBuilding(const Rect2& r)
             toast("Soldaten gehen heim, neue sind bestellt");
         }
         by += bh + app.dp(8);
-    } else if(const auto* wh = dynamic_cast<const nobBaseWarehouse*>(obj))
-    {
-        const Inventory& inv = wh->getInventory();
-        unsigned wares = 0, people = 0;
-        for(const auto gt : helpers::enumRange<GoodType>())
-            wares += inv[gt];
-        for(const auto j : helpers::enumRange<Job>())
-            people += inv[j];
-        line(std::to_string(wares) + " Waren · " + std::to_string(people) + " Bewohner", ui.theme.text);
-        by = std::max(y, c.y + picW) + app.dp(10);
-        if(const auto* harbor = dynamic_cast<const nobHarborBuilding*>(obj))
-        {
-            const bool exp = harbor->isExpeditionActive();
-            if(ui.button(id("bld.exp"), {c.x, by, c.w, bh}, exp ? "Expedition abbrechen" : "Expedition vorbereiten",
-                         Icon::Ship))
-                s.StartStopExpedition(sheetPt, !exp);
-            by += bh + app.dp(8);
-            const bool expl = harbor->isExplorationExpeditionActive();
-            if(ui.button(id("bld.expl"), {c.x, by, c.w, bh}, expl ? "Erkundung abbrechen" : "Erkundungsfahrt vorbereiten",
-                         Icon::Eye))
-                s.StartStopExplorationExpedition(sheetPt, !expl);
-            by += bh + app.dp(8);
-        }
-        // Store settings of wares and figures, reserve of soldiers (pages as in the original)
-        ui.segmented(id("wh.tab"), {c.x, by, c.w, app.dp(40)}, {"Waren", "Leute", "Reserve"}, sheetTab);
-        by += app.dp(50);
-        tallSheet = true;
-        // The headquarters cannot be torn down: the list reaches the bottom
-        const float listEnd = bt == BuildingType::Headquarters ? c.bottom() : c.bottom() - bh - app.dp(10);
-        const Rect2 view{c.x, by, c.w, listEnd - by};
-        float ly = ui.beginScroll(id("wh.scroll", static_cast<uint64_t>(sheetTab)), view);
-        // Two lines per entry: picture, name and count, below the setting over the full width (narrow phones)
-        const float rowH = app.dp(sheetTab == 2 ? 64 : 92);
-        unsigned row = 0;
-        auto head = [&](const Rect2& rr, ITexture* icon, const std::string& name, const std::string& detail) {
-            ui.sprite(src(icon), {rr.x, rr.y + app.dp(4), app.dp(32), app.dp(32)});
-            ui.text(rr.x + app.dp(42), rr.y + app.dp(2), name, app.dp(14), ui.theme.text);
-            ui.text(rr.x + app.dp(42), rr.y + app.dp(20), detail, app.dp(12), ui.theme.textDim);
-        };
-        auto storeRow = [&](uint64_t key, ITexture* icon, const std::string& name, unsigned count, InventorySetting st,
-                            const boost_variant2<GoodType, Job>& what) {
-            const Rect2 rr{view.x, ly + static_cast<float>(row++) * rowH, view.w - app.dp(8), rowH};
-            head(rr, icon, name, std::to_string(count) + " im Lager");
-            int sel = st.isSet(EInventorySetting::Stop)    ? 3 :
-                      st.isSet(EInventorySetting::Send)    ? 2 :
-                      st.isSet(EInventorySetting::Collect) ? 1 :
-                                                             0;
-            if(ui.segmented(id("wh.set", key), {rr.x, rr.y + app.dp(42), rr.w, app.dp(38)},
-                            {"Normal", "Einlagern", "Auslagern", "Stopp"}, sel))
-            {
-                static const EInventorySetting modes[] = {EInventorySetting::Collect, EInventorySetting::Send,
-                                                         EInventorySetting::Stop};
-                s.SetInventorySetting(sheetPt, what, sel == 0 ? InventorySetting() : InventorySetting(modes[sel - 1]));
-            }
-        };
-        if(sheetTab == 0)
-        {
-            for(const auto gt : helpers::enumRange<GoodType>())
-            {
-                if(!hiddenWare(world(), gt))
-                    storeRow(rttr::enumCast(gt), LOADER.getWareTex(gt), wareName(gt), inv[gt],
-                             wh->getInventorySetting(gt), gt);
-            }
-        } else if(sheetTab == 1)
-        {
-            for(const auto j : helpers::enumRange<Job>())
-            {
-                if(!hiddenJob(world(), j))
-                    storeRow(1000 + rttr::enumCast(j), LOADER.getJobTex(j), jobName(j), inv[j],
-                             wh->getInventorySetting(j), j);
-            }
-        } else
-        {
-            // Soldiers of each rank kept back for defending this store
-            for(unsigned rank = 0; rank < NUM_SOLDIER_RANKS; ++rank)
-            {
-                const Rect2 rr{view.x, ly + static_cast<float>(row++) * rowH, view.w - app.dp(8), rowH};
-                const Job job = SOLDIER_JOBS[rank];
-                head(rr, LOADER.getJobTex(job), jobName(job),
-                     std::to_string(*wh->getReserveAvailablePointer(rank)) + " in Reserve");
-                int claimed = static_cast<int>(wh->getReserveClaimed(rank));
-                const float sw = app.dp(150);
-                if(ui.stepper(id("wh.reserve", rank), {rr.right() - sw, rr.y, sw, app.dp(48)}, claimed, 0, 99, ""))
-                    s.ChangeReserve(sheetPt, static_cast<unsigned char>(rank), static_cast<unsigned>(claimed));
-            }
-        }
-        ui.endScroll(static_cast<float>(row) * rowH);
-        by = c.bottom() - bh;
     }
-    if(bt != BuildingType::Headquarters)
     {
         const Rect2 dr{c.x, std::min(by, c.bottom() - bh), c.w, bh};
         if(ui.button(id("bld.destroy"), dr, "Abreißen", Icon::Trash, Style::Danger))
@@ -597,11 +598,157 @@ void Hud::Impl::sheetBuilding(const Rect2& r)
             else
                 confirm(std::string(buildingName(bt)) + " abreißen?", destroy);
         }
-        if(!isStore)
+        ui.endScroll(dr.bottom() - c.y);
+        fit(r, view.y + dr.bottom() - c.y);
+    }
+}
+
+void Hud::Impl::sheetStore(const Rect2& r, const nobBaseWarehouse& wh)
+{
+    Session& s = game.session();
+    const BuildingType bt = wh.getBuildingType();
+    tallSheet = true;
+    wideSheet = true;
+    const Rect2 c = sheetHeader(r, buildingName(bt));
+    const Inventory& inv = wh.getInventory();
+    unsigned wares = 0, people = 0;
+    for(const auto gt : helpers::enumRange<GoodType>())
+        wares += inv[gt];
+    for(const auto j : helpers::enumRange<Job>())
+        people += inv[j];
+    // One low info row: picture, totals, tear down; the tabs beside it when there is room, else below
+    const float rowH = app.dp(40);
+    float y = c.y;
+    const bool tabsInline = c.w >= app.dp(430);
+    buildingIcon(wh.getNation(), bt, {c.x, y, rowH * 1.1f, rowH});
+    const float tabsW = tabsInline ? std::min(app.dp(270), c.w * 0.5f) : 0.f;
+    const float trashW = bt != BuildingType::Headquarters ? rowH + app.dp(6) : 0.f;
+    const float infoX = c.x + rowH * 1.1f + app.dp(10);
+    const float infoW = c.right() - infoX - tabsW - trashW - app.dp(8);
+    float fs = app.dp(14);
+    const std::string info = std::to_string(wares) + " Waren · " + std::to_string(people) + " Bewohner";
+    if(ui.textWidth(info, fs) > infoW)
+        fs *= infoW / ui.textWidth(info, fs);
+    ui.text(infoX, y + (rowH - fs * 1.3f) / 2, info, fs, ui.theme.text);
+    if(trashW > 0)
+    {
+        const Rect2 tr{c.right() - rowH, y, rowH, rowH};
+        if(ui.iconButton(id("bld.destroy"), tr, Icon::Trash, false, 0, Style::Flat))
         {
-            ui.endScroll(dr.bottom() - c.y);
-            fit(r, view.y + dr.bottom() - c.y);
+            const MapPoint pt = sheetPt;
+            confirm(std::string(buildingName(bt)) + " abreißen?", [this, pt] {
+                game.session().DestroyBuilding(pt);
+                closeSheet();
+            });
         }
+        ui.tag("Abreißen", tr);
+    }
+    const std::vector<std::string> tabs = {"Waren", "Leute", "Reserve"};
+    const int oldTab = sheetTab;
+    if(tabsInline)
+        ui.segmented(id("wh.tab"), {c.right() - trashW - tabsW, y + app.dp(2), tabsW, rowH - app.dp(4)}, tabs, sheetTab);
+    y += rowH + app.dp(8);
+    if(!tabsInline)
+    {
+        ui.segmented(id("wh.tab"), {c.x, y, c.w, app.dp(38)}, tabs, sheetTab);
+        y += app.dp(46);
+    }
+    if(sheetTab != oldTab)
+        gridSel = -1;
+    if(const auto* harbor = dynamic_cast<const nobHarborBuilding*>(&wh))
+    {
+        const float bw = (c.w - app.dp(8)) / 2, bh = app.dp(42);
+        const bool exp = harbor->isExpeditionActive();
+        if(ui.button(id("bld.exp"), {c.x, y, bw, bh}, exp ? "Expedition abbrechen" : "Expedition vorbereiten",
+                     Icon::Ship))
+            s.StartStopExpedition(sheetPt, !exp);
+        const bool expl = harbor->isExplorationExpeditionActive();
+        if(ui.button(id("bld.expl"), {c.x + bw + app.dp(8), y, bw, bh},
+                     expl ? "Erkundung abbrechen" : "Erkundungsfahrt vorbereiten", Icon::Eye))
+            s.StartStopExplorationExpedition(sheetPt, !expl);
+        y += bh + app.dp(8);
+    }
+    const Rect2 area{c.x, y, c.w, c.bottom() - y};
+    if(sheetTab == 2)
+    {
+        // Soldiers of each rank kept back for defending this store
+        float ly = ui.beginScroll(id("wh.reserve.scroll"), area);
+        const float ly0 = ly;
+        const float rh = app.dp(52);
+        for(unsigned rank = 0; rank < NUM_SOLDIER_RANKS; ++rank)
+        {
+            const Job job = SOLDIER_JOBS[rank];
+            ui.sprite(src(LOADER.getJobTex(job)), {area.x, ly + app.dp(6), app.dp(36), app.dp(36)});
+            ui.text(area.x + app.dp(44), ly + app.dp(6), jobName(job), app.dp(14), ui.theme.text);
+            ui.text(area.x + app.dp(44), ly + app.dp(25),
+                    std::to_string(*wh.getReserveAvailablePointer(rank)) + " in Reserve", app.dp(12), ui.theme.textDim);
+            int claimed = static_cast<int>(wh.getReserveClaimed(rank));
+            const float sw = app.dp(150);
+            if(ui.stepper(id("wh.reserve", rank), {area.right() - sw - app.dp(6), ly + app.dp(2), sw, app.dp(48)},
+                          claimed, 0, 99, ""))
+                s.ChangeReserve(sheetPt, static_cast<unsigned char>(rank), static_cast<unsigned>(claimed));
+            ly += rh;
+        }
+        ui.endScroll(ly - ly0);
+        return;
+    }
+    // Wares or people as symbols with their number; the setting of one shows on tap
+    std::vector<GridCell> cells;
+    std::vector<boost_variant2<GoodType, Job>> what;
+    auto markOf = [](InventorySetting st) {
+        return st.isSet(EInventorySetting::Stop)    ? 3 :
+               st.isSet(EInventorySetting::Send)    ? 2 :
+               st.isSet(EInventorySetting::Collect) ? 1 :
+                                                      0;
+    };
+    if(sheetTab == 0)
+    {
+        for(const auto gt : helpers::enumRange<GoodType>())
+        {
+            if(hiddenWare(world(), gt))
+                continue;
+            cells.push_back({src(LOADER.getWareTex(gt)), std::to_string(inv[gt]), wareName(gt),
+                             markOf(wh.getInventorySetting(gt)), inv[gt] == 0});
+            what.emplace_back(gt);
+        }
+    } else
+    {
+        for(const auto j : helpers::enumRange<Job>())
+        {
+            if(j == Job::BoatCarrier || hiddenJob(world(), j))
+                continue;
+            cells.push_back({src(LOADER.getJobTex(j)), std::to_string(inv[j]), jobName(j), markOf(wh.getInventorySetting(j)),
+                             inv[j] == 0});
+            what.emplace_back(j);
+        }
+    }
+    if(gridSel >= static_cast<int>(cells.size()))
+        gridSel = -1;
+    Rect2 selR;
+    const int hit = cellGrid(id("wh.grid", static_cast<uint64_t>(sheetTab)), area, cells, gridSel, &selR);
+    if(hit >= 0)
+        gridSel = hit == gridSel ? -1 : hit;
+    else if(hit == -2)
+        gridSel = -1;
+    if(gridSel < 0 || hit >= 0)
+        return;
+    // Details of the selected ware: name, number and the store setting
+    const GridCell& cell = cells[static_cast<size_t>(gridSel)];
+    const Rect2 pc = popover(selR, area, app.dp(26) + app.dp(44));
+    ui.sprite(cell.icon, {pc.x, pc.y, app.dp(24), app.dp(24)});
+    ui.text(pc.x + app.dp(32), pc.y + app.dp(3), cell.name + " · " + cell.value + " im Lager", app.dp(14), ui.theme.text,
+            gfx::Align::Left, true);
+    int sel = cell.mark;
+    if(ui.segmented(id("wh.set"), {pc.x, pc.y + app.dp(30), pc.w, app.dp(40)}, {"Normal", "Einlagern", "Auslagern", "Stopp"},
+                    sel))
+    {
+        static const EInventorySetting modes[] = {EInventorySetting::Collect, EInventorySetting::Send,
+                                                 EInventorySetting::Stop};
+        const auto& w = what[static_cast<size_t>(gridSel)];
+        s.SetInventorySetting(sheetPt, w, sel == 0 ? InventorySetting() : InventorySetting(modes[sel - 1]));
+        // Settlers only leave for another store (without one they stay here)
+        if(sel == 2 && boost::variant2::holds_alternative<Job>(w) && player().getBuildingRegister().getStorehouses().size() < 2)
+            toast("Kein anderes Lager da: " + cell.name + " geht erst hinaus, wenn eines steht");
     }
 }
 
@@ -1016,9 +1163,16 @@ void Hud::Impl::sheetHelp(const Rect2& r)
       {"Zoomen", "Zwei Finger auseinander/zusammen, Doppeltipp vergrößert. Maus: Rad."},
       {"Zurück", "Tipp mit zwei Fingern, Rechtsklick oder Esc schließt Menüs und bricht Aktionen ab."},
       {"Bauen", "Bauplatz antippen: Kreismenü mit passenden Gebäuden, zuletzt benutzte zuerst."},
-      {"Straßen", "Von einer Flagge aus ziehen, der Weg folgt dem Finger. Flaggen werden automatisch gesetzt. "
+      {"Straßen", "Von einer Flagge aus ziehen, der Weg folgt dem Finger; wo der Finger endet, kommt eine Flagge "
+                  "hin. Zurück auf die Startflagge bricht ab. Unten: Abbrechen, mit Flaggen dazwischen bauen, bauen. "
+                  "Das Ende der Straße antippen: dort Flagge setzen und weiterbauen, bauen oder abbrechen. "
                   "Neue Gebäude werden mit der nächsten Flagge verbunden (abschaltbar), im Flaggenmenü "
                   "verbindet „Verbinden“ eine Flagge auf kürzestem Weg."},
+      {"Karte", "Antippen springt, Finger halten und ziehen führt die Ansicht mit. Darunter Ebenen ein- und "
+                "ausblenden und die kleine Karte unten links einschalten."},
+      {"Bauplätze", "Dreieck: kleines Gebäude, Haus mit Schornstein: mittleres, Burg: großes, Hacke: Mine."},
+      {"Lager", "Alle Waren auf einen Blick. Eine Ware antippen: Einlagern, Auslagern oder Stopp. Leute gehen "
+                "nur hinaus, wenn ein anderes Lager sie aufnimmt."},
       {"Angriff", "Feindliches Militärgebäude antippen, Anzahl der Soldaten wählen, Angreifen."},
       {"Schiffe", "Eigenes Schiff antippen: Expeditionen steuern, Kolonie gründen."},
       {"Gebäude", "Antippen öffnet Details: Produktion, Soldaten, Lager, Abriss."},

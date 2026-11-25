@@ -41,6 +41,19 @@ void Minimap::init(const GameWorldViewer& gwv)
     update(size_.y);
 }
 
+void Minimap::setLayers(unsigned layers)
+{
+    if(layers == layers_)
+        return;
+    layers_ = layers;
+    // Redraw at once (a toggle must show right away)
+    if(gwv_)
+    {
+        nextRow_ = 0;
+        update(size_.y);
+    }
+}
+
 void Minimap::invalidateAll()
 {
     nextRow_ = 0;
@@ -53,7 +66,9 @@ uint32_t Minimap::nodeColor(MapPoint pt) const
     if(vis == Visibility::Invisible)
         return rgba(12, 13, 14);
     const MapNode& node = world.getNode(pt);
-    const uint32_t terrain = world.getDescription().get(node.t1).minimapColor;
+    const auto& desc = world.getDescription().get(node.t1);
+    const bool water = desc.kind == TerrainKind::Water;
+    const uint32_t terrain = (layers_ & (water ? Water : Terrain)) ? desc.minimapColor : 0x5A5C58;
     unsigned r = (terrain >> 16) & 0xFF, g = (terrain >> 8) & 0xFF, b = terrain & 0xFF;
     // Shading from the terrain (light from the west)
     const float shade = std::clamp(static_cast<float>(node.shadow) / 64.f, 0.55f, 1.25f);
@@ -65,9 +80,10 @@ uint32_t Minimap::nodeColor(MapPoint pt) const
     if(owner)
     {
         const unsigned pc = world.getPlayer(owner - 1).color;
-        c = mixColor(pc, r, g, b, 0.35f);
+        if(layers_ & Territory)
+            c = mixColor(pc, r, g, b, 0.35f);
         const noBase* obj = vis == Visibility::Visible ? node.obj : nullptr;
-        if(obj)
+        if(obj && (layers_ & Buildings))
         {
             const GO_Type t = obj->getGOT();
             if(t == GO_Type::NobUsual || t == GO_Type::NobMilitary || t == GO_Type::NobStorehouse
@@ -75,8 +91,11 @@ uint32_t Minimap::nodeColor(MapPoint pt) const
                 c = mixColor(pc, 255, 255, 255, 0.75f);
         }
         bool road = false;
-        for(const RoadDir dir : helpers::EnumRange<RoadDir>{})
-            road |= gwv_->getVisibleRoad(pt, dir, vis) != PointRoad::None;
+        if(layers_ & Roads)
+        {
+            for(const RoadDir dir : helpers::EnumRange<RoadDir>{})
+                road |= gwv_->getVisibleRoad(pt, dir, vis) != PointRoad::None;
+        }
         if(road)
             c = rgba(214, 196, 160);
     }
@@ -158,10 +177,9 @@ Rect2 Minimap::exploredRegion() const
     return r;
 }
 
-Rect2 Minimap::draw(Batch& batch, const Rect2& area, float alpha)
+Rect2 Minimap::fit(const Rect2& area)
 {
     shown_ = exploredRegion();
-    // Pixel aspect: one node is 2 texture pixels wide, 1 high
     const float aspect = shown_.w * 2 / shown_.h;
     float w = area.w, h = area.w / aspect;
     if(h > area.h)
@@ -169,7 +187,12 @@ Rect2 Minimap::draw(Batch& batch, const Rect2& area, float alpha)
         h = area.h;
         w = h * aspect;
     }
-    const Rect2 r{area.x + (area.w - w) / 2, area.y + (area.h - h) / 2, w, h};
+    return {area.x + (area.w - w) / 2, area.y + (area.h - h) / 2, w, h};
+}
+
+Rect2 Minimap::draw(Batch& batch, const Rect2& area, float alpha)
+{
+    const Rect2 r = fit(area);
     const float u0 = shown_.x / static_cast<float>(size_.x), v0 = shown_.y / static_cast<float>(size_.y);
     const float u1 = shown_.right() / static_cast<float>(size_.x), v1 = shown_.bottom() / static_cast<float>(size_.y);
     batch.quad(tex_.id(), r.x, r.y, r.right(), r.bottom(), u0, v0, u1, v1, Color{1, 1, 1, alpha});

@@ -18,13 +18,15 @@ class App;
 /// Commands (one per line, coordinates in pixels or percent of the screen, e.g. "50%"):
 ///   wait <frames> | sec <seconds> | tap x y | longpress x y | drag x0 y0 x1 y1 [frames] |
 ///   pinch cx cy d0 d1 [frames] | twotap x y | click x y [right] | wheel x y delta | key <name> |
+///   down x y | move x y [frames] | up x y (one finger held across commands) |
 ///   text <string> | shot <file.png> | resize w h | rename <from> <to> | log <text> | quit
 /// Extra commands: waitfor <point> [frames] | tapfirst <point>... | tapopt <point>... | labels | perf [frames] [label] |
 ///   perfasync [frames] [label] (measure while the next commands run) | overdraw [heatmap.png] |
 ///   failshots <dir> | game <screen command> [args]
 /// Game screen commands: ff <gf> | speed <1..8> | center hq|found|ship|mil|bld:<name>|x,y | zoom <z> | findbq <flag|small|medium|large|mine>
 ///   [from=hq|found|enemy] [min=<n>] [mil] [near=tree|granite|water|mountain] | findenemy | dump [mine] | node x,y |
-///   expect connected|nothing found | gameover win|lose|team <mask>
+///   expect connected|nothing found | gameover win|lose|team <mask> | mark (camera, own flags) |
+///   expect moved|still|flags <delta>|flagsmin <n> (since mark) | expect road <parts>|noroad|cornermap on|off|layers <mask>
 /// Instead of "x y" a symbolic point can be given: ui:<label>[#n] (button label, spaces as '_', trailing '*' for a
 /// prefix, icon buttons as ui:icon:Name) or a point the current screen knows (game: node:x,y, hq:dx,dy,
 /// bld:<name>[#n], mil: = own military building with the most soldiers, ...).
@@ -61,6 +63,7 @@ private:
     std::string waitFor_, failDir_;
     int failCount_ = 0;
     int waitForFrames_ = 0;
+    float fingerX_ = 0, fingerY_ = 0; // last position of down/move
 };
 
 } // namespace weiler

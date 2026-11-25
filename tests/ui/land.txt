@@ -44,6 +44,7 @@ shot shots/L_trans.png
 key Escape
 key Escape
 key Escape
+wait 5
 tap ui:icon:Map
 wait 20
 shot shots/L_map.png

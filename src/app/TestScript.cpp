@@ -135,7 +135,7 @@ bool TestScript::execute(const std::string& line)
     while(ss >> tok)
         a.push_back(tok);
     auto num = [&](size_t i, float def) { return i < a.size() ? std::stof(a[i]) : def; };
-    static const char* const pointCmds[] = {"tap", "longpress", "drag", "pinch", "twotap", "click", "wheel"};
+    static const char* const pointCmds[] = {"tap", "longpress", "drag", "pinch", "twotap", "click", "wheel", "down", "move", "up"};
     if(std::find(std::begin(pointCmds), std::end(pointCmds), cmd) != std::end(pointCmds) && !expand(a))
     {
         exitCode_ = 4;
@@ -199,7 +199,27 @@ bool TestScript::execute(const std::string& line)
             waitFrames_ = static_cast<int>(num(0, 1));
         else if(cmd == "sec")
             waitFrames_ = static_cast<int>(num(0, 1) * 60);
-        else if(cmd == "tap" || cmd == "longpress")
+        else if(cmd == "down" || cmd == "move" || cmd == "up")
+        {
+            // Single finger steps: hold the finger and check things in between (move: in <frames> steps)
+            const float x = coord(a.at(0), false), y = coord(a.at(1), true);
+            if(cmd == "move")
+            {
+                const int frames = static_cast<int>(num(2, 10));
+                for(int i = 1; i <= frames; ++i)
+                {
+                    const float t = static_cast<float>(i) / frames;
+                    finger(SDL_EVENT_FINGER_MOTION, 1, fingerX_ + (x - fingerX_) * t, fingerY_ + (y - fingerY_) * t, i);
+                }
+                waitFrames_ = frames + 2;
+            } else
+            {
+                finger(cmd == "down" ? SDL_EVENT_FINGER_DOWN : SDL_EVENT_FINGER_UP, 1, x, y, 0);
+                waitFrames_ = 2;
+            }
+            fingerX_ = x;
+            fingerY_ = y;
+        } else if(cmd == "tap" || cmd == "longpress")
         {
             const float x = coord(a.at(0), false), y = coord(a.at(1), true);
             const int hold = cmd == "tap" ? 3 : 50;

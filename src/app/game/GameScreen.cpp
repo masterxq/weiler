@@ -44,6 +44,7 @@
 #include "s25util/Log.h"
 #include <boost/filesystem.hpp>
 #include <algorithm>
+#include "nodeObjs/noFlag.h"
 #include <cmath>
 
 namespace bfs = boost::filesystem;
@@ -786,6 +787,46 @@ bool GameScreen::testCommand(const std::string& cmd, const std::vector<std::stri
         std::cout << std::endl;
         return true;
     }
+    auto ownFlags = [&] {
+        unsigned n = 0;
+        const MapExtent size = world.getSize();
+        for(MapCoord y = 0; y < size.y; ++y)
+        {
+            for(MapCoord x = 0; x < size.x; ++x)
+            {
+                const auto* flag = world.getSpecObj<noFlag>(MapPoint(x, y));
+                n += flag && flag->getPlayer() == meId;
+            }
+        }
+        return n;
+    };
+    if(cmd == "mark")
+    {
+        // Remember camera and number of own flags for "expect moved|still|flags <n>"
+        testMarkX_ = view_.cam.x;
+        testMarkY_ = view_.cam.y;
+        testMarkFlags_ = ownFlags();
+        return true;
+    }
+    if(cmd == "expect" && (arg(0) == "moved" || arg(0) == "still" || arg(0) == "flags" || arg(0) == "flagsmin"))
+    {
+        bool ok;
+        const int newFlags = static_cast<int>(ownFlags()) - static_cast<int>(testMarkFlags_);
+        if(arg(0) == "flags")
+            ok = newFlags == std::stoi(arg(1));
+        else if(arg(0) == "flagsmin")
+            ok = newFlags >= std::stoi(arg(1));
+        else
+        {
+            const bool moved = std::abs(view_.cam.x - testMarkX_) > 2 || std::abs(view_.cam.y - testMarkY_) > 2;
+            ok = moved == (arg(0) == "moved");
+        }
+        std::cout << "[script] expect " << arg(0) << " " << arg(1) << ": " << (ok ? "ok" : "no") << " (flags "
+                  << ownFlags() << ", marked " << testMarkFlags_ << ")" << std::endl;
+        return ok;
+    }
+    if(cmd == "expect" && (arg(0) == "road" || arg(0) == "noroad" || arg(0) == "cornermap" || arg(0) == "layers"))
+        return hud_->testExpect(arg(0), arg(1));
     if(cmd == "expect")
     {
         // expect connected found: the flag of the building at "found" has a road; expect nothing found: no building

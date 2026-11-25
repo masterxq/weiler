@@ -103,6 +103,9 @@ public:
     /// Clickable area without drawing (rows of lists)
     bool area(Id i, const Rect2& r);
     bool pressed(Id i, const Rect2& r) const;
+    /// Press that started on the area (and the area was on top there): true while the finger is down and in the
+    /// frame of its release; x/y get the current (or release) position. For maps that follow a drag at once.
+    bool track(Id i, const Rect2& r, float& x, float& y);
     /// Long press on an area (fires once)
     bool longPress(Id i, const Rect2& r);
     bool slider(Id i, const Rect2& r, float& value, float lo = 0, float hi = 1, float step = 0);

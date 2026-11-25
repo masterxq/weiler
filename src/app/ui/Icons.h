@@ -60,6 +60,10 @@ enum class Icon
     Sound,
     Touch,
     Lock,
+    /// Building sizes (solid silhouettes, readable when small): hut, house with chimney, castle
+    BqSmall,
+    BqMedium,
+    BqLarge,
     Count
 };
 

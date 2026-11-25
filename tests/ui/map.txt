@@ -1,0 +1,73 @@
+log 2: a dialog over the map wins, the map does not jump
+wait 10
+game center hq
+wait 3
+game findbq flag hq min=4
+tap found:
+wait 10
+tap ui:ring:Flagge
+wait 10
+game ff 20
+tap found:
+wait 10
+tap ui:ring:Abreißen
+wait 10
+key m
+wait 10
+shot shots/map_confirm.png
+game mark
+tap ui:OK
+wait 10
+game expect still
+shot shots/map_after_ok.png
+log 6: holding and dragging on the map moves the view at once
+game center hq
+wait 5
+game mark
+down ui:map
+wait 3
+move 90% 25% 12
+game expect moved
+game mark
+move 70% 20% 12
+game expect moved
+up 70% 20%
+wait 5
+game center hq
+wait 5
+shot shots/map_drag.png
+log 9: layers of the map
+tap ui:map:Gebiet
+wait 5
+tap ui:map:Gelände
+wait 5
+game expect layers 26
+shot shots/map_layers.png
+tap ui:map:Gebiet
+tap ui:map:Gelände
+wait 5
+game expect layers 31
+log 10: small map in the corner: tap and drag on it, the world around it still pans
+tap ui:map:Minikarte
+wait 5
+key Escape
+wait 10
+game expect cornermap on
+game center hq
+wait 5
+shot shots/corner.png
+game mark
+tap ui:cornermap
+wait 5
+game expect moved
+game mark
+down ui:cornermap
+move 2% 70% 10
+game expect moved
+up 2% 70%
+wait 5
+game mark
+drag 50% 40% 60% 50% 10
+wait 5
+game expect moved
+quit

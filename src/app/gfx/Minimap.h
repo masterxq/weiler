@@ -16,12 +16,26 @@ namespace weiler::gfx {
 class Minimap
 {
 public:
+    /// Layers that can be switched off (bit mask)
+    enum Layer : unsigned
+    {
+        Terrain = 1,   // colors of the land (off: neutral grey)
+        Water = 2,     // colors of water (off: neutral grey)
+        Territory = 4, // player colors of the territories
+        Buildings = 8,
+        Roads = 16,
+        AllLayers = 31
+    };
+    void setLayers(unsigned layers);
+    unsigned layers() const { return layers_; }
     void init(const GameWorldViewer& gwv);
     /// Update a part of the image (call every frame)
     void update(unsigned rows = 8);
     void invalidateAll();
     /// Draw the explored part of the map into rect; returns the used rectangle (aspect kept)
     Rect2 draw(Batch& batch, const Rect2& area, float alpha = 1.f);
+    /// The rectangle draw() would use (updates the shown part)
+    Rect2 fit(const Rect2& area);
     /// Part of the map shown by the last draw, in nodes: the explored area with a margin (the whole map once most
     /// of it is explored)
     const Rect2& shownNodes() const { return shown_; }
@@ -39,6 +53,7 @@ private:
     Rect2 shown_;
     Rect2 exploredRegion() const;
     bool dirty_ = false;
+    unsigned layers_ = AllLayers;
 };
 
 } // namespace weiler::gfx

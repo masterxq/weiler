@@ -208,45 +208,35 @@ void Hud::Impl::sheetStats(const Rect2& r)
         if(ui.textWidth(head, app.dp(12)) > chart.w - app.dp(80))
             head = "Erzeugt: " + std::to_string(std::count(names.begin(), names.end(), ',') + 1) + " Gruppen";
         ui.text(chart.right() - app.dp(10), chart.y + app.dp(7), head, app.dp(12), ui.theme.textDim, gfx::Align::Right);
-    } else if(sheetTab == 2 || sheetTab == 3)
+    } else if(sheetTab == 2)
     {
-        float y = ui.beginScroll(id("stats.scroll", static_cast<uint64_t>(sheetTab)), body);
-        const float y0 = y;
-        const float rowH = app.dp(40);
-        if(sheetTab == 2)
+        // All own building types at a glance (number, building sites as "+n")
+        const BuildingCount bc = player().getBuildingRegister().getBuildingNums();
+        std::vector<GridCell> cells;
+        for(unsigned i = 0; i < helpers::NumEnumValues_v<BuildingType>; ++i)
         {
-            const BuildingCount bc = player().getBuildingRegister().getBuildingNums();
-            for(unsigned i = 0; i < helpers::NumEnumValues_v<BuildingType>; ++i)
-            {
-                const auto bt = static_cast<BuildingType>(i);
-                if(bc.buildings[bt] == 0 && bc.buildingSites[bt] == 0)
-                    continue;
-                buildingIcon(player().nation, bt, {body.x, y + app.dp(2), app.dp(36), app.dp(36)});
-                ui.text(body.x + app.dp(46), y + app.dp(10), buildingName(bt), app.dp(14), ui.theme.text);
-                std::string cnt = std::to_string(bc.buildings[bt]);
-                if(bc.buildingSites[bt])
-                    cnt += " (+" + std::to_string(bc.buildingSites[bt]) + ")";
-                ui.text(body.right() - app.dp(8), y + app.dp(10), cnt, app.dp(14), ui.theme.textDim, gfx::Align::Right);
-                y += rowH;
-            }
-        } else
-        {
-            const Inventory& inv = player().getInventory();
-            static const Job ranks[] = {Job::Private, Job::PrivateFirstClass, Job::Sergeant, Job::Officer, Job::General};
-            for(Job j : ranks)
-            {
-                ui.sprite(src(LOADER.getJobTex(j)), {body.x, y + app.dp(2), app.dp(36), app.dp(36)});
-                ui.text(body.x + app.dp(46), y + app.dp(10), jobName(j), app.dp(14), ui.theme.text);
-                ui.text(body.right() - app.dp(8), y + app.dp(10), std::to_string(inv[j]), app.dp(14), ui.theme.textDim,
-                        gfx::Align::Right);
-                y += rowH;
-            }
-            ui.text(body.x, y + app.dp(10),
-                    "Militärgebäude: " + std::to_string(player().getBuildingRegister().getMilitaryBuildings().size()),
-                    app.dp(14), ui.theme.text);
-            y += rowH;
+            const auto bt = static_cast<BuildingType>(i);
+            if(bc.buildings[bt] == 0 && bc.buildingSites[bt] == 0)
+                continue;
+            std::string cnt = std::to_string(bc.buildings[bt]);
+            if(bc.buildingSites[bt])
+                cnt += "+" + std::to_string(bc.buildingSites[bt]);
+            const ISpriteSource* pic = LOADER.getNationIcon(player().nation, bt);
+            if(!pic)
+                pic = src(LOADER.getBuildingTex(player().nation, bt));
+            cells.push_back({pic, cnt, buildingName(bt), 0, bc.buildings[bt] == 0});
         }
-        ui.endScroll(y - y0);
+        infoGrid(id("stats.bld"), body, cells, " (+ im Bau)");
+    } else
+    {
+        const Inventory& inv = player().getInventory();
+        std::vector<GridCell> cells;
+        for(Job j : SOLDIER_JOBS)
+            cells.push_back({src(LOADER.getJobTex(j)), std::to_string(inv[j]), jobName(j), 0, inv[j] == 0});
+        const ISpriteSource* pic = LOADER.getNationIcon(player().nation, BuildingType::Barracks);
+        cells.push_back({pic, std::to_string(player().getBuildingRegister().getMilitaryBuildings().size()),
+                         "Militärgebäude", 0, false});
+        infoGrid(id("stats.mil"), body, cells, "");
     }
 }
 
@@ -391,37 +381,53 @@ void Hud::Impl::sheetTools(const Rect2& r)
     static const GoodType toolWares[] = {GoodType::Tongs,      GoodType::Hammer, GoodType::Axe,     GoodType::Saw,
                                          GoodType::PickAxe,    GoodType::Shovel, GoodType::Crucible, GoodType::RodAndLine,
                                          GoodType::Scythe,     GoodType::Cleaver, GoodType::Rollingpin, GoodType::Bow};
-    float y = ui.beginScroll(id("tools.scroll"), c);
-    const float y0 = y;
-    unsigned i = 0;
-    for(const auto tool : helpers::enumRange<Tool>())
+    ui.text(c.x, c.y, "Zahl = Vorrang (0 bis 10), antippen zum Ändern", app.dp(12.5f), ui.theme.textDim);
+    // As in the original: defaults, or no tools at all (bottom row)
+    const float bh = app.dp(44);
+    const Rect2 area{c.x, c.y + app.dp(24), c.w, c.h - app.dp(24) - bh - app.dp(10)};
+    const Inventory& inv = player().getInventory();
+    std::vector<GridCell> cells;
+    for(unsigned i = 0; i < std::size(toolWares); ++i)
     {
-        const GoodType gt = toolWares[i];
-        ui.sprite(src(LOADER.getWareTex(gt)), {c.x, y + app.dp(5), app.dp(32), app.dp(32)});
-        ui.text(c.x + app.dp(40), y + app.dp(11), wareName(gt), app.dp(14), ui.theme.text);
-        float v = edit.tools_settings[tool];
-        const float sx = c.x + std::min(app.dp(160), c.w * 0.42f);
-        if(ui.slider(id("tool", i), {sx, y, c.right() - sx, app.dp(42)}, v, 0, 10, 1))
-        {
-            edit.tools_settings[tool] = static_cast<uint8_t>(v);
-            game.session().ChangeTools(edit.tools_settings);
-        }
-        y += app.dp(46);
-        ++i;
+        const unsigned prio = edit.tools_settings[static_cast<Tool>(i)];
+        cells.push_back({src(LOADER.getWareTex(toolWares[i])), std::to_string(prio), wareName(toolWares[i]), 0, prio == 0});
     }
-    // As in the original: defaults, or no tools at all
-    const float half = (c.w - app.dp(8) - app.dp(10)) / 2, by = y;
-    if(defaultsButton(c.x, y, half))
+    if(gridSel >= static_cast<int>(cells.size()))
+        gridSel = -1;
+    Rect2 selR;
+    const int hit = cellGrid(id("tools.grid"), area, cells, gridSel, &selR);
+    if(hit >= 0)
+        gridSel = hit == gridSel ? -1 : hit;
+    else if(hit == -2)
+        gridSel = -1;
+    // The buttons follow the grid, the sheet fits its content
+    const float half = (c.w - app.dp(10)) / 2, by = std::min(gridBottom, area.bottom()) + app.dp(10);
+    fit(r, by + bh);
+    if(ui.button(id("defaults", static_cast<uint64_t>(sheet)), {c.x, by, half, bh}, "Standardwerte"))
     {
         edit.tools_settings = GamePlayer::getStandardToolSettings();
         game.session().ChangeTools(edit.tools_settings);
     }
-    if(ui.button(id("tools.zero"), {c.x + half + app.dp(10), by + app.dp(10), half, app.dp(48)}, "Alle auf 0"))
+    if(ui.button(id("tools.zero"), {c.x + half + app.dp(10), by, half, bh}, "Alle auf 0"))
     {
         edit.tools_settings = ToolSettings{};
         game.session().ChangeTools(edit.tools_settings);
     }
-    ui.endScroll(y - y0);
+    if(gridSel < 0 || hit >= 0)
+        return;
+    // Priority of the selected tool
+    const auto tool = static_cast<Tool>(gridSel);
+    const GoodType gt = toolWares[gridSel];
+    const Rect2 pc = popover(selR, area, app.dp(26) + app.dp(44));
+    ui.sprite(src(LOADER.getWareTex(gt)), {pc.x, pc.y, app.dp(24), app.dp(24)});
+    ui.text(pc.x + app.dp(32), pc.y + app.dp(3), std::string(wareName(gt)) + " · " + std::to_string(inv[gt]) + " im Lager",
+            app.dp(14), ui.theme.text, gfx::Align::Left, true);
+    float v = edit.tools_settings[tool];
+    if(ui.slider(id("tool", static_cast<uint64_t>(gridSel)), {pc.x, pc.y + app.dp(28), pc.w, app.dp(42)}, v, 0, 10, 1))
+    {
+        edit.tools_settings[tool] = static_cast<uint8_t>(v);
+        game.session().ChangeTools(edit.tools_settings);
+    }
 }
 
 void Hud::Impl::sheetMilitary(const Rect2& r)
@@ -455,48 +461,54 @@ void Hud::Impl::sheetMilitary(const Rect2& r)
 
 void Hud::Impl::sheetInventory(const Rect2& r)
 {
+    tallSheet = true;
+    wideSheet = true;
     const Rect2 c = sheetHeader(r, "Inventar", Icon::Boxes);
     static const std::vector<std::string> tabs = {"Waren", "Leute"};
-    ui.segmented(id("inv.tab"), {c.x, c.y, c.w, app.dp(40)}, tabs, sheetTab);
-    const Rect2 view{c.x, c.y + app.dp(50), c.w, c.h - app.dp(50)};
+    if(ui.segmented(id("inv.tab"), {c.x, c.y, c.w, app.dp(38)}, tabs, sheetTab))
+        gridSel = -1;
+    const Rect2 area{c.x, c.y + app.dp(46), c.w, c.h - app.dp(46)};
     const Inventory& inv = player().getInventory();
-    float y = ui.beginScroll(id("inv.scroll", static_cast<uint64_t>(sheetTab)), view);
-    const float y0 = y;
-    const float cell = app.dp(78);
-    const int cols = std::max(1, static_cast<int>(view.w / cell));
-    const float cw = view.w / static_cast<float>(cols);
-    int n = 0;
-    auto cellAt = [&](int k) {
-        return Rect2{view.x + static_cast<float>(k % cols) * cw, y + static_cast<float>(k / cols) * app.dp(84), cw,
-                     app.dp(80)};
-    };
+    // Everything at a glance: symbol and number, the name on tap
+    std::vector<GridCell> cells;
     if(sheetTab == 0)
     {
         for(const auto gt : helpers::enumRange<GoodType>())
         {
-            if(hiddenWare(world(), gt))
-                continue;
-            const Rect2 cr = cellAt(n++);
-            ui.sprite(src(LOADER.getWareTex(gt)), {cr.x + cr.w / 2 - app.dp(18), cr.y + app.dp(4), app.dp(36), app.dp(36)});
-            ui.text(cr.x + cr.w / 2, cr.y + app.dp(42), std::to_string(inv[gt]), app.dp(15), ui.theme.text,
-                    gfx::Align::Center, true);
-            ui.text(cr.x + cr.w / 2, cr.y + app.dp(60), wareName(gt), app.dp(10.5f), ui.theme.textDim, gfx::Align::Center);
+            if(!hiddenWare(world(), gt))
+                cells.push_back({src(LOADER.getWareTex(gt)), std::to_string(inv[gt]), wareName(gt), 0, inv[gt] == 0});
         }
     } else
     {
         for(const auto j : helpers::enumRange<Job>())
         {
-            if(j == Job::BoatCarrier || hiddenJob(world(), j))
-                continue;
-            const Rect2 cr = cellAt(n++);
-            ui.sprite(src(LOADER.getJobTex(j)), {cr.x + cr.w / 2 - app.dp(18), cr.y + app.dp(4), app.dp(36), app.dp(36)});
-            ui.text(cr.x + cr.w / 2, cr.y + app.dp(42), std::to_string(inv[j]), app.dp(15), ui.theme.text,
-                    gfx::Align::Center, true);
-            ui.text(cr.x + cr.w / 2, cr.y + app.dp(60), jobName(j), app.dp(10.5f), ui.theme.textDim, gfx::Align::Center);
+            if(j != Job::BoatCarrier && !hiddenJob(world(), j))
+                cells.push_back({src(LOADER.getJobTex(j)), std::to_string(inv[j]), jobName(j), 0, inv[j] == 0});
         }
     }
-    ui.endScroll(static_cast<float>((n + cols - 1) / cols) * app.dp(84) + (y - y0));
+    infoGrid(id("inv.grid", static_cast<uint64_t>(sheetTab)), area, cells, " in den Lagern");
 }
 
+void Hud::Impl::infoGrid(Id gid, const Rect2& area, const std::vector<GridCell>& cells, const std::string& suffix)
+{
+    if(gridSel >= static_cast<int>(cells.size()))
+        gridSel = -1;
+    Rect2 selR;
+    const int hit = cellGrid(gid, area, cells, gridSel, &selR);
+    if(hit >= 0)
+        gridSel = hit == gridSel ? -1 : hit;
+    else if(hit == -2)
+        gridSel = -1;
+    if(gridSel < 0 || hit >= 0)
+        return;
+    const GridCell& cell = cells[static_cast<size_t>(gridSel)];
+    const Rect2 pc = popover(selR, area, app.dp(26));
+    ui.sprite(cell.icon, {pc.x, pc.y, app.dp(24), app.dp(24)});
+    ui.text(pc.x + app.dp(32), pc.y + app.dp(3), cell.name + " · " + cell.value + suffix, app.dp(14), ui.theme.text,
+            gfx::Align::Left, true);
+    // A tap on the details closes them
+    if(ui.area(id("grid.info"), pc.inset(-app.dp(12))))
+        gridSel = -1;
+}
 
 } // namespace weiler

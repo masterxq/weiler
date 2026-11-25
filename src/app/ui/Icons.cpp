@@ -245,6 +245,24 @@ Shape design(Icon icon)
               .rrectLine(13, 12.5f, 7.5f, 7.5f, 1.5f, W)
               .rrectLine(8.25f, 3.5f, 7.5f, 7.5f, 1.5f, W);
             break;
+        case Icon::BqSmall:
+            // Small hut: a plain gable, nothing else
+            s.poly({{3.5f, 20.5f}, {12, 6}, {20.5f, 20.5f}});
+            break;
+        case Icon::BqMedium:
+            // House: walls, roof and chimney, door cut out
+            s.poly({{3.5f, 20.5f}, {3.5f, 11}, {12, 3.5f}, {20.5f, 11}, {20.5f, 20.5f}})
+              .rrect(15, 4, 3, 6, 0.5f)
+              .rrect(10, 14.5f, 4, 6, 1, true);
+            break;
+        case Icon::BqLarge:
+            // Castle: wide block with battlements and a gate
+            s.rrect(2, 9, 20, 12, 1)
+              .rrect(2, 4.5f, 4.5f, 6, 0.5f)
+              .rrect(9.75f, 4.5f, 4.5f, 6, 0.5f)
+              .rrect(17.5f, 4.5f, 4.5f, 6, 0.5f)
+              .rrect(9.5f, 14, 5, 7.5f, 2.5f, true);
+            break;
         case Icon::Pick:
             s.seg(12, 8, 12, 21, W).path({{3.5f, 10}, {7, 6.5f}, {12, 5}, {17, 6.5f}, {20.5f, 10}}, W);
             break;
@@ -333,7 +351,7 @@ Shape design(Icon icon)
 
 const char* iconName(Icon icon)
 {
-    static const char* const names[] = {"None", "Menu", "Close", "Back", "Pause", "Play", "Fast", "Road", "Flag", "Build", "House", "Grid", "Map", "Home", "Store", "Mail", "Chart", "Gear", "Save", "Folder", "Sword", "Shield", "Tools", "Sliders", "List", "Boxes", "Pick", "Eye", "Ship", "Trash", "Up", "Down", "Check", "Plus", "Minus", "Info", "Help", "People", "Power", "Target", "Coin", "Hand", "Trophy", "Exit", "Next", "Music", "Sound", "Touch", "Lock"};
+    static const char* const names[] = {"None", "Menu", "Close", "Back", "Pause", "Play", "Fast", "Road", "Flag", "Build", "House", "Grid", "Map", "Home", "Store", "Mail", "Chart", "Gear", "Save", "Folder", "Sword", "Shield", "Tools", "Sliders", "List", "Boxes", "Pick", "Eye", "Ship", "Trash", "Up", "Down", "Check", "Plus", "Minus", "Info", "Help", "People", "Power", "Target", "Coin", "Hand", "Trophy", "Exit", "Next", "Music", "Sound", "Touch", "Lock", "BqSmall", "BqMedium", "BqLarge"};
     static_assert(std::size(names) == static_cast<size_t>(Icon::Count));
     const auto i = static_cast<size_t>(icon);
     return i < std::size(names) ? names[i] : "?";

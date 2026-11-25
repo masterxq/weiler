@@ -88,6 +88,8 @@ private:
     std::shared_future<bool> saving_;
     double lastAutosave_ = 0;
     MapPoint testFound_ = MapPoint::invalid();
+    float testMarkX_ = 0, testMarkY_ = 0;
+    unsigned testMarkFlags_ = 0;
     friend class Hud;
 };
 

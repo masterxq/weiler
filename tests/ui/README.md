@@ -14,6 +14,9 @@ working folder that contains a `shots/` directory, with a separate user data fol
 | `sheets.txt`, `misc.txt`, `build.txt` | `--map DATA/MAPS4/KARTE01.WLD --ais 1` | ring, road, sheets, pause, speed, back gesture |
 | `taps.txt` | as above | taps of frequent actions (build and connect, stop production, tear down a site) |
 | `save.txt` | as above | save slots, quick save/load |
+| `road.txt` | as above | road without flags between, with flags from the road bar, choices at the road end, drag back cancels |
+| `map.txt` | as above, `--size 2400x1080` | dialog over the map wins, map follows a held finger, layers, small corner map |
+| `grids.txt` | as above, portrait and landscape | store, inventory, tools, statistics as grids; building size marks and badges |
 | `camp.txt` | main menu | campaign missions |
 | `land.txt` | main menu, `--size 2400x1080` or `1920x1080` | landscape layout |
 | `attack.txt` | `--map DATA/MAPS3/AKARTE01.WLD --ais 1 --warmup 60000 --autoplay` | attack sheet, garrison (troop limits, exchange) |
@@ -37,5 +40,9 @@ between frames) is off in the test mode unless `WEILER_TEST_PACING=1` is set.
 Test hooks of the game data screen: `game dialog <folder>|cancel|fail` delivers the result of the folder dialog (the
 test mode opens no real dialog; `fail` opens the own folder browser), `game expect missing|unreachable|browse|busy|idle`
 checks its state; `rename <from> <to>` moves a folder (a removable medium that disappears or comes back).
+
+Finger steps `down x y`, `move x y [frames]`, `up x y` hold one finger across commands (checks while holding).
+`game mark` remembers the camera and the number of own flags; `game expect moved|still|flags <n>|flagsmin <n>`
+compares with it; `game expect road <parts>|noroad|cornermap on|off|layers <mask>` checks the interface state.
 
 Failures are printed as `[script] FAIL`, the exit code is 4 then. Commands are listed in `src/app/TestScript.h`.

@@ -10,6 +10,7 @@
 #include "GameScreen.h"
 #include "Hud.h"
 #include "ui/Ui.h"
+#include "gameTypes/BuildingQuality.h"
 #include "gameTypes/BuildingType.h"
 #include "gameTypes/Direction.h"
 #include "gameTypes/MapCoordinates.h"
@@ -28,6 +29,7 @@ class GameWorldBase;
 class ITexture;
 class ISpriteSource;
 class noBase;
+class nobBaseWarehouse;
 class PostBox;
 
 namespace weiler {
@@ -73,7 +75,11 @@ struct RingItem
         DestroyRoad,
         UpgradeRoad,
         Connect,
-        More
+        More,
+        // At the end of a road being built
+        RoadSetFlag,
+        RoadFinish,
+        RoadCancel
     } kind;
     BuildingType bt = BuildingType::Headquarters;
     std::string label;
@@ -93,6 +99,17 @@ struct Grid
         ++n;
         return {area.x + static_cast<float>(c) * (w + gap), area.y + static_cast<float>(r) * (h + gap), w, h};
     }
+};
+
+/// One cell of a dense symbol grid (stores, inventory, tools, statistics)
+struct GridCell
+{
+    const ISpriteSource* icon = nullptr;
+    std::string value; // shown below the symbol
+    std::string name;  // test label and title of the details
+    /// Store setting: 0 normal, 1 collect, 2 send out, 3 stop
+    int mark = 0;
+    bool dim = false; // nothing there
 };
 
 /// Wares, jobs and buildings of disabled addons (and internal goods) are not shown
@@ -149,7 +166,13 @@ struct Hud::Impl
     };
     std::vector<NameLabel> nameLabels;
     void drawNameLabels();
+    /// Map panel (big map) and the small map in the bottom left corner (remembered), shared layers
     bool showMinimap = false;
+    bool cornerMap = false;
+    ui::Rect2 cornerMapRect; // empty when not shown
+    void setMapLayers(unsigned layers);
+    /// Map point under a screen point of a drawn map; moves the camera there
+    void centerFromMap(const ui::Rect2& mapRect, float x, float y);
     bool hasSelection = false;
     MapPoint selected;
     struct Ring
@@ -209,10 +232,6 @@ struct Hud::Impl
     unsigned jumpIndex = 0;
     int msgBadge = 0;
     bool roadFromDrag = false;
-    // Minimap panel taps
-    ui::Rect2 minimapRect;
-    bool minimapTap = false;
-    float minimapTapX = 0, minimapTapY = 0, minimapDownX = -1, minimapDownY = -1;
 
     std::unique_ptr<Tutorial> tutorial;
 
@@ -244,14 +263,18 @@ struct Hud::Impl
     double pendingConnectTime = 0;
     bool extendRoadTo(MapPoint pt);
     void truncateRoadAt(MapPoint pt);
-    void buildRoad();
+    /// Build the planned road; withFlags: flags on every second node along it
+    void buildRoad(bool withFlags = false);
     void cancelRoad();
+    /// Choices at the end of the road being built (tap on its end)
+    void openRoadEndRing();
     void drawWorldOverlay(MapPoint pt, PointF pos);
     void drawRing();
     void drawTopBar();
     void drawTools();
     void drawRoadBar();
     void drawMinimapPanel();
+    void drawCornerMap();
     void drawToasts();
     void checkMessages();
 
@@ -260,6 +283,8 @@ struct Hud::Impl
     void sheetGameMenu(const ui::Rect2& r);
     void sheetBuild(const ui::Rect2& r);
     void sheetBuilding(const ui::Rect2& r);
+    /// Store sheet: wares and people as a dense grid, the setting of a ware on tap; soldier reserve
+    void sheetStore(const ui::Rect2& r, const nobBaseWarehouse& wh);
     void sheetFlag(const ui::Rect2& r);
     void sheetMessages(const ui::Rect2& r);
     void sheetStats(const ui::Rect2& r);
@@ -287,9 +312,26 @@ struct Hud::Impl
     bool tapShip(MapPoint pt);
     /// Icon of a building type from the game data (own symbol if the data has none)
     void buildingIcon(Nation nation, BuildingType bt, const ui::Rect2& r, float alpha = 1);
+    /// Dense grid of symbols with a value; all cells fit into area if possible, otherwise it scrolls.
+    /// Returns the tapped cell, -2 for a tap on the free area, -1 otherwise; selRect gets the selected cell.
+    int cellGrid(ui::Id gid, const ui::Rect2& area, const std::vector<GridCell>& cells, int selected,
+                 ui::Rect2* selRect = nullptr);
+    /// Small panel at a cell (details and options of the selected cell); returns its content rect
+    ui::Rect2 popover(const ui::Rect2& anchor, const ui::Rect2& bounds, float contentH);
+    /// Grid with the name and number of a cell on tap (no options)
+    void infoGrid(ui::Id gid, const ui::Rect2& area, const std::vector<GridCell>& cells, const std::string& suffix);
+    /// Bottom of the last drawn grid (fitting sheets to it)
+    float gridBottom = 0;
+    /// Selected cell of the current grid (-1 none)
+    int gridSel = -1;
     /// Title row with close button; returns the remaining content rect
     ui::Rect2 sheetHeader(const ui::Rect2& r, const std::string& title, ui::Icon icon = ui::Icon::None);
 };
+
+/// Symbol of a building size (small, medium, large, mine, harbor)
+ui::Icon sizeIcon(BuildingQuality size);
+/// Small round badge with the size symbol (corner of building pictures)
+void sizeBadge(ui::Ui& ui, BuildingQuality size, float cx, float cy, float d, float alpha = 1);
 
 /// Buildings that the local player can place at pt
 std::vector<BuildingType> fittingBuildings(const Hud::Impl& h, MapPoint pt);

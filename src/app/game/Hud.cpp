@@ -65,6 +65,29 @@ bool addonAllows(const GlobalGameSettings& ggs, BuildingType bt)
 }
 } // namespace
 
+Icon sizeIcon(BuildingQuality size)
+{
+    switch(size)
+    {
+        case BuildingQuality::Hut: return Icon::BqSmall;
+        case BuildingQuality::House: return Icon::BqMedium;
+        case BuildingQuality::Castle: return Icon::BqLarge;
+        case BuildingQuality::Mine: return Icon::Pick;
+        case BuildingQuality::Harbor: return Icon::Ship;
+        default: return Icon::None;
+    }
+}
+
+void sizeBadge(Ui& ui, BuildingQuality size, float cx, float cy, float d, float alpha)
+{
+    const Icon ic = sizeIcon(size);
+    if(ic == Icon::None)
+        return;
+    ui.batch().circle(cx, cy, d / 2, ui.theme.panelSolid.withAlpha(0.92f * alpha));
+    ui.batch().circle(cx, cy, d / 2, ui.theme.accent.withAlpha(0.6f * alpha), 1.f, ui.dp(1));
+    ui.icon(ic, cx, cy, d * 0.7f, ui.theme.accent.withAlpha(alpha));
+}
+
 /// Buildings that can be placed at pt by the local player
 std::vector<BuildingType> fittingBuildings(const Hud::Impl& h, MapPoint pt)
 {
@@ -91,6 +114,30 @@ Hud::Impl::Impl(GameScreen& g, App& a) : game(g), app(a), ui(a.ui())
 {
     lastInput = app.time();
     showNames = app.settings().getBool("show.names");
+    cornerMap = app.settings().getBool("map.corner");
+    game.minimap().setLayers(static_cast<unsigned>(app.settings().getInt("map.layers", gfx::Minimap::AllLayers)));
+}
+
+void Hud::Impl::setMapLayers(unsigned layers)
+{
+    game.minimap().setLayers(layers);
+    app.settings().setInt("map.layers", static_cast<int>(layers));
+}
+
+void Hud::Impl::centerFromMap(const Rect2& mr, float x, float y)
+{
+    // The map shows a part of the world (the explored area): world pixels of that part
+    auto& view = game.view();
+    const Rect2& shown = game.minimap().shownNodes();
+    const MapExtent size = world().getSize();
+    const float nodeW = view.mapWidthPx() / static_cast<float>(size.x), nodeH = view.mapHeightPx() / static_cast<float>(size.y);
+    const float sx = mr.w / (shown.w * nodeW), sy = mr.h / (shown.h * nodeH);
+    x = std::clamp(x, mr.x, mr.right());
+    y = std::clamp(y, mr.y, mr.bottom());
+    view.cam.x = shown.x * nodeW + (x - mr.x) / sx - view.cam.viewW() / 2;
+    view.cam.y = shown.y * nodeH + (y - mr.y) / sy - view.cam.viewH() / 2;
+    view.normalize();
+    velX = velY = 0;
 }
 
 Hud::Impl::~Impl()
@@ -155,6 +202,7 @@ void Hud::Impl::openSheet(SheetKind k, MapPoint pt, bool push)
     sheet = k;
     sheetPt = pt;
     sheetTab = 0;
+    gridSel = -1;
     ring.open = false;
     if(tutorial)
         tutorial->onSheet(k);
@@ -166,6 +214,7 @@ void Hud::Impl::closeSheet()
     {
         sheet = sheetStack.back();
         sheetStack.pop_back();
+        gridSel = -1;
         fitH = -1;
         tallSheet = false;
         wideSheet = false;
@@ -234,7 +283,10 @@ void Hud::Impl::onTap(float x, float y)
     if(road.active)
     {
         if(pt == road.point)
+        {
+            openRoadEndRing();
             return;
+        }
         // Tap on the planned route removes the rest of it
         MapPoint cur = road.start;
         for(size_t i = 0; i < road.route.size(); ++i)
@@ -542,6 +594,17 @@ void Hud::Impl::activateRingItem(const RingItem& item)
             break;
         }
         case RingItem::Kind::More: openSheet(SheetKind::Build, pt); break;
+        case RingItem::Kind::RoadSetFlag:
+        {
+            // Flag at the end, the road so far is built and the next one starts there
+            const MapPoint end = road.point;
+            buildRoad();
+            if(!road.active)
+                startRoad(end, road.water);
+            break;
+        }
+        case RingItem::Kind::RoadFinish: buildRoad(); break;
+        case RingItem::Kind::RoadCancel: cancelRoad(); break;
     }
 }
 
@@ -604,7 +667,7 @@ void Hud::Impl::truncateRoadAt(MapPoint pt)
     road.point = pt;
 }
 
-void Hud::Impl::buildRoad()
+void Hud::Impl::buildRoad(bool withFlags)
 {
     if(!road.active)
         return;
@@ -613,11 +676,20 @@ void Hud::Impl::buildRoad()
         cancelRoad();
         return;
     }
+    // The core needs two parts at least and a flag (or room for one) at the end
+    const noBase* endObj = world().getNO(road.point);
+    const bool endFlag = endObj && endObj->getType() == NodalObjectType::Flag;
+    if(road.route.size() < 2 || (!endFlag && game.viewer().getBQ(road.point) == BuildingQuality::Nothing))
+    {
+        toast(road.route.size() < 2 ? "Die Straße ist zu kurz" : "Am Ende passt keine Flagge. Zieh weiter.");
+        app.audio().playUi(UiSound::Error);
+        return;
+    }
     Session& s = game.session();
     s.BuildRoad(road.start, road.water, road.route);
-    // Flags along the road (every second node), executed after the road is built
+    // Flags along the road (every second node) only on request; executed after the road is built
     MapPoint cur = road.start;
-    for(size_t i = 0; i + 1 < road.route.size(); ++i)
+    for(size_t i = 0; withFlags && i + 1 < road.route.size(); ++i)
     {
         cur = world().getNeighbour(cur, road.route[i]);
         if(i % 2 == 1)
@@ -703,6 +775,28 @@ bool Hud::Impl::autoConnect(MapPoint flag)
     return true;
 }
 
+void Hud::Impl::openRoadEndRing()
+{
+    ring.items.clear();
+    const noBase* endObj = world().getNO(road.point);
+    const bool endFlag = endObj && endObj->getType() == NodalObjectType::Flag;
+    const bool buildable = road.route.size() >= 2
+                           && (endFlag || game.viewer().getBQ(road.point) != BuildingQuality::Nothing);
+    if(buildable && !endFlag)
+        ring.items.push_back({RingItem::Kind::RoadSetFlag, BuildingType::Headquarters, "Flagge"});
+    if(buildable)
+        ring.items.push_back({RingItem::Kind::RoadFinish, BuildingType::Headquarters, "Übernehmen"});
+    ring.items.push_back({RingItem::Kind::RoadCancel, BuildingType::Headquarters, "Abbrechen"});
+    ring.open = true;
+    ring.pt = road.point;
+    ring.openTime = app.time();
+    const PointF sp = game.view().worldToScreen(game.view().worldPosNear(road.point));
+    const float R = app.dp(100);
+    auto keepIn = [](float v, float lo, float hi) { return lo > hi ? (lo + hi) / 2 : std::clamp(v, lo, hi); };
+    ring.sx = keepIn(sp.x, R + app.dp(44), static_cast<float>(app.width()) - R - app.dp(44));
+    ring.sy = keepIn(sp.y, R + app.dp(70), static_cast<float>(app.height()) - R - app.dp(56));
+}
+
 void Hud::Impl::cancelRoad()
 {
     if(!road.active)
@@ -743,32 +837,24 @@ void Hud::Impl::drawWorldOverlay(MapPoint pt, PointF pos)
         const BuildingQuality bq = gwv.getBQ(pt);
         if(bq != BuildingQuality::Nothing && gwv.getVisibility(pt) == Visibility::Visible)
         {
-            const Color fill = ui.theme.accent.withAlpha(0.9f * a);
-            const Color dark = Color::rgb(0x000000, 0.45f * a);
-            switch(bq)
+            const Color fill = ui.theme.accent.withAlpha(0.95f * a);
+            const Color dark = Color::rgb(0x000000, 0.5f * a);
+            // Zoomed out the marks keep a readable size on screen (at most about half a node wide)
+            const float k = std::clamp(app.dp(6.5f) / (9.f * game.view().cam.zoom), 1.f, 2.2f);
+            if(bq == BuildingQuality::Flag)
             {
-                case BuildingQuality::Flag:
-                    b.circle(pos.x, pos.y - 2, 3.2f, dark);
-                    b.circle(pos.x, pos.y - 2, 2.2f, fill);
-                    break;
-                case BuildingQuality::Hut:
-                case BuildingQuality::House:
-                case BuildingQuality::Castle:
-                {
-                    const float sz = bq == BuildingQuality::Hut ? 9 : (bq == BuildingQuality::House ? 12 : 15);
-                    b.circle(pos.x, pos.y - sz / 2, sz * 0.62f, dark);
-                    app.icons().draw(b, Icon::House, pos.x, pos.y - sz / 2, sz, fill);
-                    break;
-                }
-                case BuildingQuality::Mine:
-                    b.circle(pos.x, pos.y - 6, 7.5f, dark);
-                    app.icons().draw(b, Icon::Pick, pos.x, pos.y - 6, 12, fill);
-                    break;
-                case BuildingQuality::Harbor:
-                    b.circle(pos.x, pos.y - 7, 9, dark);
-                    app.icons().draw(b, Icon::Ship, pos.x, pos.y - 7, 14, fill);
-                    break;
-                default: break;
+                b.circle(pos.x, pos.y - 2 * k, 3.2f * k, dark);
+                b.circle(pos.x, pos.y - 2 * k, 2.2f * k, fill);
+            } else
+            {
+                // Each size has its own silhouette (hut, house, castle) and grows with the size
+                const float sz = k * (bq == BuildingQuality::Hut    ? 10.f :
+                                      bq == BuildingQuality::House  ? 13.f :
+                                      bq == BuildingQuality::Castle ? 17.f :
+                                                                      13.f);
+                const float cy = pos.y - sz / 2;
+                b.roundRect({pos.x - sz * 0.62f, cy - sz * 0.56f, sz * 1.24f, sz * 1.08f}, sz * 0.3f, dark);
+                app.icons().draw(b, sizeIcon(bq), pos.x, cy, sz, fill);
             }
         }
     }
@@ -857,7 +943,10 @@ void Hud::Impl::drawRing()
         if(p > 0.01f)
             b.circle(cx, cy, bs / 2, th.surfacePressed.withAlpha(th.surfacePressed.a * p));
         if(item.kind == RingItem::Kind::Building)
+        {
             buildingIcon(nation, item.bt, r.inset(bs * 0.15f), alphaI);
+            sizeBadge(ui, BUILDING_SIZE[item.bt], r.right() - bs * 0.12f, r.y + bs * 0.12f, bs * 0.34f, alphaI);
+        }
         else
         {
             Icon ic = Icon::Info;
@@ -873,9 +962,13 @@ void Hud::Impl::drawRing()
                 case RingItem::Kind::DestroyRoad: ic = Icon::Trash; break;
                 case RingItem::Kind::UpgradeRoad: ic = Icon::Up; break;
                 case RingItem::Kind::More: ic = Icon::Grid; break;
+                case RingItem::Kind::RoadSetFlag: ic = Icon::Flag; break;
+                case RingItem::Kind::RoadFinish: ic = Icon::Check; break;
+                case RingItem::Kind::RoadCancel: ic = Icon::Close; break;
                 default: break;
             }
-            const bool destroy = item.kind == RingItem::Kind::DestroyFlag || item.kind == RingItem::Kind::DestroyRoad;
+            const bool destroy = item.kind == RingItem::Kind::DestroyFlag || item.kind == RingItem::Kind::DestroyRoad
+                                 || item.kind == RingItem::Kind::RoadCancel;
             ui.icon(ic, cx, cy, bs * 0.42f, (destroy ? th.danger : th.text).withAlpha(alphaI));
         }
         // Label
@@ -920,13 +1013,18 @@ void Hud::Impl::drawTopBar()
     const std::string speed = game.paused() ? "Pause" : std::to_string(game.speedFactor()) + "×";
     // In landscape the side panel takes the right edge
     const float W = landscape() && sheet != SheetKind::None ? sheetRect().x : static_cast<float>(app.width());
-    const float pillW = app.dp(116) + s * 3;
+    // Without room next to the menu button (wide side panel) the clock is left out
+    const bool withClock = W - m - (app.dp(116) + s * 3) >= m + s + m;
+    const float pillW = (withClock ? app.dp(116) : app.dp(8)) + s * 3;
     const Rect2 pill{W - m - pillW, top, pillW, s};
     ui.panel(pill, s / 2, ui.theme.glass, a);
-    ui.text(pill.x + app.dp(20), pill.y + app.dp(6), clock, app.dp(16), ui.theme.text.withAlpha(a), gfx::Align::Left,
-            true);
-    ui.text(pill.x + app.dp(20), pill.y + app.dp(26), speed, app.dp(12),
-            (game.paused() ? ui.theme.accent : ui.theme.textDim).withAlpha(a), gfx::Align::Left, game.paused());
+    if(withClock)
+    {
+        ui.text(pill.x + app.dp(20), pill.y + app.dp(6), clock, app.dp(16), ui.theme.text.withAlpha(a),
+                gfx::Align::Left, true);
+        ui.text(pill.x + app.dp(20), pill.y + app.dp(26), speed, app.dp(12),
+                (game.paused() ? ui.theme.accent : ui.theme.textDim).withAlpha(a), gfx::Align::Left, game.paused());
+    }
     float bx = pill.right() - s * 3;
     if(ui.iconButton(id("speed"), {bx, top, s, s}, Icon::Fast, game.speedFactor() > 1, 0, Style::Flat))
         game.setSpeedFactor(game.speedFactor() >= 8 ? 1 : game.speedFactor() * 2);
@@ -1021,10 +1119,19 @@ void Hud::Impl::drawRoadBar()
             gfx::Align::Left, true);
     ui.text(r.x + app.dp(22), r.y + app.dp(33), std::to_string(road.route.size()) + " Abschnitte", app.dp(13),
             ui.theme.textDim);
-    if(ui.iconButton(id("road.cancel"), {r.right() - bs * 2 - app.dp(16), r.y + app.dp(6), bs, bs}, Icon::Close))
+    // Cancel, build with flags along the road, build (plain road, the default)
+    const Rect2 cancelR{r.right() - bs * 3 - app.dp(22), r.y + app.dp(6), bs, bs};
+    const Rect2 flagsR{r.right() - bs * 2 - app.dp(14), r.y + app.dp(6), bs, bs};
+    const Rect2 okR{r.right() - bs - app.dp(6), r.y + app.dp(6), bs, bs};
+    if(ui.iconButton(id("road.cancel"), cancelR, Icon::Close))
         cancelRoad();
-    if(ui.iconButton(id("road.ok"), {r.right() - bs - app.dp(6), r.y + app.dp(6), bs, bs}, Icon::Check, true))
+    ui.tag("Abbrechen", cancelR);
+    if(ui.iconButton(id("road.flags"), flagsR, Icon::Flag, false, 0, Style::Normal))
+        buildRoad(true);
+    ui.tag("Übernehmen mit Flaggen", flagsR);
+    if(ui.iconButton(id("road.ok"), okR, Icon::Check, true))
         buildRoad();
+    ui.tag("Übernehmen", okR);
 }
 
 void Hud::Impl::drawMinimapPanel()
@@ -1033,42 +1140,112 @@ void Hud::Impl::drawMinimapPanel()
         return;
     const float m = app.dp(10);
     const float W = static_cast<float>(app.width());
-    // Left of the tool column, below the top bar
+    // Left of the tool column, below the top bar; the layer switches below the map
     const float right = (landscape() && sheet != SheetKind::None ? sheetRect().x : W) - m - app.dp(52) - m;
-    const float w = std::min(right - m, app.dp(landscape() ? 300 : 340));
-    const float h = std::min(w * 0.62f, static_cast<float>(app.height()) - app.dp(86));
-    const Rect2 panelR{right - w, m + app.dp(58), w, h};
+    const float w = std::min(right - m, app.dp(landscape() ? 320 : 340));
+    const float chipH = app.dp(32), chipGap = app.dp(6);
+    const float chipsH = 2 * chipH + chipGap + app.dp(10);
+    const float mapH = std::min(w * 0.62f, static_cast<float>(app.height()) - app.dp(86) - chipsH - app.dp(16));
+    const Rect2 panelR{right - w, m + app.dp(58), w, mapH + chipsH + app.dp(16)};
     ui.panel(panelR, app.dp(ui.theme.radius.lg));
-    const Rect2 inner = panelR.inset(app.dp(8));
+    const Rect2 inner{panelR.x + app.dp(8), panelR.y + app.dp(8), panelR.w - app.dp(16), mapH};
     auto& b = app.batch();
     const Rect2 mr = game.minimap().draw(b, inner);
-    // The minimap shows a part of the map (the explored area): world pixels of that part
+    // The camera's view on the map
     auto& view = game.view();
     const Rect2& shown = game.minimap().shownNodes();
     const MapExtent size = world().getSize();
     const float nodeW = view.mapWidthPx() / static_cast<float>(size.x), nodeH = view.mapHeightPx() / static_cast<float>(size.y);
-    const float ox = shown.x * nodeW, oy = shown.y * nodeH;
     const float sx = mr.w / (shown.w * nodeW), sy = mr.h / (shown.h * nodeH);
-    const Rect2 vr{mr.x + (view.cam.x - ox) * sx, mr.y + (view.cam.y - oy) * sy, view.cam.viewW() * sx,
-                   view.cam.viewH() * sy};
-    app.batch().setClip(mr);
+    const Rect2 vr{mr.x + (view.cam.x - shown.x * nodeW) * sx, mr.y + (view.cam.y - shown.y * nodeH) * sy,
+                   view.cam.viewW() * sx, view.cam.viewH() * sy};
+    b.setClip(mr);
     b.roundRect(vr, app.dp(2), Color::rgb(0xFFFFFF, 0.9f), 1.f, app.dp(1.5f));
-    app.batch().setClip({});
-    if(ui.area(id("minimap"), mr) || (ui.hasCapture() && ui.pressed(id("minimap"), mr)))
+    b.setClip({});
+    // Tap jumps, holding and dragging follows the finger at once (only presses that start on the map)
+    ui.tag("map", mr);
+    float px, py;
+    if(ui.track(id("minimap"), mr, px, py))
+        centerFromMap(mr, px, py);
+    // Layers and the small map in the corner
+    struct Chip
     {
-        // Jump: use the press position
-    }
-    if(minimapTap)
+        const char* label;
+        unsigned layer; // 0: corner map
+    };
+    static const Chip chips[] = {{"Gelände", gfx::Minimap::Terrain},   {"Wasser", gfx::Minimap::Water},
+                                 {"Gebiet", gfx::Minimap::Territory},  {"Gebäude", gfx::Minimap::Buildings},
+                                 {"Straßen", gfx::Minimap::Roads},     {"Ecke", 0}};
+    const float cw = (inner.w - 2 * chipGap) / 3;
+    const float cy0 = inner.y + mapH + app.dp(10);
+    const unsigned layers = game.minimap().layers();
+    for(unsigned i = 0; i < std::size(chips); ++i)
     {
-        minimapTap = false;
-        if(mr.contains(minimapTapX, minimapTapY))
+        const Rect2 cr{inner.x + static_cast<float>(i % 3) * (cw + chipGap), cy0 + static_cast<float>(i / 3) * (chipH + chipGap),
+                       cw, chipH};
+        const bool on = chips[i].layer ? (layers & chips[i].layer) != 0 : cornerMap;
+        const float p = ui.anim(id("mapchip.p", i), ui.pressed(id("mapchip", i), cr) ? 1.f : 0.f, ui.theme.motion.fast);
+        b.roundRect(cr, chipH / 2, on ? ui.theme.accent.withAlpha(0.28f + 0.1f * p) : Color::rgb(0xFFFFFF, 0.05f + 0.08f * p));
+        b.roundRect(cr, chipH / 2, on ? ui.theme.accent.withAlpha(0.7f) : ui.theme.line, 1.f, app.dp(1));
+        const std::string label = chips[i].layer ? chips[i].label : "Minikarte";
+        float fs = app.dp(12.5f);
+        const float tw = ui.textWidth(label, fs, true);
+        const float iconW = chips[i].layer ? 0.f : app.dp(16);
+        if(tw + iconW > cr.w - app.dp(12))
+            fs *= (cr.w - app.dp(12) - iconW) / tw;
+        const float textW = ui.textWidth(label, fs, true);
+        const float tx = cr.x + (cr.w - textW - iconW) / 2;
+        if(iconW > 0)
+            ui.icon(Icon::Map, tx + app.dp(6), cr.y + chipH / 2, app.dp(13), on ? ui.theme.accent : ui.theme.textDim);
+        ui.text(tx + iconW, cr.y + (chipH - fs * 1.3f) / 2, label, fs, on ? ui.theme.text : ui.theme.textDim,
+                gfx::Align::Left, true);
+        ui.tag(std::string("map:") + label, cr);
+        if(ui.area(id("mapchip", i), cr))
         {
-            view.cam.x = ox + (minimapTapX - mr.x) / sx - view.cam.viewW() / 2;
-            view.cam.y = oy + (minimapTapY - mr.y) / sy - view.cam.viewH() / 2;
-            view.normalize();
+            if(chips[i].layer)
+                setMapLayers(layers ^ chips[i].layer);
+            else
+            {
+                cornerMap = !cornerMap;
+                app.settings().setBool("map.corner", cornerMap);
+            }
         }
     }
-    minimapRect = mr;
+}
+
+void Hud::Impl::drawCornerMap()
+{
+    cornerMapRect = {};
+    // Only while the big map is closed; in portrait a sheet covers the corner; the ring is modal
+    if(!cornerMap || showMinimap || ring.open || (!landscape() && sheet != SheetKind::None))
+        return;
+    const float m = app.dp(10), pad = app.dp(4);
+    const float H = static_cast<float>(app.height());
+    // Above the road bar while a road is built in portrait (the bar takes the bottom)
+    const float bottom = H - m - (road.active && !landscape() ? app.dp(64) + app.dp(16) : 0.f);
+    const float boxW = app.dp(landscape() ? 150 : 124), boxH = app.dp(landscape() ? 100 : 92);
+    const Rect2 fitted = game.minimap().fit({0, 0, boxW, boxH});
+    const Rect2 mr{m + pad, bottom - pad - fitted.h, fitted.w, fitted.h};
+    const Rect2 panelR{mr.x - pad, mr.y - pad, mr.w + 2 * pad, mr.h + 2 * pad};
+    const float a = std::max(0.75f, alpha());
+    ui.panel(panelR, app.dp(ui.theme.radius.md), ui.theme.glass, a);
+    auto& b = app.batch();
+    game.minimap().draw(b, mr, a);
+    auto& view = game.view();
+    const Rect2& shown = game.minimap().shownNodes();
+    const MapExtent size = world().getSize();
+    const float nodeW = view.mapWidthPx() / static_cast<float>(size.x), nodeH = view.mapHeightPx() / static_cast<float>(size.y);
+    const float sx = mr.w / (shown.w * nodeW), sy = mr.h / (shown.h * nodeH);
+    const Rect2 vr{mr.x + (view.cam.x - shown.x * nodeW) * sx, mr.y + (view.cam.y - shown.y * nodeH) * sy,
+                   view.cam.viewW() * sx, view.cam.viewH() * sy};
+    b.setClip(mr);
+    b.roundRect(vr, app.dp(1.5f), Color::rgb(0xFFFFFF, 0.85f * a), 1.f, app.dp(1));
+    b.setClip({});
+    ui.tag("cornermap", mr);
+    float px, py;
+    if(ui.track(id("cornermap"), panelR, px, py))
+        centerFromMap(mr, px, py);
+    cornerMapRect = panelR;
 }
 
 void Hud::Impl::drawToasts()
@@ -1089,7 +1266,9 @@ void Hud::Impl::drawToasts()
     const bool besideTools = landscape() || sheet != SheetKind::None;
     const float edge = landscape() && sheet != SheetKind::None ? sheetRect().x : W;
     const float right = besideTools ? edge - 2 * m - app.dp(52) : W - m;
-    const float bandX = m, bandW = right - m;
+    // Toasts at the bottom stay right of the small map
+    const float left = cornerMapRect.w > 0 && y > cornerMapRect.y ? cornerMapRect.right() + m : m;
+    const float bandX = left, bandW = right - left;
     for(auto it = toasts.rbegin(); it != toasts.rend(); ++it)
     {
         const float age = static_cast<float>(now - it->time);
@@ -1227,6 +1406,7 @@ void Hud::draw()
     s.drawTopBar();
     s.drawTools();
     s.drawMinimapPanel();
+    s.drawCornerMap();
     s.drawRoadBar();
     s.drawSheet();
     s.drawRing();
@@ -1255,19 +1435,7 @@ void Hud::onPointer(const PointerEvent& ev)
         if(ev.type == PointerEvent::Type::Move && ev.button == 0 && s.fingers.empty())
             return;
     }
-    // Minimap taps are handled here because the minimap is drawn after the event
-    if(ev.type == PointerEvent::Type::Up && s.showMinimap && s.minimapRect.contains(ev.x, ev.y)
-       && s.minimapRect.contains(s.minimapDownX, s.minimapDownY))
-    {
-        s.minimapTap = true;
-        s.minimapTapX = ev.x;
-        s.minimapTapY = ev.y;
-    }
-    if(ev.type == PointerEvent::Type::Down)
-    {
-        s.minimapDownX = ev.x;
-        s.minimapDownY = ev.y;
-    }
+    // Maps and other overlays take their presses through the UI (hit test by drawing order)
     if(s.ui.pointer(ev))
         return;
     switch(ev.type)
@@ -1390,11 +1558,21 @@ void Hud::onPointer(const PointerEvent& ev)
                     s.cancelRoad();
                     if(s.roadFromDrag && !s.gestureMoved)
                         s.onTap(f.x, f.y);
+                } else if(!s.gestureMoved)
+                {
+                    // A tap on the end of the road: flag, build or cancel
+                    s.openRoadEndRing();
                 } else
                 {
+                    // The drag ends on a flag or on a free place for one: the road is built (a flag is set at its
+                    // end); elsewhere it stays open for more
                     const noBase* obj = s.world().getNO(s.road.point);
-                    if(obj && obj->getType() == NodalObjectType::Flag && s.road.point != s.road.start)
+                    const bool endFlag = obj && obj->getType() == NodalObjectType::Flag;
+                    if(endFlag || (s.road.route.size() >= 2
+                                   && s.game.viewer().getBQ(s.road.point) != BuildingQuality::Nothing))
                         s.buildRoad();
+                    else
+                        s.toast("Hier passt keine Flagge. Zieh weiter oder tippe das Ende an.");
                 }
                 s.roadFromDrag = false;
                 break;
@@ -1464,6 +1642,24 @@ void Hud::onKey(SDL_Keycode key, bool down)
         case SDLK_N: s.openSheet(SheetKind::Messages); break;
         default: break;
     }
+}
+
+bool Hud::testExpect(const std::string& what, const std::string& arg)
+{
+    const Impl& s = *d;
+    bool ok = false;
+    if(what == "road")
+        ok = s.road.active && std::to_string(s.road.route.size()) == arg;
+    else if(what == "noroad")
+        ok = !s.road.active;
+    else if(what == "cornermap")
+        ok = (s.cornerMapRect.w > 0) == (arg == "on");
+    else if(what == "layers")
+        ok = std::to_string(s.game.minimap().layers()) == arg;
+    else
+        return false;
+    std::cout << "[script] expect " << what << " " << arg << ": " << (ok ? "ok" : "no") << std::endl;
+    return ok;
 }
 
 bool Hud::onBack()

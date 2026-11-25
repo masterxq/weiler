@@ -288,6 +288,16 @@ bool Ui::pressed(Id, const Rect2& r) const
     return captured_ && !dragging_ && r.contains(pressX_, pressY_) && r.contains(curX_, curY_);
 }
 
+bool Ui::track(Id i, const Rect2& r, float& x, float& y)
+{
+    block(r, i);
+    if(!(captured_ || released_) || !r.contains(pressX_, pressY_) || !onTop(i))
+        return false;
+    x = captured_ ? curX_ : relX_;
+    y = captured_ ? curY_ : relY_;
+    return true;
+}
+
 bool Ui::area(Id i, const Rect2& r)
 {
     // Inside a scroll view only the visible part is clickable

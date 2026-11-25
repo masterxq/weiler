@@ -8,6 +8,7 @@
 #include "gameTypes/MapCoordinates.h"
 #include <map>
 #include <memory>
+#include <string>
 
 struct LuaMessage;
 
@@ -28,6 +29,9 @@ public:
     void onWheel(float x, float y, float delta);
     void onKey(SDL_Keycode key, bool down);
     bool onBack();
+    /// Test mode checks of the interface state: "road <n>" (road being built with n parts), "noroad",
+    /// "cornermap on|off", "layers <mask>"
+    bool testExpect(const std::string& what, const std::string& arg);
 
     void notifyDefeated(unsigned playerId);
     /// Winner announced by the core: a player index, or with team = true a bit mask of the team's players
