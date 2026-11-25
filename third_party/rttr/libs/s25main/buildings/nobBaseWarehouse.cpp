@@ -425,17 +425,28 @@ void nobBaseWarehouse::handleSendoutEvent()
         }
     }
 
+    // Weiler: figures only leave when another warehouse takes them. Without one they used to wander off (into
+    // foreign land) and get lost; they now stay and the warehouse checks again from time to time.
+    bool figuresWaiting = false;
     for(const auto i : helpers::enumRange<Job>())
     {
-        // Figuren, die noch nicht implementiert sind, nicht nehmen!
-        if(getInventorySetting(i).isSet(EInventorySetting::Send) && inventory[i])
+        if(!getInventorySetting(i).isSet(EInventorySetting::Send) || !inventory[i])
+            continue;
+        const nobBaseWarehouse* target =
+          world->getPlayer(player).findWarehouse(*this, FW::AcceptsFigureButNoSend(i), true, false);
+        if(target && target != this)
             possibleTypes.push_back(i);
+        else
+            figuresWaiting = true;
     }
 
     // Gibts überhaupt welche?
     if(possibleTypes.empty())
-        // ansonsten gleich tschüss
+    {
+        if(figuresWaiting)
+            empty_event = getEvMgr().addEvent(this, empty_INTERVAL * 20, 3);
         return;
+    }
 
     // Eine ID zufällig auswählen
     const auto selectedId = RANDOM_ELEMENT(possibleTypes);
@@ -467,7 +478,7 @@ void nobBaseWarehouse::handleSendoutEvent()
         const auto jobType = get<Job>(selectedId);
         nobBaseWarehouse* wh =
           world->getPlayer(player).findWarehouse(*this, FW::AcceptsFigureButNoSend(jobType), true, false);
-        if(wh != this)
+        if(wh && wh != this)
         {
             auto fig = std::make_unique<nofPassiveWorker>(jobType, pos, player, nullptr);
 
@@ -477,10 +488,7 @@ void nobBaseWarehouse::handleSendoutEvent()
                 inventory.real.remove(jobEnumToAmoredSoldierEnum(jobType));
             }
 
-            if(wh)
-                fig->goHome(wh);
-            else
-                fig->startWandering();
+            fig->goHome(wh);
 
             addLeavingFigure(std::move(fig));
 

@@ -15,6 +15,11 @@ add_test(NAME damaged_files
             -P ${CMAKE_CURRENT_SOURCE_DIR}/DamagedFiles.cmake)
 set_tests_properties(damaged_files PROPERTIES FIXTURES_REQUIRED savegame)
 
+# Workers outside their own territory (warehouse sends out without a target warehouse)
+add_test(NAME foreign_figures
+    COMMAND ${CMAKE_COMMAND} -DHEADLESS=$<TARGET_FILE:weiler-headless> -DDATA=${WEILER_TEST_DATA}
+            -DWORK=${CMAKE_CURRENT_BINARY_DIR}/foreign -P ${CMAKE_CURRENT_SOURCE_DIR}/ForeignFigures.cmake)
+
 # weiler-pack-data with a fake game folder (needs no game data)
 add_test(NAME pack_data
     COMMAND ${CMAKE_COMMAND} -DPACKER=${PROJECT_SOURCE_DIR}/tools/weiler-pack-data

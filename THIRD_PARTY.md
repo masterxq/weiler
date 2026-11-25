@@ -49,6 +49,9 @@ Changes against upstream:
 - `data/RTTR/campaigns/world/campaign.lua`: German spelling of the campaign name ("Weltkampagne").
 - `GamePlayer`: the default settings of a new player are available as static functions
   (`getStandardVisualSettings`, `getStandardToolSettings`, `getStandardMilitarySettings`) for the default buttons.
+- `nobBaseWarehouse::handleSendoutEvent`: figures set to "send out" only leave when another warehouse takes them.
+  Without one they used to wander off (often into foreign land) and get lost; now they stay and the warehouse checks
+  again from time to time.
 
 The game loop in `src/engine/Session.cpp` is adapted from RTTR (`extras/ai-battle`, `network/GameClient*`).
 

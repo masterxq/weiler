@@ -8,7 +8,10 @@
 #include "Session.h"
 #include "GamePlayer.h"
 #include "SerializedGameData.h"
+#include "buildings/nobBaseWarehouse.h"
+#include "figures/noFigure.h"
 #include "world/GameWorld.h"
+#include "game/Names.h"
 #include "gameData/GameConsts.h"
 #include "gameData/MaxPlayers.h"
 #include "s25util/Log.h"
@@ -21,6 +24,8 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <map>
+#include <unordered_map>
 #include <optional>
 #include <random>
 #include <vector>
@@ -96,6 +101,83 @@ int runDamageTests(const std::string& file, bool isSave, unsigned count, const D
     return 0;
 }
 
+/// Watches figures that enter the territory of another player: who they belong to, what they do and where they
+/// came from (diagnosis of workers leaving for foreign land)
+class ForeignWatch
+{
+public:
+    explicit ForeignWatch(bool verbose) : verbose_(verbose) {}
+    void scan(const Session& s)
+    {
+        const GameWorld& w = s.world();
+        const MapExtent size = w.getSize();
+        for(MapCoord y = 0; y < size.y; ++y)
+        {
+            for(MapCoord x = 0; x < size.x; ++x)
+            {
+                const MapPoint pt(x, y);
+                const unsigned owner = w.getNode(pt).owner;
+                for(const noBase& obj : w.getFigures(pt))
+                {
+                    const auto* fig = dynamic_cast<const noFigure*>(&obj);
+                    if(!fig)
+                        continue;
+                    auto [it, isNew] = seen_.try_emplace(fig->getObjId());
+                    Seen& info = it->second;
+                    if(isNew)
+                    {
+                        info.firstGF = s.getGF();
+                        info.firstPos = pt;
+                        const auto* wh = w.getSpecObj<nobBaseWarehouse>(pt);
+                        info.fromWarehouse = wh && wh->getPlayer() == fig->getPlayer();
+                    }
+                    if(info.reported || owner == fig->getPlayer() + 1u || fig->isSoldier())
+                        continue;
+                    info.reported = true;
+                    const char* state = fig->isWandering()      ? "wandert" :
+                                        fig->isDoingJobWorks()  ? "arbeitet" :
+                                        fig->isWalkingOnRoad()  ? "auf Strasse" :
+                                                                  "anderes";
+                    std::string goal = "-";
+                    if(const noRoadNode* g = fig->getGoal())
+                    {
+                        goal = "(" + std::to_string(g->getPos().x) + "," + std::to_string(g->getPos().y) + ") von P"
+                               + std::to_string(g->getPlayer());
+                        if(const auto* bld = dynamic_cast<const noBaseBuilding*>(g))
+                            goal = std::string(buildingName(bld->getBuildingType())) + " " + goal;
+                    }
+                    const std::string key = std::string(owner ? "fremd / " : "niemand / ") + jobName(fig->getJobType()) + " / " + state + " / "
+                                            + (info.fromWarehouse ? "aus Lager" : "von unterwegs");
+                    ++counts_[key];
+                    if(verbose_ || counts_[key] <= 3)
+                        std::cout << "[fremd] GF " << s.getGF() << " P" << unsigned(fig->getPlayer()) << " "
+                                  << jobName(fig->getJobType()) << " (GOT " << rttr::enumCast(fig->getGOT())
+                                  << ") " << state << " bei (" << pt.x << "," << pt.y << ") " << (owner ? "Gebiet P" + std::to_string(owner - 1) : std::string("Niemandsland"))
+                                  << ", Ziel " << goal << ", zuerst GF " << info.firstGF << " bei ("
+                                  << info.firstPos.x << "," << info.firstPos.y << ")"
+                                  << (info.fromWarehouse ? " im Lager" : "") << std::endl;
+                }
+            }
+        }
+    }
+    void summary() const
+    {
+        for(const auto& [key, n] : counts_)
+            std::cout << "[fremd-summe] " << key << ": " << n << std::endl;
+    }
+
+private:
+    struct Seen
+    {
+        unsigned firstGF = 0;
+        MapPoint firstPos;
+        bool fromWarehouse = false, reported = false;
+    };
+    bool verbose_;
+    std::unordered_map<unsigned, Seen> seen_;
+    std::map<std::string, unsigned> counts_;
+};
+
 void printStatus(const Session& s)
 {
     const auto& w = s.world();
@@ -118,7 +200,8 @@ int main(int argc, char** argv)
 {
     std::string dataDir, map, loadPath, savePath;
     unsigned numAIs = 2, seed = 1, minutes = 30, extraGFs = 0, reportEvery = 0, damageTests = 0;
-    bool printHash = false;
+    bool printHash = false, foreign = false, foreignAll = false;
+    std::vector<std::string> sendOut;
     po::options_description desc("weiler-headless options");
     desc.add_options()("help,h", "Show help")("data", po::value(&dataDir), "Folder with the original game data")(
       "map", po::value(&map), "Map file (relative paths are looked up in the game data)")(
@@ -130,6 +213,11 @@ int main(int argc, char** argv)
       "save", po::value(&savePath), "Write a savegame at the end")(
       "report", po::value(&reportEvery)->default_value(0), "Print status every N game minutes")(
       "hash", po::bool_switch(&printHash), "Print a hash of the complete game state at the end")(
+      "foreign", po::bool_switch(&foreign),
+      "Report figures (no soldiers) outside their own territory: job, state, goal, origin")(
+      "foreign-all", po::bool_switch(&foreignAll), "With --foreign: print every figure, not only 3 per kind")(
+      "send-out", po::value(&sendOut)->multitoken(),
+      "Set 'send out' for these jobs (enum numbers) in the headquarters of player 0 at the start")(
       "damage-test", po::value(&damageTests),
       "Robustness test: load N damaged copies of the --load or --map file (must fail or play, never crash)");
     po::variables_map vm;
@@ -199,15 +287,27 @@ int main(int argc, char** argv)
       std::chrono::minutes(1) / std::chrono::milliseconds(SPEED_GF_LENGTHS[GameSpeed::Normal]));
     const unsigned numGFs = vm.count("gfs") ? extraGFs : minutes * gfPerMinute;
     const unsigned targetGF = session->getGF() + numGFs;
+    for(const std::string& job : sendOut)
+    {
+        // Same command as the store sheet of the interface, executed for player 0
+        const GamePlayer& p0 = session->world().getPlayer(0);
+        session->SetInventorySetting(p0.getHQPos(), static_cast<Job>(std::stoi(job)),
+                                     InventorySetting(EInventorySetting::Send));
+    }
+    ForeignWatch watch(foreignAll);
     const auto start = std::chrono::steady_clock::now();
     while(session->getGF() < targetGF && !session->isFinished())
     {
         session->runGF();
+        if(foreign && session->getGF() % 10 == 0)
+            watch.scan(*session);
         if(reportEvery && session->getGF() % (reportEvery * gfPerMinute) == 0)
             printStatus(*session);
     }
     const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     printStatus(*session);
+    if(foreign)
+        watch.summary();
     std::cout << "Simulated " << numGFs << " GF in " << std::fixed << std::setprecision(1) << secs << " s ("
               << std::setprecision(0) << numGFs / std::max(secs, 1e-3) << " GF/s)" << std::endl;
     std::cout << "checksum " << session->checksum() << std::endl;

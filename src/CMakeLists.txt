@@ -26,7 +26,8 @@ if(WEILER_SOURCE_PATHS)
         WEILER_GAMEDATA_LIST="${PROJECT_SOURCE_DIR}/data/gamedata.list")
 endif()
 
-add_executable(weiler-headless tools/HeadlessMain.cpp)
+add_executable(weiler-headless tools/HeadlessMain.cpp app/game/Names.cpp)
+target_include_directories(weiler-headless PRIVATE app)
 target_link_libraries(weiler-headless PRIVATE weiler_engine Boost::program_options)
 
 # Game application
