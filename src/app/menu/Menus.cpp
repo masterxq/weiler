@@ -471,6 +471,7 @@ public:
         const float y0 = y;
         y += drawAudioSettings(app_, c.x, y, c.w - app_.dp(6));
         y += drawGraphicsSettings(app_, c.x, y, c.w - app_.dp(6));
+        y += drawRoadSettings(app_, c.x, y, c.w - app_.dp(6));
         y += ui_.textWrapped(c.x, y, c.w - app_.dp(6), "Spieldaten: " + app_.paths().gameData.string(), app_.dp(12),
                              ui_.theme.textFaint);
         contentH_ = y - y0;
@@ -847,6 +848,35 @@ float drawGraphicsSettings(App& app, float x, float y, float w)
                         "ruhigen Momenten 30 Bilder je Sekunde.",
                         app.dp(th.type.caption), th.textFaint)
          + app.dp(8);
+    return y - y0;
+}
+
+float drawRoadSettings(App& app, float x, float y, float w)
+{
+    auto& ui = app.ui();
+    const auto& th = ui.theme;
+    auto& st = app.settings();
+    const float y0 = y;
+    ui.text(x, y, "Straße von der Flagge ziehen", app.dp(th.type.small), th.textDim);
+    int drag = st.getInt("road.drag", 1);
+    if(ui.segmented(id("road.drag"), {x, y + app.dp(20), w, app.dp(42)}, {"Aus", "Nach Halten", "Sofort"}, drag))
+        st.setInt("road.drag", drag);
+    y += app.dp(72);
+    ui.text(x, y, "Gezogene Straße beim Loslassen bauen", app.dp(th.type.small), th.textDim);
+    int build = st.getInt("road.dragbuild", 2);
+    if(ui.segmented(id("road.dragbuild"), {x, y + app.dp(20), w, app.dp(42)}, {"Nie", "Auf Flagge", "Immer"}, build))
+        st.setInt("road.dragbuild", build);
+    y += app.dp(68);
+    y += ui.textWrapped(x, y, w,
+                        "Nach Halten: kurz auf der Flagge verweilen, dann ziehen; schnelles Wischen verschiebt nur "
+                        "die Karte. Immer: auch an einem freien Platz wird gebaut, mit einer Flagge am Ende. Sonst "
+                        "das Ende antippen.",
+                        app.dp(th.type.caption), th.textFaint)
+         + app.dp(8);
+    bool autoRoad = st.getBool("build.autoconnect", true);
+    if(ui.toggle(id("road.autoconnect"), {x, y, w, app.dp(48)}, autoRoad, "Neue Gebäude anschließen"))
+        st.setBool("build.autoconnect", autoRoad);
+    y += app.dp(56);
     return y - y0;
 }
 

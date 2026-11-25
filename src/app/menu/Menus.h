@@ -28,6 +28,8 @@ std::string reflowText(const std::string& text);
 float drawAudioSettings(App& app, float x, float y, float w);
 /// Graphics settings (glass effect, frame rate); returns the height used
 float drawGraphicsSettings(App& app, float x, float y, float w);
+/// Road building settings (drag from flags, building on release, connecting new buildings); returns the height used
+float drawRoadSettings(App& app, float x, float y, float w);
 /// Second line of a savegame entry: date, map and played time (cached per file version)
 std::string saveDescription(const boost::filesystem::path& path);
 /// Campaign progress (missions counted from 0): a mission is open when it is the first one or its predecessor is done

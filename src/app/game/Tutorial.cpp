@@ -25,8 +25,8 @@ constexpr std::array<Step, 8> STEPS = {{
   {"Zoomen", "Ziehe zwei Finger auseinander oder zusammen. Am PC geht das mit dem Mausrad."},
   {"Bauplätze", "Tippe rechts auf das Punkte-Symbol. Die Karte zeigt dann, wo Gebäude passen."},
   {"Bauen", "Tippe auf einen freien Bauplatz und wähle im Kreismenü ein Gebäude, zum Beispiel den Holzfäller."},
-  {"Straßen", "Lege den Finger auf die Flagge vor deinem neuen Gebäude und ziehe zu einer anderen Flagge. "
-              "Flaggen entlang der Straße setzt Weiler selbst."},
+  {"Straßen", "Halte den Finger kurz auf der Flagge vor deinem neuen Gebäude und ziehe dann zu einer anderen "
+              "Flagge. Weitere Flaggen setzt du durch Antippen der Straße."},
   {"Menü und Zurück", "Öffne das Menü oben links. Ein Tipp mit zwei Fingern schließt es wieder "
                       "(am PC Rechtsklick oder Esc)."},
   {"Fertig", "Mehr steckt in den Gebäuden: einfach antippen. Die Einführung findest du jederzeit im Menü "

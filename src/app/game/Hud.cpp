@@ -301,7 +301,7 @@ void Hud::Impl::onTap(float x, float y)
         if(extendRoadTo(pt))
         {
             const noBase* obj = world().getNO(road.point);
-            if(obj && obj->getType() == NodalObjectType::Flag)
+            if(obj && obj->getType() == NodalObjectType::Flag && app.settings().getInt("road.dragbuild", 2) >= 1)
                 buildRoad();
         } else
         {
@@ -579,18 +579,15 @@ void Hud::Impl::activateRingItem(const RingItem& item)
         case RingItem::Kind::DestroyRoad:
         case RingItem::Kind::UpgradeRoad:
         {
-            // Find the road direction at this point
-            for(const auto dir : helpers::EnumRange<Direction>{})
-            {
-                if(world().getPointRoad(pt, dir) != PointRoad::None)
-                {
-                    if(item.kind == RingItem::Kind::DestroyRoad)
-                        s.DestroyRoad(pt, dir);
-                    else
-                        s.UpgradeRoad(pt, dir);
-                    break;
-                }
-            }
+            // The core commands take a flag of the road and the direction from it: follow the road to its flag
+            Direction dir = Direction::East;
+            const noFlag* flag = world().getRoadFlag(pt, dir);
+            if(!flag || flag->getPlayer() != game.localPlayer())
+                break;
+            if(item.kind == RingItem::Kind::DestroyRoad)
+                s.DestroyRoad(flag->getPos(), dir);
+            else
+                s.UpgradeRoad(flag->getPos(), dir);
             break;
         }
         case RingItem::Kind::More: openSheet(SheetKind::Build, pt); break;
@@ -1362,8 +1359,23 @@ void Hud::update(double dt)
         d->velX *= decay;
         d->velY *= decay;
     }
+    // A finger held on an own flag starts a road (moving before that pans the map)
+    if(d->roadArm.isValid())
+    {
+        if(d->fingers.size() != 1 || d->gestureMoved || d->road.active || d->ring.open)
+            d->roadArm = MapPoint::invalid();
+        else if(d->app.time() - d->fingers.begin()->second.t0 > 0.25)
+        {
+            d->startRoad(d->roadArm, false);
+            d->road.fingerDrawing = true;
+            d->roadFromDrag = true;
+            d->roadArm = MapPoint::invalid();
+            d->app.audio().playUi(UiSound::Tap);
+        }
+    }
     // Long press on the world
-    if(d->fingers.size() == 1 && !d->gestureMoved && !d->longPressDone && !d->road.fingerDrawing)
+    if(d->fingers.size() == 1 && !d->gestureMoved && !d->longPressDone && !d->road.fingerDrawing
+       && !d->roadArm.isValid())
     {
         const auto& f = d->fingers.begin()->second;
         if(d->app.time() - f.t0 > 0.55)
@@ -1455,18 +1467,28 @@ void Hud::onPointer(const PointerEvent& ev)
                 const PointF sp = view.worldToScreen(view.worldPosNear(pt));
                 const bool nearNode = std::hypot(sp.x - ev.x, sp.y - ev.y) < s.app.dp(30);
                 const noBase* obj = s.world().getNO(pt);
+                // Setting road.drag: 0 off, 1 after holding the finger briefly, 2 at once
+                const int dragMode = s.app.settings().getInt("road.drag", 1);
+                s.roadArm = MapPoint::invalid();
                 if(nearNode && s.road.active && pt == s.road.point)
                     s.road.fingerDrawing = true;
-                else if(nearNode && !s.road.active && !s.ring.open && obj && obj->getType() == NodalObjectType::Flag
+                else if(dragMode > 0 && nearNode && !s.road.active && !s.ring.open && obj
+                        && obj->getType() == NodalObjectType::Flag
                         && static_cast<const noFlag*>(obj)->getPlayer() == s.game.localPlayer())
                 {
-                    s.startRoad(pt, false);
-                    s.road.fingerDrawing = true;
-                    s.roadFromDrag = true;
+                    if(dragMode == 1)
+                        s.roadArm = pt;
+                    else
+                    {
+                        s.startRoad(pt, false);
+                        s.road.fingerDrawing = true;
+                        s.roadFromDrag = true;
+                    }
                 }
             } else
             {
                 s.gestureMulti = true;
+                s.roadArm = MapPoint::invalid();
                 if(s.road.fingerDrawing)
                 {
                     s.road.fingerDrawing = false;
@@ -1549,6 +1571,7 @@ void Hud::onPointer(const PointerEvent& ev)
                 break;
             const Impl::Finger f = it->second;
             s.fingers.erase(it);
+            s.roadArm = MapPoint::invalid();
             if(s.road.fingerDrawing && ev.id == s.primaryId)
             {
                 s.road.fingerDrawing = false;
@@ -1565,12 +1588,17 @@ void Hud::onPointer(const PointerEvent& ev)
                 } else
                 {
                     // The drag ends on a flag or on a free place for one: the road is built (a flag is set at its
-                    // end); elsewhere it stays open for more
+                    // end), as far as the setting road.dragbuild wants it (0 never, 1 on flags, 2 also on free
+                    // places); otherwise it stays open for more
+                    const int buildMode = s.app.settings().getInt("road.dragbuild", 2);
                     const noBase* obj = s.world().getNO(s.road.point);
                     const bool endFlag = obj && obj->getType() == NodalObjectType::Flag;
-                    if(endFlag || (s.road.route.size() >= 2
-                                   && s.game.viewer().getBQ(s.road.point) != BuildingQuality::Nothing))
+                    const bool freeEnd = !endFlag && s.road.route.size() >= 2
+                                         && s.game.viewer().getBQ(s.road.point) != BuildingQuality::Nothing;
+                    if((endFlag && buildMode >= 1) || (freeEnd && buildMode >= 2))
                         s.buildRoad();
+                    else if(endFlag || freeEnd)
+                        s.toast("Tippe das Ende an: Flagge, Übernehmen oder Abbrechen");
                     else
                         s.toast("Hier passt keine Flagge. Zieh weiter oder tippe das Ende an.");
                 }
@@ -1649,7 +1677,7 @@ bool Hud::testExpect(const std::string& what, const std::string& arg)
     const Impl& s = *d;
     bool ok = false;
     if(what == "road")
-        ok = s.road.active && std::to_string(s.road.route.size()) == arg;
+        ok = s.road.active && (arg.empty() || std::to_string(s.road.route.size()) == arg);
     else if(what == "noroad")
         ok = !s.road.active;
     else if(what == "cornermap")

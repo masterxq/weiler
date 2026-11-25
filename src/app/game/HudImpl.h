@@ -232,6 +232,8 @@ struct Hud::Impl
     unsigned jumpIndex = 0;
     int msgBadge = 0;
     bool roadFromDrag = false;
+    /// Own flag under a finger that rests on it: the road starts once the finger is held (setting road.drag)
+    MapPoint roadArm = MapPoint::invalid();
 
     std::unique_ptr<Tutorial> tutorial;
 

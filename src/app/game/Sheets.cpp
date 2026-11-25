@@ -932,10 +932,7 @@ void Hud::Impl::sheetSettings(const Rect2& r)
     if(ui.toggle(id("set.names"), {c.x, y, c.w, app.dp(48)}, showNames, "Gebäudenamen anzeigen"))
         st.setBool("show.names", showNames);
     y += app.dp(56);
-    bool autoRoad = st.getBool("build.autoconnect", true);
-    if(ui.toggle(id("set.autoroad"), {c.x, y, c.w, app.dp(48)}, autoRoad, "Neue Gebäude anschließen"))
-        st.setBool("build.autoconnect", autoRoad);
-    y += app.dp(56);
+    y += drawRoadSettings(app, c.x, y, c.w - app.dp(8));
     bool fps = st.getBool("show.fps");
     if(ui.toggle(id("set.fps"), {c.x, y, c.w, app.dp(48)}, fps, "Bildrate anzeigen"))
         st.setBool("show.fps", fps);
