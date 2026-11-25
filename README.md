@@ -9,32 +9,71 @@ The game rules, the AI and the file formats come from [Return to the Roots](http
 renderer, music and interface sounds are new (see `THIRD_PARTY.md`). This project was developed with the help of
 AI tools.
 
+## Installation
+
+Debian packages for arm64 and amd64 (built against Debian testing) are published in the APT repository
+`codeberg.org/moblix`:
+
+    sudo curl -o /etc/apt/keyrings/forgejo-moblix.asc https://codeberg.org/api/packages/moblix/debian/repository.key
+    echo "deb [signed-by=/etc/apt/keyrings/forgejo-moblix.asc] https://codeberg.org/api/packages/moblix/debian testing main" \
+        | sudo tee /etc/apt/sources.list.d/moblix.list
+    sudo apt update
+    sudo apt install weiler
+
+The package contains the game (`/usr/games/weiler`), its own data (`/usr/share/games/weiler`), the desktop entry and
+`weiler-pack-data`. Snapshot builds of the `main` branch get versions like `0.1.0+git20261125.120000.gabcdef1`.
+
 ## Game data
 
-**Weiler needs the data of the Gold Edition**, which is not included. Copy the game folder of your installation or
-CD (the folder that contains `DATA` and `GFX`) to
+**Weiler needs the data of the Gold Edition**, which is not included. There are three ways to provide it:
 
-    ~/.local/share/weiler/S2
+- **Choose the folder in the game.** Without data Weiler asks for a folder (folder dialog of the desktop, or its own
+  touch folder browser), searches it with all sub folders for the game folder (the one that contains `DATA` and
+  `GFX`) and remembers it. If the remembered folder is on a memory card or USB stick that is not inserted, Weiler
+  shows the path and waits until you retry or choose another folder.
+- **As a package for all users:** `weiler-pack-data` builds the local package `weiler-data` from the game folder or
+  a CD image (`.iso`, `.ccd`/`.img`, `.cue`/`.bin`; needs `bchunk` and `7zip`) and installs it to
+  `/usr/share/games/weiler-data`. Without options it asks for everything:
 
-or start Weiler with `--data <folder>` or the environment variable `WEILER_DATA=<folder>`. Without data Weiler shows
-a short guide instead of the game. The music of the original CD can be imported in the settings from your own CD
-image (`.ccd`/`.img` or `.cue`/`.bin` next to the game data); it stays on your device.
+      weiler-pack-data
+      weiler-pack-data --source /media/cdrom --install
+      weiler-pack-data --source ~/S2GOLD.ccd --music --install   # with the music of the CD
+
+  Only the files Weiler loads go into the package (`data/gamedata.list`). It is for your own computer; the game data
+  must not be passed on.
+- **By hand:** copy the game folder to `~/.local/share/weiler/S2`, or start Weiler with `--data <folder>` or
+  `WEILER_DATA=<folder>`.
+
+Weiler looks in this order: `--data`, `WEILER_DATA`, the remembered folder, the package `weiler-data`,
+`~/.local/share/weiler/S2`. The music of the original CD can also be imported in the settings from a CD image next to
+the game data; it stays on your device.
 
 ## Building
 
-Debian packages: `cmake ninja-build g++ libboost-dev libboost-filesystem-dev libboost-iostreams-dev
-libboost-locale-dev libboost-nowide-dev libboost-program-options-dev liblua5.1-0-dev libbz2-dev libsdl3-dev
-libfreetype-dev libharfbuzz-dev libgles-dev libegl-dev libvorbis-dev gettext`.
+Debian packages: `cmake ninja-build g++ libboost-filesystem-dev libboost-iostreams-dev libboost-locale-dev
+libboost-nowide-dev libboost-program-options-dev liblua5.1-0-dev libbz2-dev libsdl3-dev libfreetype-dev
+libharfbuzz-dev libgles-dev libegl-dev libvorbis-dev gettext`.
 
     cmake -S . -B build -G Ninja
     ninja -C build
     ./build/src/weiler
 
-Options: `--data <folder>`, `--fullscreen`, `--size 1080x2400`, `--scale <factor>` (interface size).
-On arm64 the build is tuned for Cortex-A76/A55; `-DWEILER_ARM_TUNING=OFF` builds for any ARMv8 device.
+A development build finds its data in the source tree. `ninja -C build install` installs to the prefix
+(`-DCMAKE_INSTALL_PREFIX`, default `/usr/local`); `-DWEILER_INSTALL_BINDIR=games
+-DWEILER_INSTALL_DATADIR=share/games/weiler -DWEILER_SOURCE_PATHS=OFF` gives the Debian layout. The installed program
+finds its data relative to itself (`../share/...`), so an unpacked package runs from any folder.
 
-Tests need the game data: `cmake -S . -B build -DWEILER_TEST_DATA=<folder>`, then `ctest --test-dir build`
-(simulation, savegames, damaged files and the interface scripts in `tests/ui`, which run offscreen).
+The Debian package: `dpkg-buildpackage -b -us -uc` (`debian/`, needs `debhelper`). The workflow
+`.github/workflows/deb.yml` builds it for arm64 and amd64 in Debian testing, runs the tests that need no game data
+and lintian, and publishes builds of `main` to the APT repository (secret `CODEBERG_TOKEN`).
+
+Options: `--data <folder>`, `--fullscreen`, `--size 1080x2400`, `--scale <factor>` (interface size), `--help`.
+On arm64 a development build is tuned for Cortex-A76/A55; `-DWEILER_ARM_TUNING=OFF` builds for any ARMv8 device (the
+Debian package does).
+
+Tests: `ctest --test-dir build`. Most tests need the game data: `cmake -S . -B build -DWEILER_TEST_DATA=<folder>`
+(simulation, savegames, damaged files, the interface scripts in `tests/ui`, which run offscreen, and the game data
+dialog). `pack_data` checks `weiler-pack-data` with a fake game folder and runs without data.
 
 ## Playing
 

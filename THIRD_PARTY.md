@@ -62,7 +62,7 @@ full text in `data/fonts/OFL-Lato.txt`.
 
 ## Noto Serif Display (font)
 
-File: `data/fonts/NotoSerifDisplay-SemiBold.ttf`, taken unchanged from the Debian package `fonts-noto-core`
+File: `data/fonts/NotoSerifDisplay-SemiBold.ttf`, taken unchanged from the Debian package `fonts-noto-extra`
 (upstream https://github.com/notofonts). Used for titles and the "Weiler" word mark.
 
 Copyright 2010, 2012-2020 Google Inc. / Google LLC (as stated by Debian). License: SIL Open Font License 1.1
