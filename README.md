@@ -87,17 +87,21 @@ side (landscape).
 | Zoom | pinch, double tap zooms in | wheel |
 | Back (close a menu, cancel) | tap with two fingers | right click, Esc |
 | Build | tap a building site: ring with the buildings that fit there, recently used first | click |
-| Road | drag from a flag: the road follows the finger, flags are placed on the way | drag from a flag |
+| Road | drag from a flag: the road follows the finger; where the drag ends a flag is set (back onto the start flag cancels). The bar below builds the road plainly or with flags along it. Tap the end of the road: set a flag there and go on, build, cancel | drag from a flag |
 | Building, flag, ship | tap it | click |
 | Attack | tap an enemy military building, choose the soldiers | click |
 | Information about a place | long press | |
 | Messages | tap a message to jump to its place; the post office filters by kind and deletes | N |
 | Pause, speed (1x to 8x) | buttons at the top | Space, + and - |
-| Building sites, minimap, headquarters | buttons on the right | B, M, H |
+| Building sites, map, headquarters | buttons on the right; the map follows the finger, its layers (terrain, water, territory, buildings, roads) and a small map in the bottom left corner are switched below it | B, M, H |
 | Building names | settings | P |
 | Quick save, quick load | menu | F5, F9 |
 
-New buildings are connected to the road network automatically (can be switched off in the settings). Military
+New buildings are connected to the road network automatically (can be switched off in the settings). Building sites
+show their size by shape: hut, house with chimney, castle (also as a badge in the build menu). Stores, the inventory,
+the tool production and the statistics show everything as a grid of symbols with numbers; a tap on one shows its
+name and, in stores, its setting (store, send out, stop). Settlers are only sent out of a store when another store
+takes them. Military
 buildings limit their garrison per rank and exchange their soldiers; the economy sheets have default buttons as in
 the original. The victory condition of a free game and the own share of the land are shown in the post office. The
 introduction in the main menu shows the gestures step by step.
