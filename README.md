@@ -87,7 +87,7 @@ side (landscape).
 | Zoom | pinch, double tap zooms in | wheel |
 | Back (close a menu, cancel) | tap with two fingers | right click, Esc |
 | Build | tap a building site: ring with the buildings that fit there, recently used first | click |
-| Road | drag from a flag: the road follows the finger; where the drag ends a flag is set (back onto the start flag cancels). The bar below builds the road plainly or with flags along it. Tap the end of the road: set a flag there and go on, build, cancel | drag from a flag |
+| Road | hold a flag briefly, then drag: the road follows the finger (a quick swipe only pans the map); where the drag ends a flag is set (back onto the start flag cancels). Settings: drag off, after holding or at once; build on release never, on flags or always. The bar below builds the road plainly or with flags along it. Tap the end of the road: set a flag there and go on, build, cancel | drag from a flag |
 | Building, flag, ship | tap it | click |
 | Attack | tap an enemy military building, choose the soldiers | click |
 | Information about a place | long press | |
