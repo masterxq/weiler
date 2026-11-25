@@ -1,0 +1,93 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# The Debian package of Weiler for arm64 and amd64, built in a Debian testing container on every push to main,
+# for pull requests and on request (Actions, "Run workflow"). Each build gets a snapshot version
+# (debian/snapshot.sh), runs the tests that need no game data (dh_auto_test), lintian and the AppStream and
+# desktop file checks. A build of main is published to the APT registry codeberg.org/moblix (suite testing,
+# component main) by the reusable workflow of masterxq/pocket-debs, which also removes the previous version there;
+# builds of other branches only leave the artifacts. Needs the secret CODEBERG_TOKEN.
+# The package weiler-data (game data of the user, made by weiler-pack-data) is never built here.
+name: deb
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deb-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deb:
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+          - arch: amd64
+            runner: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
+    container: debian:testing
+    timeout-minutes: 90
+    steps:
+      - name: tools
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends ca-certificates git build-essential dpkg-dev fakeroot \
+            lintian appstream desktop-file-utils > /tmp/apt.log 2>&1 || { tail -30 /tmp/apt.log; exit 1; }
+      - uses: actions/checkout@v7
+      - id: version
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          debian/snapshot.sh testing >> "$GITHUB_OUTPUT"
+      - name: build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get build-dep -y -qq --no-install-recommends ./ > /tmp/apt.log 2>&1 || { tail -40 /tmp/apt.log; exit 1; }
+      - name: build
+        run: |
+          export DEB_BUILD_OPTIONS="noautodbgsym parallel=$(nproc)"
+          dpkg-buildpackage -b -us -uc > "$RUNNER_TEMP/build.log" 2>&1 || { tail -100 "$RUNNER_TEMP/build.log"; exit 1; }
+          grep -A3 'tests passed' "$RUNNER_TEMP/build.log" || true
+      - name: check
+        env:
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          deb=../weiler_${V}_${{ matrix.arch }}.deb
+          lintian --fail-on error --info "$deb"
+          appstreamcli validate --no-net data/desktop/io.github.masterxq.Weiler.metainfo.xml
+          dpkg-deb -x "$deb" "$RUNNER_TEMP/root"
+          desktop-file-validate "$RUNNER_TEMP/root/usr/share/applications/io.github.masterxq.Weiler.desktop"
+          "$RUNNER_TEMP/root/usr/games/weiler" --help > /dev/null
+          bash "$RUNNER_TEMP/root/usr/games/weiler-pack-data" --help > /dev/null
+      - name: collect
+        env:
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p out
+          cp ../weiler_"$V"_${{ matrix.arch }}.deb ../weiler_"$V"_${{ matrix.arch }}.buildinfo out/
+          cp "$RUNNER_TEMP/build.log" "out/weiler_${V}_${{ matrix.arch }}_build.log"
+          cd out
+          sha256sum -- weiler_"$V"* > SHA256SUMS
+          { echo '```'; cat SHA256SUMS; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: weiler_${{ steps.version.outputs.version }}_${{ matrix.arch }}
+          path: out/
+          if-no-files-found: error
+
+  registry:
+    needs: deb
+    if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    uses: masterxq/pocket-debs/.github/workflows/registry.yml@main
+    with:
+      artefakte: 'weiler_*'
+    secrets:
+      CODEBERG_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
