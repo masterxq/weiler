@@ -1,0 +1,24 @@
+weiler for Debian
+=================
+
+Weiler needs the game data of the Gold Edition, which is not part of this
+package and must not be distributed. There are three ways to provide it:
+
+ * Start Weiler. Without game data it asks for a folder ("Ordner wählen"),
+   searches it with all sub folders for the game folder (the one with DATA
+   and GFX) and remembers it. A folder on a memory card or USB stick that is
+   not inserted is shown with its path until the medium is back.
+
+ * For all users of the computer: weiler-pack-data builds the local package
+   weiler-data from a game folder or a CD image (.iso, .ccd/.img, .cue/.bin)
+   and installs it to /usr/share/games/weiler-data, e.g.
+
+       weiler-pack-data --source /media/cdrom --install
+       weiler-pack-data --source ~/S2GOLD.ccd --music --install
+
+   Without options it asks for everything it needs. CD images need bchunk
+   and 7zip. The package weiler-data is for your own computer only.
+
+ * Copy the game folder to ~/.local/share/weiler/S2.
+
+Settings and savegames are kept in ~/.local/share/weiler.

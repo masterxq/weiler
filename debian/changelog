@@ -1,0 +1,7 @@
+weiler (0.1.0) unstable; urgency=medium
+
+  * First Debian package: the game in /usr/games, its data in
+    /usr/share/games/weiler, weiler-pack-data for the game data of the
+    Gold Edition. CI builds put a snapshot entry on top of this one.
+
+ -- masterxq <masterxq@users.noreply.github.com>  Wed, 25 Nov 2026 01:00:00 +0100

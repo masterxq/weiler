@@ -1,3 +1,12 @@
 /build*/
 *.sav
 __pycache__/
+*.deb
+/out/
+obj-*/
+debian/.debhelper/
+debian/weiler/
+debian/files
+debian/*.substvars
+debian/debhelper-build-stamp
+debian/*.debhelper.log

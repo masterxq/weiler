@@ -1,0 +1,48 @@
+Source: weiler
+Section: games
+Priority: optional
+Maintainer: masterxq <masterxq@users.noreply.github.com>
+Build-Depends: debhelper-compat (= 13),
+               cmake (>= 3.25),
+               ninja-build,
+               pkgconf,
+               gettext,
+               libboost-filesystem-dev (>= 1.74),
+               libboost-iostreams-dev,
+               libboost-locale-dev,
+               libboost-nowide-dev,
+               libboost-program-options-dev,
+               liblua5.1-0-dev,
+               libbz2-dev,
+               libsdl3-dev,
+               libfreetype-dev,
+               libharfbuzz-dev,
+               libgles-dev,
+               libegl-dev,
+               libvorbis-dev
+Standards-Version: 4.7.2
+Homepage: https://github.com/masterxq/weiler
+Vcs-Browser: https://github.com/masterxq/weiler
+Vcs-Git: https://github.com/masterxq/weiler.git
+Rules-Requires-Root: no
+
+Package: weiler
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         fonts-lato,
+         libegl1
+Suggests: bchunk,
+          7zip
+Description: settlement building game for touch screens
+ Weiler plays the classic settlement building game of 1996 from the data
+ of its Gold Edition, by the original rules (taken from Return to the
+ Roots), with a new interface made for touch screens. It works just as
+ well with mouse and keyboard, in portrait and landscape: free games
+ against computer opponents, the Roman and the world campaign, saving and
+ loading with several slots and an autosave.
+ .
+ The game data of the Gold Edition is not included. Weiler asks for its
+ folder on the first start and remembers it. weiler-pack-data builds the
+ local package weiler-data from the game folder or a CD image, for all
+ users of the computer (bchunk and 7zip are needed for CD images).

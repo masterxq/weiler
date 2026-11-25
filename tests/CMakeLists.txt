@@ -15,6 +15,12 @@ add_test(NAME damaged_files
             -P ${CMAKE_CURRENT_SOURCE_DIR}/DamagedFiles.cmake)
 set_tests_properties(damaged_files PROPERTIES FIXTURES_REQUIRED savegame)
 
+# weiler-pack-data with a fake game folder (needs no game data)
+add_test(NAME pack_data
+    COMMAND ${CMAKE_COMMAND} -DPACKER=${PROJECT_SOURCE_DIR}/tools/weiler-pack-data
+            -DLIST=${PROJECT_SOURCE_DIR}/data/gamedata.list -DWORK=${CMAKE_CURRENT_BINARY_DIR}/pack_data
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/PackData.cmake)
+
 # Interface scripts in the offscreen test mode (label "ui")
 function(add_ui_test name size)
     cmake_parse_arguments(UI "FIRST_START" "SCRIPT" "" ${ARGN})

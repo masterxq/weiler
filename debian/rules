@@ -1,0 +1,23 @@
+#!/usr/bin/make -f
+# Weiler: CMake with Ninja. The program goes to /usr/games, its data to /usr/share/games/weiler; the installed
+# program finds its data next to itself and contains no path of the build tree (WEILER_SOURCE_PATHS=OFF).
+# Generic ARMv8-A code on arm64 (WEILER_ARM_TUNING=OFF): the package also runs on phones older than ARMv8.2.
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+%:
+	dh $@ --buildsystem=cmake+ninja
+
+override_dh_auto_configure:
+	dh_auto_configure -- \
+		-DWEILER_INSTALL_BINDIR=games \
+		-DWEILER_INSTALL_DATADIR=share/games/weiler \
+		-DWEILER_SOURCE_PATHS=OFF \
+		-DWEILER_USE_CCACHE=OFF \
+		-DWEILER_ARM_TUNING=OFF
+
+# Lato comes from fonts-lato (debian/weiler.links)
+override_dh_auto_install:
+	dh_auto_install
+	rm debian/weiler/usr/share/games/weiler/fonts/Lato-Regular.ttf \
+		debian/weiler/usr/share/games/weiler/fonts/Lato-Bold.ttf

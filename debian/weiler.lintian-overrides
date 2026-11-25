@@ -1,0 +1,3 @@
+# Noto Serif Display is only part of fonts-noto-extra (more than 300 MB installed); Weiler needs just this one file
+# of 0.6 MB for titles and its word mark. Lato comes from fonts-lato.
+duplicate-font-file also in (fonts-noto-extra) [usr/share/games/weiler/fonts/NotoSerifDisplay-SemiBold.ttf]
