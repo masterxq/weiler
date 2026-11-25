@@ -106,6 +106,9 @@ public:
 
     void draw(DrawPoint drawPt) override;
 
+    /// Weiler (diagnosis): building the worker belongs to (null when it lost its work)
+    const nobUsual* getWorkplace() const { return workplace; }
+
     /// Wenn eine neue Ware kommt oder die Produktion wieder erlaubt wurde, wird das aufgerufen
     void gotWareOrProductionAllowed();
     /// Wenn wieder Platz an der Flagge ist und eine Ware wieder rausgetragen werden kann

@@ -28,6 +28,7 @@
 #include "nodeObjs/noFlag.h"
 #include "nodeObjs/noRoadNode.h"
 #include "nodeObjs/noSkeleton.h"
+#include "notifications/FigureNote.h"
 #include "gameTypes/DirectionToImgDir.h"
 #include "gameData/JobConsts.h"
 #include "s25util/Log.h"
@@ -375,7 +376,12 @@ void noFigure::handleEvent(const unsigned id)
     } else
     {
         current_ev = nullptr;
+        // Weiler (diagnosis): report figures (no soldiers) stepping into the territory of another player
+        const unsigned char ownerBefore = world->getNode(pos).owner;
         walkFigure();
+        const unsigned char ownerNow = world->getNode(pos).owner;
+        if(ownerNow != ownerBefore && ownerNow != 0 && ownerNow != player + 1u && !isSoldier())
+            world->getNotifications().publish(FigureNote(*this, player, pos, ownerNow - 1u));
 
         // Alte Richtung und Position für die Berechnung der Sichtbarkeiten merken
         const Direction oldDir = getCurMoveDir();
@@ -456,6 +462,13 @@ void noFigure::goHome(noRoadNode* goal)
 void noFigure::startWandering(const unsigned burned_wh_id)
 {
     RTTR_Assert(!goal_);
+    if(fs != FigureState::Wander)
+    {
+        // Weiler (diagnosis): remember where the wandering began
+        stateBeforeWander_ = fs;
+        wanderStartPos_ = pos;
+        wanderStartGF_ = getEvMgr().getCurrentGF();
+    }
     fs = FigureState::Wander;
     cur_rs = nullptr;
     rs_pos = 0;

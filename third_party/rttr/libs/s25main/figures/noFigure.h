@@ -75,6 +75,10 @@ protected:
     /// Kommunikation mit anderen Kollegen, die ebenfalls flüchten --> "Kollektivwegfindung", ansonsten ist das
     /// 0xFFFFFFFF
     unsigned burned_wh_id;
+    /// Weiler (diagnosis, not saved): where and when the figure started wandering and what it did before
+    MapPoint wanderStartPos_ = MapPoint::invalid();
+    unsigned wanderStartGF_ = 0;
+    FigureState stateBeforeWander_ = FigureState::Wander;
 
     static const RoadSegment emulated_wanderroad;
 
@@ -235,6 +239,12 @@ public:
     unsigned char getPlayer() const { return player; }
 
     bool isDoingJobWorks() const { return fs == FigureState::Job; }
+    FigureState getState() const { return fs; }
+    /// Weiler (diagnosis): start of the current wandering (invalid if unknown, e.g. after loading a game)
+    MapPoint getWanderStartPos() const { return wanderStartPos_; }
+    unsigned getWanderStartGF() const { return wanderStartGF_; }
+    FigureState getStateBeforeWander() const { return stateBeforeWander_; }
+    bool isFleeingFromBurnedWarehouse() const { return burned_wh_id != 0xFFFFFFFF; }
 
     void abrogate(); // beim Arbeitsplatz "kündigen" soll, man das Laufen zum Ziel unterbrechen muss (warum auch immer)
 

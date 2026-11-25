@@ -52,6 +52,9 @@ Changes against upstream:
 - `nobBaseWarehouse::handleSendoutEvent`: figures set to "send out" only leave when another warehouse takes them.
   Without one they used to wander off (often into foreign land) and get lost; now they stay and the warehouse checks
   again from time to time.
+- Diagnosis of figures in foreign land: `noFigure` publishes the new notification `notifications/FigureNote.h` when a
+  figure that is no soldier steps into the territory of another player, remembers where and when it started wandering
+  (not saved, no influence on the game) and has accessors for its state; `nofBuildingWorker::getWorkplace`.
 
 The game loop in `src/engine/Session.cpp` is adapted from RTTR (`extras/ai-battle`, `network/GameClient*`).
 
