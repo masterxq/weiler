@@ -5,7 +5,7 @@ wait 15
 shot shots/s_ring.png
 tap ui:ring:Holzfäller
 wait 10
-drag foundflag: hqflag: 40
+drag foundflag: hqflag: 40 20
 wait 5
 game ff 1500
 game center found
@@ -43,6 +43,9 @@ wait 5
 tap ui:Einstellungen
 wait 20
 shot shots/s_set.png
+drag 50% 85% 50% 25% 20
+wait 30
+shot shots/s_set2.png
 key Escape
 wait 5
 tap ui:Hilfe

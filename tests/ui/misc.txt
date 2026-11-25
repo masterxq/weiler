@@ -22,7 +22,7 @@ tap found:
 wait 10
 tap ui:ring:Holzfäller
 wait 10
-drag foundflag: hqflag: 40
+drag foundflag: hqflag: 40 20
 wait 10
 tap foundflag:
 wait 15

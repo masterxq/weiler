@@ -1,12 +1,25 @@
 wait 10
 game center hq
 wait 3
-log 3/5: drag from the HQ flag to a free place: road with a flag at its end, none between
+log 1: a quick swipe from the HQ flag pans the map, no road
 game findbq flag hq min=6
 game center hq
 wait 3
 game mark
 drag hqflag: found: 30
+wait 5
+game expect noroad
+game expect moved
+game ff 10
+game expect flags 0
+log (the swing of the swipe dies down)
+wait 90
+log 3/5: hold on the HQ flag, then drag to a free place: road with a flag at its end, none between
+game findbq flag hq min=6
+game center hq
+wait 3
+game mark
+drag hqflag: found: 30 20
 wait 5
 game expect noroad
 game ff 10
@@ -59,6 +72,7 @@ game center hq
 wait 3
 game mark
 down hqflag:
+wait 20
 move found: 15
 log (holding)
 move hqflag: 15
@@ -67,4 +81,35 @@ wait 5
 game expect noroad
 game ff 10
 game expect flags 0
+log 2: donkey road and tear down from a node in the middle of the road
+game findroad
+wait 3
+tap found:
+wait 10
+tap ui:ring:Eselstraße
+wait 5
+game ff 10
+game expect donkeyat found
+tap found:
+wait 10
+tap ui:ring:Abreißen
+wait 5
+game ff 10
+game expect noroadat found
+log 6: setting "never build on release": the dragged road stays open
+game setting road.dragbuild 0
+game findbq flag hq min=6
+game center hq
+wait 3
+game mark
+drag hqflag: found: 30 20
+wait 5
+game expect road
+shot shots/r_open.png
+twotap 50% 50%
+wait 5
+game expect noroad
+game ff 10
+game expect flags 0
+game setting road.dragbuild 2
 quit

@@ -21,7 +21,7 @@ wait 15
 tap ui:ring:Holzfäller
 wait 20
 shot shots/t5.png
-drag foundflag: hqflag: 40
+drag foundflag: hqflag: 40 20
 wait 20
 shot shots/t6.png
 tap ui:icon:Menu

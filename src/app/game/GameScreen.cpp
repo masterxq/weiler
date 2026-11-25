@@ -6,6 +6,7 @@
 #include "ForeignEntryLog.h"
 #include "Perf.h"
 #include "App.h"
+#include "Settings.h"
 #include "Music.h"
 #include "Cheats.h"
 #include "Game.h"
@@ -659,6 +660,45 @@ bool GameScreen::testCommand(const std::string& cmd, const std::vector<std::stri
         std::cout << "[script] found " << best.x << "," << best.y << " dist " << bestDist << std::endl;
         return true;
     }
+    if(cmd == "findroad")
+    {
+        // Nearest own road node from the HQ without a flag or building on it (a node in the middle of a road)
+        MapPoint best = MapPoint::invalid();
+        unsigned bestDist = 100000;
+        const MapExtent size = world.getSize();
+        for(MapCoord y = 0; y < size.y; ++y)
+        {
+            for(MapCoord x = 0; x < size.x; ++x)
+            {
+                const MapPoint pt(x, y);
+                if(world.getNode(pt).owner != meId + 1 || world.getNO(pt)->getType() != NodalObjectType::Nothing)
+                    continue;
+                bool road = false;
+                for(const auto dir : helpers::EnumRange<Direction>{})
+                    road |= world.getPointRoad(pt, dir) != PointRoad::None;
+                const unsigned d = world.calcDistance(me.getHQPos(), pt);
+                if(road && d < bestDist)
+                {
+                    best = pt;
+                    bestDist = d;
+                }
+            }
+        }
+        if(!best.isValid())
+            return false;
+        testFound_ = best;
+        jumpTo(best);
+        std::cout << "[script] road node " << best.x << "," << best.y << std::endl;
+        return true;
+    }
+    if(cmd == "setting")
+    {
+        // setting <key> <int>: change a setting (e.g. road.drag, road.dragbuild)
+        if(arg(0).empty() || arg(1).empty())
+            return false;
+        app_.settings().setInt(arg(0), std::stoi(arg(1)));
+        return true;
+    }
     if(cmd == "findenemy")
     {
         // Nearest attackable enemy military building, preferably one with own soldiers in reach
@@ -847,7 +887,18 @@ bool GameScreen::testCommand(const std::string& cmd, const std::vector<std::stri
         bool ok = false;
         if(arg(0) == "nothing")
             ok = !obj || (obj->getType() != NodalObjectType::Building && obj->getType() != NodalObjectType::Buildingsite);
-        else if(arg(0) == "connected")
+        else if(arg(0) == "roadat" || arg(0) == "noroadat" || arg(0) == "donkeyat")
+        {
+            // A road (of donkeys) through "found" / none any more
+            bool road = false, donkey = false;
+            for(const auto dir : helpers::EnumRange<Direction>{})
+            {
+                const PointRoad pr = world.getPointRoad(at, dir);
+                road |= pr != PointRoad::None;
+                donkey |= pr == PointRoad::Donkey;
+            }
+            ok = arg(0) == "roadat" ? road : arg(0) == "noroadat" ? !road : donkey;
+        } else if(arg(0) == "connected")
         {
             const MapPoint flag = world.getNeighbour(at, Direction::SouthEast);
             for(const auto dir : helpers::EnumRange<Direction>{})

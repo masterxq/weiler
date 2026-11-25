@@ -14,7 +14,7 @@ working folder that contains a `shots/` directory, with a separate user data fol
 | `sheets.txt`, `misc.txt`, `build.txt` | `--map DATA/MAPS4/KARTE01.WLD --ais 1` | ring, road, sheets, pause, speed, back gesture |
 | `taps.txt` | as above | taps of frequent actions (build and connect, stop production, tear down a site) |
 | `save.txt` | as above | save slots, quick save/load |
-| `road.txt` | as above | road without flags between, with flags from the road bar, choices at the road end, drag back cancels |
+| `road.txt` | as above | quick swipe from a flag pans, hold and drag builds a road without flags between, with flags from the road bar, choices at the road end, drag back cancels, donkey road and tear down from the middle of a road, road stays open with "build on release: never" |
 | `map.txt` | as above, `--size 2400x1080` | dialog over the map wins, map follows a held finger, layers, small corner map |
 | `grids.txt` | as above, portrait and landscape | store, inventory, tools, statistics as grids; building size marks and badges |
 | `camp.txt` | main menu | campaign missions |
@@ -28,7 +28,9 @@ working folder that contains a `shots/` directory, with a separate user data fol
 
 Test hooks of the game screen: `game seafaring` places a harbor with wares and a ship next to it (ship and expedition
 sheets without a long game, e.g. on `DATA/MAPS/MISS203.WLD`), `game gameover win|lose|team <mask>` shows the end of game sheet (team: bit mask of the winning players),
-`game expect connected|nothing found` checks the building placed at `found:` (its flag has a road / it is gone).
+`game expect connected|nothing found` checks the building placed at `found:` (its flag has a road / it is gone),
+`game findroad` puts `found:` on the nearest own road node without flag, `game expect roadat|noroadat|donkeyat found` checks
+the road through it, `game setting <key> <int>` changes a setting. `drag x0 y0 x1 y1 [frames] [hold]` rests `hold` frames before moving.
 With `WEILER_AUDIO_WAV=<file.wav>` the test mode writes the audio mix (music, effects, interface sounds) into a WAV
 file instead of playing it.
 

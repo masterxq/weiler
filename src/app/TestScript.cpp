@@ -231,14 +231,15 @@ bool TestScript::execute(const std::string& line)
             const float x0 = coord(a.at(0), false), y0 = coord(a.at(1), true);
             const float x1 = coord(a.at(2), false), y1 = coord(a.at(3), true);
             const int frames = static_cast<int>(num(4, 20));
+            const int hold = static_cast<int>(num(5, 0)); // frames the finger rests before it moves
             finger(SDL_EVENT_FINGER_DOWN, 1, x0, y0, 0);
             for(int i = 1; i <= frames; ++i)
             {
                 const float t = static_cast<float>(i) / frames;
-                finger(SDL_EVENT_FINGER_MOTION, 1, x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, i);
+                finger(SDL_EVENT_FINGER_MOTION, 1, x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, hold + i);
             }
-            finger(SDL_EVENT_FINGER_UP, 1, x1, y1, frames + 1);
-            waitFrames_ = frames + 3;
+            finger(SDL_EVENT_FINGER_UP, 1, x1, y1, hold + frames + 1);
+            waitFrames_ = hold + frames + 3;
         } else if(cmd == "pinch")
         {
             const float cx = coord(a.at(0), false), cy = coord(a.at(1), true);
